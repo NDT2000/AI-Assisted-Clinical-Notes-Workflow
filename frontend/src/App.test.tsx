@@ -16,3 +16,16 @@ describe("App routing", () => {
     ).toBeInTheDocument();
   });
 })
+describe("App routing", () => {
+  it("renders the note details page at /notes/:noteId", () => {
+    render(
+      <MemoryRouter initialEntries={["/notes/:noteId"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Note Details" }),
+    ).toBeInTheDocument();
+  });
+})

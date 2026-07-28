@@ -1,5 +1,5 @@
 function NotesDetailsPage() {
-    return <h1>Notes Details</h1>;
+    return <h1>Note Details</h1>;
 }
 
 export default NotesDetailsPage;
