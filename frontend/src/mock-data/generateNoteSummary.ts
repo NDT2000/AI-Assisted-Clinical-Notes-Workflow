@@ -1,4 +1,4 @@
-import type { NoteStatus } from "../domain/noteAttributes";
+import { type NoteStatus, NOTE_STATUS } from "../domain/noteAttributes";
 import type { NoteSummary } from "../domain/noteSummary";
 
 type RandomFunction = () => number;
@@ -71,22 +71,6 @@ const REVIEWERS = [
   },
 ] as const;
 
-const STATUS_POOL: readonly NoteStatus[] = [
-  "APPROVED",
-  "APPROVED",
-  "APPROVED",
-  "READY_FOR_REVIEW",
-  "READY_FOR_REVIEW",
-  "READY_FOR_REVIEW",
-  "IN_REVIEW",
-  "IN_REVIEW",
-  "REJECTED",
-  "FAILED",
-  "GENERATING",
-  "AMENDED",
-  "LOCKED",
-];
-
 interface MockPatient {
   id: string;
   displayName: string;
@@ -108,7 +92,7 @@ function generatePatients(
 }
 
 function generateStatus(random: RandomFunction): NoteStatus {
-  return pickRandom(STATUS_POOL, random);
+  return pickRandom(NOTE_STATUS, random);
 }
 
 function generateReviewer(
@@ -116,6 +100,7 @@ function generateReviewer(
   random: RandomFunction,
 ): (typeof REVIEWERS)[number] | null {
   const statusesRequiringReviewer: readonly NoteStatus[] = [
+    "READY_FOR_REVIEW",
     "IN_REVIEW",
     "APPROVED",
     "REJECTED",

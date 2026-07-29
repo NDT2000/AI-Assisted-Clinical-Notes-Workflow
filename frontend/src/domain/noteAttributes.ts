@@ -9,6 +9,17 @@ export type NoteStatus =
     | "AMENDED"
     | "LOCKED";
 
+export const NOTE_STATUS: readonly NoteStatus[] = [
+    "GENERATING",
+    "FAILED",
+    "READY_FOR_REVIEW",
+    "IN_REVIEW",
+    "REJECTED",
+    "APPROVED",
+    "AMENDED",
+    "LOCKED",
+]
+
 // Fixed set of User roles stored in Union type
 export type UserRole = 
     | "CLINICIAN"
