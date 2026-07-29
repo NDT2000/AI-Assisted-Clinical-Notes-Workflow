@@ -135,7 +135,9 @@ export function NotesFilters({
   }
 
   return (
-    <section aria-label="Note filters">
+    <section 
+      className="notes-filters"
+      aria-label="Note filters">
       <div>
         <label htmlFor="status-filter">
           Status
