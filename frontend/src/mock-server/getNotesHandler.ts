@@ -9,8 +9,6 @@ const notes = generateNoteSummaries(5_000, 42);
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
-const DEFAULT_CURSOR = 0;
-
 type NoteSortField =
   | "createdAt"
   | "updatedAt"
@@ -31,6 +29,11 @@ const SORT_ORDERS: readonly SortOrder[] = [
   "desc",
 ];
 
+interface NotesCursor {
+  sortValue: string;
+  id: string;
+}
+
 function getLimit(searchParams: URLSearchParams): number {
     const rawLimit = searchParams.get("limit");
 
@@ -47,20 +50,66 @@ function getLimit(searchParams: URLSearchParams): number {
     return Math.min(parsedLimit, MAX_LIMIT);
 }
 
-function getCursor(searchParams: URLSearchParams): number {
-  const rawCursor = searchParams.get("cursor");
+function getSortValue(
+  note: NoteSummary,
+  sortField: NoteSortField,
+): string {
+  switch (sortField) {
+    case "createdAt":
+      return note.createdAt;
 
-  if (rawCursor === null) {
-    return DEFAULT_CURSOR;
+    case "updatedAt":
+      return note.updatedAt;
+
+    case "patientName":
+      return note.patient.displayName;
+
+    case "status":
+      return note.status;
+  }
+}
+
+function encodeCursor(
+  cursor: NotesCursor,
+): string {
+  return btoa(JSON.stringify(cursor));
+}
+
+function getCursor(
+  searchParams: URLSearchParams,
+): NotesCursor | null {
+  const rawCursor =
+    searchParams.get("cursor");
+
+  if (!rawCursor) {
+    return null;
   }
 
-  const parsedCursor = Number(rawCursor);
+  try {
+    const decodedCursor =
+      atob(rawCursor);
 
-  if (!Number.isInteger(parsedCursor) || parsedCursor < 0) {
-    return DEFAULT_CURSOR;
+    const parsedCursor: unknown =
+      JSON.parse(decodedCursor);
+
+    if (
+      typeof parsedCursor !== "object" ||
+      parsedCursor === null ||
+      !("sortValue" in parsedCursor) ||
+      !("id" in parsedCursor) ||
+      typeof parsedCursor.sortValue !== "string" ||
+      typeof parsedCursor.id !== "string"
+    ) {
+      return null;
+    }
+
+    return {
+      sortValue: parsedCursor.sortValue,
+      id: parsedCursor.id,
+    };
+  } catch {
+    return null;
   }
-
-  return parsedCursor;
 }
 
 function getStatuses(
@@ -132,25 +181,6 @@ function filterByPatients(
   return notes.filter((note) =>
     patientIds.includes(note.patient.id),
   );
-}
-
-function getDateParameter(
-  searchParams: URLSearchParams,
-  key: string,
-): Date | null {
-  const rawDate = searchParams.get(key);
-
-  if (rawDate === null || rawDate.trim().length === 0) {
-    return null;
-  }
-
-  const parsedDate = new Date(rawDate);
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return null;
-  }
-
-  return parsedDate;
 }
 
 function getCreatedTo(
@@ -255,65 +285,92 @@ function getSortOrder(
   return "desc";
 }
 
+function compareNotes(
+  firstNote: NoteSummary,
+  secondNote: NoteSummary,
+  sortField: NoteSortField,
+  sortOrder: SortOrder,
+): number {
+  let primaryComparison: number;
+
+  switch (sortField) {
+    case "createdAt":
+      primaryComparison =
+        new Date(firstNote.createdAt).getTime() -
+        new Date(secondNote.createdAt).getTime();
+      break;
+
+    case "updatedAt":
+      primaryComparison =
+        new Date(firstNote.updatedAt).getTime() -
+        new Date(secondNote.updatedAt).getTime();
+      break;
+
+    case "patientName":
+      primaryComparison =
+        firstNote.patient.displayName.localeCompare(
+          secondNote.patient.displayName,
+        );
+      break;
+
+    case "status":
+      primaryComparison =
+        firstNote.status.localeCompare(
+          secondNote.status,
+        );
+      break;
+  }
+
+  const directionMultiplier =
+    sortOrder === "asc" ? 1 : -1;
+
+  if (primaryComparison !== 0) {
+    return primaryComparison * directionMultiplier;
+  }
+
+  return (
+    firstNote.id.localeCompare(secondNote.id) *
+    directionMultiplier
+  );
+}
+
 function sortNotes(
   notes: NoteSummary[],
   sortField: NoteSortField,
   sortOrder: SortOrder,
 ): NoteSummary[] {
-  const direction =
-    sortOrder === "asc" ? 1 : -1;
-
   return [...notes].sort(
-    (firstNote, secondNote) => {
-      let comparison = 0;
-
-      switch (sortField) {
-        case "createdAt":
-          comparison =
-            new Date(
-              firstNote.createdAt,
-            ).getTime() -
-            new Date(
-              secondNote.createdAt,
-            ).getTime();
-          break;
-
-        case "updatedAt":
-          comparison =
-            new Date(
-              firstNote.updatedAt,
-            ).getTime() -
-            new Date(
-              secondNote.updatedAt,
-            ).getTime();
-          break;
-
-        case "patientName":
-          comparison =
-            firstNote.patient.displayName
-              .localeCompare(
-                secondNote.patient.displayName,
-              );
-          break;
-
-        case "status":
-          comparison =
-            firstNote.status.localeCompare(
-              secondNote.status,
-            );
-          break;
-      }
-
-      if (comparison === 0) {
-        comparison =
-          firstNote.id.localeCompare(
-            secondNote.id,
-          );
-      }
-
-      return comparison * direction;
-    },
+    (firstNote, secondNote) =>
+      compareNotes(
+        firstNote,
+        secondNote,
+        sortField,
+        sortOrder,
+      ),
   );
+}
+
+function getStartIndex(
+  sortedNotes: NoteSummary[],
+  cursor: NotesCursor | null,
+  sortField: NoteSortField,
+): number {
+  if (cursor === null) {
+    return 0;
+  }
+
+  const cursorIndex = sortedNotes.findIndex(
+    (note) =>
+      note.id === cursor.id &&
+      getSortValue(note, sortField) ===
+        cursor.sortValue,
+  );
+
+  if (cursorIndex === -1) {
+    return 0;
+  }
+
+  return cursorIndex + 1;
 }
 
 export const getNotesHandler = http.get(
@@ -321,7 +378,7 @@ export const getNotesHandler = http.get(
   ({ request }) => {
     const url = new URL(request.url);
     const limit = getLimit(url.searchParams);
-    const cursor = getCursor(url.searchParams);
+    const decodedCursor = getCursor(url.searchParams);
     const statuses = getStatuses(url.searchParams);
     const reviewerIds = getReviewerIds(url.searchParams);
     const patientIds = getPatientIds(url.searchParams);
@@ -352,20 +409,38 @@ export const getNotesHandler = http.get(
         sortField,
         sortOrder,
     );
+    const startIndex = getStartIndex(
+      sortedNotes,
+      decodedCursor,
+      sortField,
+    );
 
     const items = sortedNotes.slice(
-        cursor,
-        cursor + limit);
+        startIndex,
+        startIndex + limit);
 
-    const nextCursor = cursor + items.length;
-    const hasMore = nextCursor < sortedNotes.length;
+    
+    const hasMore = startIndex + items.length < sortedNotes.length;
+    const lastItem =
+      items.length > 0
+        ? items[items.length - 1]
+        : null;
+    
+    const nextCursor =
+      hasMore && lastItem !== null
+        ? encodeCursor({
+            sortValue: getSortValue(
+              lastItem,
+              sortField,
+            ),
+            id: lastItem.id,
+          })
+        : null;
 
     return HttpResponse.json({
       items,
       cursor: {
-        next: hasMore
-        ? String(nextCursor)
-        : null,
+        next: nextCursor,
         hasMore,
       },
       meta: {
