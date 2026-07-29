@@ -3,8 +3,6 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import App from "./App";
 
-// This file contains test to check if the pages that have been crated are being rendered properly
-
 describe("App routing", () => {
   it("renders the notes list page at /notes", () => {
     render(
@@ -14,20 +12,20 @@ describe("App routing", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Notes List" }),
+      screen.getByRole("heading", { name: "Notes" }),
     ).toBeInTheDocument();
   });
 })
 describe("App routing", () => {
-  it("renders the note details page at /notes/:noteId", () => {
+  it("renders the note detail page at /notes/:noteId", () => {
     render(
-      <MemoryRouter initialEntries={["/notes/:noteId"]}>
+      <MemoryRouter initialEntries={["/notes/note-1"]}>
         <App />
       </MemoryRouter>,
     );
 
     expect(
-      screen.getByRole("heading", { name: "Note Details" }),
+      screen.getByRole("heading", { name: "Note Detail" }),
     ).toBeInTheDocument();
   });
 })

@@ -144,6 +144,7 @@ it("allows the assigned reviewer to approve a note", () => {
     actor: {
       id: "reviewer-1",
       role: "REVIEWER",
+      mfaVerified: true,
     },
     action: "APPROVE",
     now: "2026-07-28T11:00:00.000Z",
@@ -152,6 +153,31 @@ it("allows the assigned reviewer to approve a note", () => {
   expect(result).toEqual({
     allowed: true,
     nextStatus: "APPROVED",
+  });
+});
+
+it("does not allow approval without MFA re-authentication", () => {
+  const note: Note = {
+    ...baseNote,
+    status: "IN_REVIEW",
+    assignedReviewerId: "reviewer-1",
+  };
+
+  const result = canTransition({
+    note,
+    version: baseVersion,
+    actor: {
+      id: "reviewer-1",
+      role: "REVIEWER",
+      mfaVerified: false,
+    },
+    action: "APPROVE",
+    now: "2026-07-28T11:00:00.000Z",
+  });
+
+  expect(result).toEqual({
+    allowed: false,
+    reason: "MFA re-authentication is required to approve this Note.",
   });
 });
 

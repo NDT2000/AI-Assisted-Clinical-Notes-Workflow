@@ -1,10 +1,9 @@
 import { http, HttpResponse } from "msw";
 
-import { generateNoteSummaries } from "../mock-data/generateNoteSummary";
+import { getNotes } from "./noteStore";
+import { SimulatedNetworkFailure, simulateNetwork } from "./mockNetwork";
 import { type NoteStatus, NOTE_STATUS } from "../domain/noteAttributes";
 import type { NoteSummary } from "../domain/noteSummary";
-
-const notes = generateNoteSummaries(5_000, 42);
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
@@ -375,7 +374,20 @@ function getStartIndex(
 
 export const getNotesHandler = http.get(
   "*/api/notes",
-  ({ request }) => {
+  async ({ request }) => {
+    try {
+      await simulateNetwork();
+    } catch (error) {
+      if (error instanceof SimulatedNetworkFailure) {
+        return HttpResponse.json(
+          { error: "internal_error", message: "Simulated failure" },
+          { status: 503 },
+        );
+      }
+      throw error;
+    }
+
+    const notes = getNotes();
     const url = new URL(request.url);
     const limit = getLimit(url.searchParams);
     const decodedCursor = getCursor(url.searchParams);

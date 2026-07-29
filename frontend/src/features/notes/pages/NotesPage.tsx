@@ -6,15 +6,19 @@ import {
 } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import type {
+  NoteSortField,
+  SortDirection,
+} from "../utils/noteListSearchParams";
+import {
+  parseNoteListSearchParams,
+} from "../utils/noteListSearchParams";
+import type { NoteStatus } from "../../../domain/noteAttributes";
 import { getNotes } from "../api/getNotes";
 import type { NoteListResponse } from "../api/noteListResponse";
 import { NotesFilters } from "../components/NotesFilters";
 import { NotesTable } from "../components/NoteTable";
 import { NotesTableSkeleton } from "../components/NotesTableSkeleton";
-import type { NoteStatus } from "../../../domain/noteAttributes";
-import {
-  parseNoteListSearchParams,
-} from "../utils/noteListSearchParams";
 
 export function NotesPage() {
   const [searchParams, setSearchParams] =
@@ -29,9 +33,18 @@ export function NotesPage() {
   const [error, setError] =
     useState<string | null>(null);
 
+  /*
+   * URLSearchParams is an object. Converting it to a string
+   * gives us a stable dependency representing its contents.
+   */
   const searchParamsString =
     searchParams.toString();
 
+  /*
+   * The URL is the source of truth.
+   *
+   * We do not copy these filters into separate React state.
+   */
   const filters = useMemo(
     () =>
       parseNoteListSearchParams(
@@ -45,8 +58,7 @@ export function NotesPage() {
       setIsLoading(true);
       setError(null);
 
-      const response =
-        await getNotes(filters);
+      const response = await getNotes(filters);
 
       setData(response);
     } catch {
@@ -56,35 +68,150 @@ export function NotesPage() {
     }
   }, [filters]);
 
+  /*
+   * Changing the URL changes `filters`, which recreates
+   * `loadNotes`, which causes this effect to run again.
+   */
   useEffect(() => {
     void loadNotes();
   }, [loadNotes]);
 
-  function handleStatusesChange(
-    statuses: NoteStatus[],
+  function updateSearchParams(
+    update: (
+      nextSearchParams: URLSearchParams,
+    ) => void,
   ) {
     const nextSearchParams =
       new URLSearchParams(searchParams);
 
-    if (statuses.length === 0) {
-      nextSearchParams.delete("status");
-    } else {
+    update(nextSearchParams);
+
+    /*
+     * Later, the cursor will identify a page produced using
+     * the old filters. It must therefore be removed whenever
+     * any filter or sort value changes.
+     */
+    nextSearchParams.delete("cursor");
+
+    /*
+     * By default, this creates a browser-history entry.
+     * Therefore, Back and Forward can restore earlier filters.
+     */
+    setSearchParams(nextSearchParams);
+  }
+
+  function setOrDeleteSearchParam(
+    nextSearchParams: URLSearchParams,
+    name: string,
+    value: string,
+  ) {
+    if (value === "") {
+      nextSearchParams.delete(name);
+      return;
+    }
+
+    nextSearchParams.set(name, value);
+  }
+
+  function handleStatusesChange(
+    statuses: NoteStatus[],
+  ) {
+    updateSearchParams((nextSearchParams) => {
+      if (statuses.length === 0) {
+        nextSearchParams.delete("status");
+        return;
+      }
+
       nextSearchParams.set(
         "status",
         statuses.join(","),
       );
-    }
+    });
+  }
 
-    nextSearchParams.delete("cursor");
+  function handleReviewerChange(
+    reviewerId: string,
+  ) {
+    updateSearchParams((nextSearchParams) => {
+      setOrDeleteSearchParam(
+        nextSearchParams,
+        "reviewer",
+        reviewerId,
+      );
+    });
+  }
 
-    setSearchParams(nextSearchParams);
+  function handlePatientChange(
+    patientId: string,
+  ) {
+    updateSearchParams((nextSearchParams) => {
+      setOrDeleteSearchParam(
+        nextSearchParams,
+        "patient",
+        patientId,
+      );
+    });
+  }
+
+  function handleCreatedFromChange(
+    createdFrom: string,
+  ) {
+    updateSearchParams((nextSearchParams) => {
+      setOrDeleteSearchParam(
+        nextSearchParams,
+        "createdFrom",
+        createdFrom,
+      );
+    });
+  }
+
+  function handleCreatedToChange(
+    createdTo: string,
+  ) {
+    updateSearchParams((nextSearchParams) => {
+      setOrDeleteSearchParam(
+        nextSearchParams,
+        "createdTo",
+        createdTo,
+      );
+    });
+  }
+
+  function handleSortFieldChange(
+    sortField: NoteSortField,
+  ) {
+    updateSearchParams((nextSearchParams) => {
+      nextSearchParams.set(
+        "sort",
+        `${sortField}:${filters.sortDirection}`,
+      );
+    });
+  }
+
+  function handleSortDirectionChange(
+    sortDirection: SortDirection,
+  ) {
+    updateSearchParams((nextSearchParams) => {
+      nextSearchParams.set(
+        "sort",
+        `${filters.sortField}:${sortDirection}`,
+      );
+    });
   }
 
   const filtersSection = (
     <NotesFilters
       filters={filters}
-      onStatusesChange={
-        handleStatusesChange
+      onStatusesChange={handleStatusesChange}
+      onReviewerChange={handleReviewerChange}
+      onPatientChange={handlePatientChange}
+      onCreatedFromChange={
+        handleCreatedFromChange
+      }
+      onCreatedToChange={handleCreatedToChange}
+      onSortFieldChange={handleSortFieldChange}
+      onSortDirectionChange={
+        handleSortDirectionChange
       }
     />
   );
@@ -108,9 +235,7 @@ export function NotesPage() {
 
         {filtersSection}
 
-        <p role="alert">
-          {error}
-        </p>
+        <p role="alert">{error}</p>
 
         <button
           type="button"
@@ -132,9 +257,7 @@ export function NotesPage() {
 
         {filtersSection}
 
-        <p>
-          No notes are available.
-        </p>
+        <p>No notes match the current filters.</p>
       </main>
     );
   }
@@ -145,9 +268,7 @@ export function NotesPage() {
 
       {filtersSection}
 
-      <NotesTable
-        notes={data.items}
-      />
+      <NotesTable notes={data.items} />
     </main>
   );
 }

@@ -4,6 +4,7 @@ import { noteTransitions } from "./noteTransitions";
 export interface Actor{
     id: string;
     role: UserRole;
+    mfaVerified?: boolean;
 }
 
 export interface Guard {
@@ -93,6 +94,13 @@ export const canApprove: GuardFunction = ({
         return {
             allowed: false,
             reason: "Only an assigned Reviewer can approve this Note."
+        };
+    }
+
+    if (!actor.mfaVerified) {
+        return {
+            allowed: false,
+            reason: "MFA re-authentication is required to approve this Note."
         };
     }
 
