@@ -3,6 +3,8 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import App from "./App";
 
+// This file contains test to check if the pages that have been crated are being rendered properly
+
 describe("App routing", () => {
   it("renders the notes list page at /notes", () => {
     render(

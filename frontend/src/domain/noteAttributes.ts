@@ -1,3 +1,4 @@
+// The fixed Status of Notes saved in a Union type
 export type NoteStatus = 
     | "GENERATING"
     | "FAILED"
@@ -8,12 +9,14 @@ export type NoteStatus =
     | "AMENDED"
     | "LOCKED";
 
+// Fixed set of User roles stored in Union type
 export type UserRole = 
     | "CLINICIAN"
     | "REVIEWER"
     | "ADMIN"
     | "READONLY_AUDITOR";
 
+// Fixed set of actions/triggers in a Union type
 export type Trigger = 
     |"GENERATION_COMPLETE"
     | "GENERATION_ERROR"
@@ -26,6 +29,7 @@ export type Trigger =
     | "GRACE_EXPIRED"
     | "START_REVIEW"
 
+// This is the interface of SOAP which is the structure of each note    
 export interface SoapContent {
     subjective: string;
     objective: string;
@@ -33,6 +37,7 @@ export interface SoapContent {
     plan: string;
 }
 
+// Interface of Notes that has all the required attributes of Notes
 export interface Note {
     id: string;
     patientId: string;
@@ -45,6 +50,7 @@ export interface Note {
     approvedAt?: string;
 }
 
+// Interface of Note Version that has all the attributes required by note version 
 export interface NoteVersion {
     versionId: string;
     noteId: string;
@@ -56,6 +62,7 @@ export interface NoteVersion {
     createdAt: string;
 }
 
+// Interface of Review event with all the attributes needed by review event listed
 export interface ReviewEvent {
     eventId: string;
     noteId: string;
