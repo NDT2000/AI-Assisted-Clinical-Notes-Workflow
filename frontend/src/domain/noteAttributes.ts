@@ -18,7 +18,6 @@ export type Trigger =
     |"GENERATION_COMPLETE"
     | "GENERATION_ERROR"
     | "REGENERATE"
-    | "START_REVIEW"
     | "RETURN_TO_QUEUE"
     | "APPROVE"
     | "REJECT"
@@ -43,6 +42,7 @@ export interface Note {
     assignedReviewerId: string | null;
     createdAt: string;
     updatedAt: string;
+    approvedAt?: string;
 }
 
 export interface NoteVersion {
@@ -65,5 +65,5 @@ export interface ReviewEvent {
     actorId: string;
     actorRole: UserRole;
     reason?: string;
-    occuredAt: string;
+    occurredAt: string;
 }

@@ -25,7 +25,8 @@ export const noteTransitions: Record<NoteStatus, Partial<Record<Trigger, NoteSta
             GRACE_EXPIRED: "LOCKED"
         },
         AMENDED: {
-            START_REVIEW: "IN_REVIEW"
+            START_REVIEW: "IN_REVIEW",
+            GRACE_EXPIRED: "LOCKED"
         },
         LOCKED: {},
     };
