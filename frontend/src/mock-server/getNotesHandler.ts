@@ -418,7 +418,7 @@ export const getNotesHandler = http.get(
     const items = sortedNotes.slice(
         startIndex,
         startIndex + limit);
-
+    
     
     const hasMore = startIndex + items.length < sortedNotes.length;
     const lastItem =
