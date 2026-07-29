@@ -3,10 +3,20 @@ import type { NoteListResponse } from "./noteListResponse";
 
 export async function getNotes(
   filters: NoteListFilters,
+  cursor: string | null = null,
+  signal?: AbortSignal,
 ): Promise<NoteListResponse> {
   const searchParams = new URLSearchParams();
 
   searchParams.set("limit", "20");
+
+  if (cursor !== null) {
+    searchParams.set("cursor", cursor);
+  }
+
+  if (filters.query !== "") {
+    searchParams.set("q", filters.query);
+  }
 
   for (const status of filters.statuses) {
     searchParams.append("status", status);
@@ -52,6 +62,7 @@ export async function getNotes(
 
   const response = await fetch(
     `/api/notes?${searchParams.toString()}`,
+    { signal },
   );
 
   if (!response.ok) {

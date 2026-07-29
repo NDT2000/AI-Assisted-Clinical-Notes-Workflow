@@ -1,7 +1,10 @@
 import { http, HttpResponse } from "msw";
 
 import { getNotes } from "./noteStore";
-import { SimulatedNetworkFailure, simulateNetwork } from "./mockNetwork";
+import {
+  simulateNetwork,
+  SimulatedNetworkFailure,
+} from "./mockNetwork";
 import { type NoteStatus, NOTE_STATUS } from "../domain/noteAttributes";
 import type { NoteSummary } from "../domain/noteSummary";
 
@@ -372,6 +375,35 @@ function getStartIndex(
   return cursorIndex + 1;
 }
 
+function getSearchQuery(
+  searchParams: URLSearchParams,
+): string {
+  return (searchParams.get("q") ?? "").trim();
+}
+
+function filterBySearchQuery(
+  notes: NoteSummary[],
+  query: string,
+): NoteSummary[] {
+  if (query === "") {
+    return notes;
+  }
+
+  const lowerQuery = query.toLowerCase();
+
+  return notes.filter((note) => {
+    const matchesPatientName = note.patient.displayName
+      .toLowerCase()
+      .includes(lowerQuery);
+
+    const matchesContent = note.contentPreview
+      .toLowerCase()
+      .includes(lowerQuery);
+
+    return matchesPatientName || matchesContent;
+  });
+}
+
 export const getNotesHandler = http.get(
   "*/api/notes",
   async ({ request }) => {
@@ -416,8 +448,13 @@ export const getNotesHandler = http.get(
         createdFrom,
         createdTo,
     );
-    const sortedNotes = sortNotes(
+    const searchQuery = getSearchQuery(url.searchParams);
+    const searchFilteredNotes = filterBySearchQuery(
         dateFilteredNotes,
+        searchQuery,
+    );
+    const sortedNotes = sortNotes(
+        searchFilteredNotes,
         sortField,
         sortOrder,
     );

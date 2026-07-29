@@ -18,6 +18,7 @@ export interface NoteListFilters {
   createdTo: string;
   sortField: NoteSortField;
   sortDirection: SortDirection;
+  query: string;
 }
 
 export const DEFAULT_NOTE_LIST_FILTERS: NoteListFilters = {
@@ -28,6 +29,7 @@ export const DEFAULT_NOTE_LIST_FILTERS: NoteListFilters = {
   createdTo: "",
   sortField: "updatedAt",
   sortDirection: "desc",
+  query: "",
 };
 
 const NOTE_SORT_FIELDS: readonly NoteSortField[] = [
@@ -82,6 +84,9 @@ export function parseNoteListSearchParams(
   const createdTo =
     searchParams.get("createdTo") ?? "";
 
+  const query =
+    searchParams.get("q") ?? "";
+
   const rawSort =
     searchParams.get("sort");
 
@@ -114,5 +119,6 @@ export function parseNoteListSearchParams(
     createdTo,
     sortField,
     sortDirection,
+    query,
   };
 }

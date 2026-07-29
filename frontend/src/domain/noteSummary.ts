@@ -20,6 +20,8 @@ export interface NoteSummary {
     displayName: string;
   } | null;
 
+  contentPreview: string;
+
   createdAt: string;
   updatedAt: string;
 }

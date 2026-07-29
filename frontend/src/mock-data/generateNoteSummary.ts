@@ -189,6 +189,23 @@ function generateUpdatedDate(
   return updatedAt;
 }
 
+const CONTENT_PREVIEW_FRAGMENTS = [
+  "Patient reports improvement in symptoms since last visit.",
+  "Discussed medication adherence and side effects.",
+  "Physical exam unremarkable, vitals stable.",
+  "Follow-up recommended in two weeks to reassess.",
+  "Patient presents with continued discomfort, plan adjusted.",
+  "Reviewed lab results, no acute concerns noted.",
+  "Counseled patient on lifestyle modifications.",
+  "Symptoms consistent with prior assessment, treatment continued.",
+] as const;
+
+function generateContentPreview(
+  random: RandomFunction,
+): string {
+  return pickRandom(CONTENT_PREVIEW_FRAGMENTS, random);
+}
+
 export function generateNoteSummaries(
   count = 5_000,
   seed = 42,
@@ -242,6 +259,7 @@ export function generateNoteSummaries(
         random,
       ),
       assignedReviewer,
+      contentPreview: generateContentPreview(random),
       createdAt: createdAt.toISOString(),
       updatedAt: updatedAt.toISOString(),
     };
