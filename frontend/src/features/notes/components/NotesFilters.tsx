@@ -1,23 +1,10 @@
-import {
-  type ChangeEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ChangeEvent, useEffect, useRef, useState, } from "react";
 
-import {
-  NOTE_STATUS,
-  type NoteStatus,
-} from "../../../domain/noteAttributes";
-import type {
-  NoteListFilters,
-  NoteSortField,
-  SortDirection,
-} from "../utils/noteListSearchParams";
-import {
-  getPatients,
-  type PatientOption,
-} from "../api/getPatients";
+import { NOTE_STATUS, type NoteStatus, } from "../../../domain/noteAttributes";
+import type { NoteListFilters, NoteSortField, SortDirection, } from "../utils/noteListSearchParams";
+import { getPatientById, getPatients, type PatientOption, } from "../api/getPatients";
+
+import { REVIEWERS } from "../../../mock-data/generateNoteSummary";
 
 interface NotesFiltersProps {
   filters: NoteListFilters;
@@ -55,38 +42,6 @@ interface NotesFiltersProps {
     query: string,
   ) => void;
 }
-
-/*
- * Reviewers remain a small, fixed roster (5 entries, matching the
- * mock backend's REVIEWERS list). Unlike patients — which number in
- * the hundreds and must be looked up dynamically — a hardcoded
- * reviewer list is a defensible, documented simplification for a
- * take-home: real deployments would fetch this from a users/roles
- * endpoint, but the roster size here doesn't demonstrate anything
- * that dynamic patient lookup doesn't already cover.
- */
-export const REVIEWERS = [
-  {
-    id: "reviewer-1",
-    displayName: "Alex Kim",
-  },
-  {
-    id: "reviewer-2",
-    displayName: "Robin Chen",
-  },
-  {
-    id: "reviewer-3",
-    displayName: "Sam Rivera",
-  },
-  {
-    id: "reviewer-4",
-    displayName: "Drew Patel",
-  },
-  {
-    id: "reviewer-5",
-    displayName: "Jules Martin",
-  },
-];
 
 const SORT_FIELDS: {
   value: NoteSortField;
@@ -133,6 +88,12 @@ export function NotesFilters({
 
     onStatusesChange(selectedStatuses);
   }
+
+  const isPatientFilterEnabled =
+    filters.statuses.length > 0 ||
+    filters.reviewerId !== "" ||
+    filters.createdFrom !== "" ||
+    filters.createdTo !== "";
 
   return (
     <section 
@@ -191,6 +152,8 @@ export function NotesFilters({
 
       <PatientFilter
         patientId={filters.patientId}
+        filters={filters}
+        isEnabled={isPatientFilterEnabled}
         onPatientChange={onPatientChange}
       />
 
@@ -287,17 +250,6 @@ export function NotesFilters({
   );
 }
 
-/*
- * Debounced free-text search. Deliberately kept LOCAL to this
- * component rather than lifted into NotesPage's render-triggering
- * state: every keystroke needs to update the visible input
- * immediately (so typing feels responsive), but the parent's
- * onQueryChange — which triggers a network request and a URL update
- * — should only fire after the user pauses. Mixing those two update
- * rates in the parent's state would either lag the input or fire a
- * request per keystroke; keeping local state here cleanly separates
- * "what's on screen" from "when do we act on it."
- */
 function SearchBox({
   query,
   onQueryChange,
@@ -311,13 +263,6 @@ function SearchBox({
     typeof setTimeout
   > | null>(null);
 
-  /*
-   * Keep local input text in sync if the query changes from OUTSIDE
-   * this component — e.g. browser Back/Forward restoring an older
-   * URL with a different ?q=. Without this, pressing Back would
-   * change the actual filter but leave stale text sitting in the
-   * input box.
-   */
   useEffect(() => {
     setLocalValue(query);
   }, [query]);
@@ -363,19 +308,15 @@ function SearchBox({
   );
 }
 
-/*
- * Async patient typeahead. Replaces the old hardcoded 3-entry
- * dropdown, which could never represent the real ~500-patient
- * dataset. Same debounce pattern as SearchBox, but the debounced
- * action is a lookup fetch rather than a filter change — the actual
- * filter only commits once the user picks a specific patient from
- * results, not on every keystroke.
- */
 function PatientFilter({
   patientId,
+  filters,
+  isEnabled,
   onPatientChange,
 }: {
   patientId: string;
+  filters: NoteListFilters;
+  isEnabled: boolean;
   onPatientChange: (
     patientId: string,
     patientDisplayName: string,
@@ -389,39 +330,64 @@ function PatientFilter({
     typeof setTimeout
   > | null>(null);
 
-  /*
-   * AbortController per lookup, not just a stale-response check.
-   * Rationale: if the user types quickly, several patient-lookup
-   * requests could be in flight at once. Cancelling the previous one
-   * outright (rather than only discarding its result on arrival)
-   * avoids wasting server work on a query the user has already
-   * moved past — a real cost at scale even though this is a mock
-   * backend.
-   */
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  function handleInputChange(
-    event: ChangeEvent<HTMLInputElement>,
-  ) {
-    const nextValue = event.target.value;
-
-    setInputValue(nextValue);
-    setIsOpen(true);
-
-    if (nextValue === "") {
-      onPatientChange("", "");
-    }
-
-    if (debounceTimerRef.current !== null) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    debounceTimerRef.current = setTimeout(() => {
-      void runLookup(nextValue);
-    }, DEBOUNCE_MS);
+useEffect(() => {
+  if (isEnabled) {
+    return;
   }
 
+  if (debounceTimerRef.current !== null) {
+    clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = null;
+  }
+
+  if (abortControllerRef.current !== null) {
+    abortControllerRef.current.abort();
+    abortControllerRef.current = null;
+  }
+
+  setInputValue("");
+  setResults([]);
+  setIsOpen(false);
+}, [isEnabled]);
+
+function handleInputChange(
+  event: ChangeEvent<HTMLInputElement>,
+) {
+  const nextValue = event.target.value;
+
+  setInputValue(nextValue);
+
+  if (debounceTimerRef.current !== null) {
+    clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = null;
+  }
+
+  if (abortControllerRef.current !== null) {
+    abortControllerRef.current.abort();
+    abortControllerRef.current = null;
+  }
+
+  if (nextValue.trim() === "") {
+    setResults([]);
+    setIsOpen(false);
+    onPatientChange("", "");
+    return;
+  }
+
+  setIsOpen(true);
+
+  debounceTimerRef.current = setTimeout(() => {
+    void runLookup(nextValue.trim());
+  }, DEBOUNCE_MS);
+}  
+
   async function runLookup(query: string) {
+    if (!isEnabled) {
+      return;
+    }
+
     if (abortControllerRef.current !== null) {
       abortControllerRef.current.abort();
     }
@@ -432,14 +398,12 @@ function PatientFilter({
     try {
       const patients = await getPatients(
         query,
+        filters,
         controller.signal,
       );
 
       setResults(patients);
     } catch (error) {
-      // AbortError is expected whenever a newer keystroke cancels
-      // this request — not a real failure, so it's intentionally
-      // swallowed rather than surfaced as an error state.
       if (
         error instanceof DOMException &&
         error.name === "AbortError"
@@ -487,10 +451,11 @@ function PatientFilter({
         type="text"
         value={inputValue}
         onChange={handleInputChange}
-        onFocus={() => setIsOpen(true)}
-        placeholder="Search patients…"
+        onFocus={() => {if (isEnabled) {setIsOpen(true)}}}
+        disabled={!isEnabled}
+        placeholder={ isEnabled ? "Search patients…" : "Search another filter first"}
         role="combobox"
-        aria-expanded={isOpen}
+        aria-expanded={isEnabled && isOpen}
         aria-controls="patient-filter-results"
         autoComplete="off"
       />
@@ -501,7 +466,7 @@ function PatientFilter({
         </button>
       )}
 
-      {isOpen && results.length > 0 && (
+      {isEnabled && isOpen && results.length > 0 && (
         <ul id="patient-filter-results" role="listbox">
           {results.map((patient) => (
             <li key={patient.id} role="option">

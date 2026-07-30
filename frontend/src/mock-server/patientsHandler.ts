@@ -1,5 +1,12 @@
-import { http, HttpResponse } from "msw";
+import {
+  http,
+  HttpResponse,
+} from "msw";
 
+import {
+  NOTE_STATUS,
+  type NoteStatus,
+} from "../domain/noteAttributes";
 import { getNotes } from "./noteStore";
 import {
   simulateNetwork,
@@ -8,14 +15,47 @@ import {
 
 const MAX_RESULTS = 20;
 
+function getStatuses(
+  searchParams: URLSearchParams,
+): NoteStatus[] {
+  return searchParams
+    .getAll("status")
+    .filter(
+      (status): status is NoteStatus =>
+        NOTE_STATUS.includes(
+          status as NoteStatus,
+        ),
+    );
+}
+
+function parseDate(
+  value: string | null,
+  endOfDay: boolean,
+): number | null {
+  if (value === null || value.trim() === "") {
+    return null;
+  }
+
+  const time = endOfDay
+    ? "T23:59:59.999Z"
+    : "T00:00:00.000Z";
+
+  const timestamp = new Date(
+    `${value}${time}`,
+  ).getTime();
+
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+
+  return timestamp;
+}
+
 /*
- * There's no separate patient table in this mock backend — patients
- * only exist embedded inside NoteSummary objects. Real backends would
- * have a dedicated patients table and this would be a straightforward
- * indexed query; here, deduplication happens by scanning the store.
- * This is called out as a documented simplification, not hidden: a
- * production version would need patients to exist independently of
- * whether they currently have a note.
+ * Patients are embedded in generated notes in this mock
+ * backend. We first narrow those notes using the selected
+ * contextual filters, and then derive unique patients from
+ * the matching notes.
  */
 export const getPatientsHandler = http.get(
   "*/api/patients",
@@ -23,46 +63,139 @@ export const getPatientsHandler = http.get(
     try {
       await simulateNetwork();
     } catch (error) {
-      if (error instanceof SimulatedNetworkFailure) {
+      if (
+        error instanceof
+        SimulatedNetworkFailure
+      ) {
         return HttpResponse.json(
-          { error: "internal_error", message: "Simulated failure" },
+          {
+            error: "internal_error",
+            message: "Simulated failure",
+          },
           { status: 503 },
         );
       }
+
       throw error;
     }
 
     const url = new URL(request.url);
-    const query = (url.searchParams.get("q") ?? "").trim().toLowerCase();
 
-    const notes = getNotes();
+    const query = (
+      url.searchParams.get("q") ?? ""
+    )
+      .trim()
+      .toLowerCase();
+
+    const patientId =
+      url.searchParams.get("patientId") ?? "";
+
+    const statuses = getStatuses(
+      url.searchParams,
+    );
+
+    const reviewerId =
+      url.searchParams.get(
+        "reviewerId",
+      ) ?? "";
+
+    const createdFrom = parseDate(
+      url.searchParams.get(
+        "createdFrom",
+      ),
+      false,
+    );
+
+    const createdTo = parseDate(
+      url.searchParams.get(
+        "createdTo",
+      ),
+      true,
+    );
 
     const uniquePatients = new Map<
       string,
-      { id: string; displayName: string }
+      {
+        id: string;
+        displayName: string;
+      }
     >();
 
-    for (const note of notes) {
-      if (uniquePatients.has(note.patient.id)) {
+    for (const note of getNotes()) {
+      if (
+        patientId !== "" &&
+        note.patient.id !== patientId
+      ) {
+        continue;
+      }
+      if (
+        statuses.length > 0 &&
+        !statuses.includes(note.status)
+      ) {
+        continue;
+      }
+
+      if (
+        reviewerId !== "" &&
+        note.assignedReviewer?.id !==
+          reviewerId
+      ) {
+        continue;
+      }
+
+      const createdAt = new Date(
+        note.createdAt,
+      ).getTime();
+
+      if (
+        createdFrom !== null &&
+        createdAt < createdFrom
+      ) {
+        continue;
+      }
+
+      if (
+        createdTo !== null &&
+        createdAt > createdTo
+      ) {
         continue;
       }
 
       if (
         query !== "" &&
-        !note.patient.displayName.toLowerCase().includes(query)
+        !note.patient.displayName
+          .toLowerCase()
+          .includes(query)
       ) {
         continue;
       }
 
-      uniquePatients.set(note.patient.id, note.patient);
+      uniquePatients.set(
+        note.patient.id,
+        note.patient,
+      );
+      if (patientId !== "") {
+        break;
+      }
 
-      if (uniquePatients.size >= MAX_RESULTS) {
+      if (
+        uniquePatients.size >=
+        MAX_RESULTS
+      ) {
         break;
       }
     }
 
+    const items = Array.from(
+      uniquePatients.values(),
+    ).sort((first, second) =>
+      first.displayName.localeCompare(
+        second.displayName,
+      ),
+    );
+
     return HttpResponse.json({
-      items: Array.from(uniquePatients.values()),
+      items,
     });
   },
 );

@@ -1,39 +1,21 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import type {
-  NoteSortField,
-  SortDirection,
-} from "../utils/noteListSearchParams";
-import {
-  parseNoteListSearchParams,
-} from "../utils/noteListSearchParams";
+import type { NoteSortField, SortDirection, } from "../utils/noteListSearchParams";
+import { parseNoteListSearchParams, } from "../utils/noteListSearchParams";
 import type { NoteStatus } from "../../../domain/noteAttributes";
 import type { NoteSummary } from "../../../domain/noteSummary";
 import { getNotes } from "../api/getNotes";
-import {
-  postAssignReviewer,
-  postRequestRegeneration,
-} from "../api/bulkActions";
-import { NotesFilters, REVIEWERS } from "../components/NotesFilters";
+import { postAssignReviewer, postRequestRegeneration, } from "../api/bulkActions";
+import { NotesFilters } from "../components/NotesFilters";
 import { NotesTable } from "../components/NoteTable";
 import { NotesTableSkeleton } from "../components/NotesTableSkeleton";
+import { REVIEWERS } from "../../../mock-data/generateNoteSummary";
 
 export function NotesPage() {
   const [searchParams, setSearchParams] =
     useSearchParams();
 
-  /*
-   * Accumulated rows across every page fetched so far for the
-   * CURRENT filter set. This resets to [] whenever filters change —
-   * see the effect below — but grows via loadMore() otherwise.
-   */
   const [items, setItems] =
     useState<NoteSummary[]>([]);
 
@@ -46,18 +28,6 @@ export function NotesPage() {
   const [total, setTotal] =
     useState(0);
 
-  /*
-   * isLoading = the very first page for this filter set is in
-   * flight (skeleton replaces the whole table).
-   *
-   * isLoadingMore = a subsequent page is in flight (small inline
-   * loader at the bottom; existing rows stay exactly as they are).
-   *
-   * These are deliberately separate booleans, not one shared flag —
-   * collapsing them would make the skeleton flash every time the
-   * user scrolls near the bottom, which is the "list jumps or
-   * blinks" failure mode the doc explicitly calls out.
-   */
   const [isLoading, setIsLoading] =
     useState(true);
 
@@ -67,21 +37,6 @@ export function NotesPage() {
   const [error, setError] =
     useState<string | null>(null);
 
-  /*
-   * Selection state is deliberately NOT part of the reset-on-filter-
-   * change effect below, and is NOT cleared by loadMore(). The doc
-   * requires selection to "survive pagination and filter changes for
-   * as long as the row is in view" — meaning a selected id remains
-   * selected even if the user changes a filter and later changes it
-   * back, or scrolls away and back. It only changes via explicit user
-   * action (checking/unchecking a row, or "Clear selection").
-   *
-   * A selected id that's no longer in `items` (filtered out) simply
-   * has no visible checkbox to represent it — the Set still holds
-   * the id, so if that row reappears later, it renders as selected
-   * again. This is why selection lives independently of `items`
-   * rather than as a derived/computed property of it.
-   */
   const [selectedIds, setSelectedIds] =
     useState<Set<string>>(new Set());
 
@@ -91,18 +46,9 @@ export function NotesPage() {
   const [isBulkActionInFlight, setIsBulkActionInFlight] =
     useState(false);
 
-  /*
-   * URLSearchParams is an object. Converting it to a string
-   * gives us a stable dependency representing its contents.
-   */
   const searchParamsString =
     searchParams.toString();
 
-  /*
-   * The URL is the source of truth.
-   *
-   * We do not copy these filters into separate React state.
-   */
   const filters = useMemo(
     () =>
       parseNoteListSearchParams(
@@ -111,29 +57,8 @@ export function NotesPage() {
     [searchParamsString],
   );
 
-  /*
-   * Guards against a stale response overwriting fresher state.
-   *
-   * Scenario this prevents: user is mid-scroll (a loadMore request
-   * for the OLD filters is in flight) and changes a filter before
-   * that request resolves. Without this guard, the old request's
-   * response could land after the reset and get appended onto the
-   * new filter set's rows — silently wrong data, no error, hard to
-   * notice. Every fetch captures the current token; a response is
-   * only applied if the token it captured still matches the latest
-   * one issued.
-   */
   const requestTokenRef = useRef(0);
 
-  /*
-   * requestTokenRef (above) prevents a stale response from being
-   * APPLIED to state. abortControllerRef goes further: it actually
-   * cancels the underlying network request. The two solve different
-   * problems — the token guard is a correctness backstop that works
-   * even if cancellation is imperfect; the AbortController is what
-   * stops wasted network/server work when the user changes filters
-   * or types quickly. Keeping both is deliberate, not redundant.
-   */
   const abortControllerRef = useRef<AbortController | null>(null);
 
   function startNewRequest(): AbortSignal {
@@ -157,8 +82,6 @@ export function NotesPage() {
       const response = await getNotes(filters, null, signal);
 
       if (requestToken !== requestTokenRef.current) {
-        // A newer request has since been issued; this response is
-        // stale and must not overwrite newer state.
         return;
       }
 
@@ -171,7 +94,6 @@ export function NotesPage() {
         error instanceof DOMException &&
         error.name === "AbortError"
       ) {
-        // Cancelled by a newer request; not a real failure.
         return;
       }
 
@@ -186,16 +108,6 @@ export function NotesPage() {
   }, [filters]);
 
   const loadMore = useCallback(async () => {
-    /*
-     * Two separate guards, both necessary:
-     *
-     * - hasMore false: server has told us there is nothing left;
-     *   calling again would just re-fetch an empty tail forever.
-     * - isLoadingMore true: a page request is already in flight.
-     *   Without this, rapid scroll events (fired many times per
-     *   second) would each trigger their own request, producing
-     *   duplicate pages and duplicate rows once they all resolve.
-     */
     if (!hasMore || isLoadingMore || nextCursor === null) {
       return;
     }
@@ -225,17 +137,11 @@ export function NotesPage() {
       ) {
         return;
       }
-
-      // A failed "load more" should not blank the list that's
-      // already rendered — only surface a retry affordance for the
-      // next page, not a full-page error.
       setError("Unable to load more notes.");
     } finally {
       setIsLoadingMore(false);
     }
   }, [filters, hasMore, isLoadingMore, nextCursor]);
-
-  // ---- Selection ----
 
   function toggleRow(noteId: string) {
     setSelectedIds((previous) => {
@@ -279,27 +185,6 @@ export function NotesPage() {
     selectedIds.has(item.id),
   );
 
-  /*
-   * Eligibility for "Request regeneration" mirrors the Day 1 state
-   * machine's FAILED -> GENERATING transition (canRegenerate in
-   * noteGuards.ts): only FAILED notes qualify, and canRegenerate
-   * itself only checks actor.role — there's no per-note ownership
-   * guard for this particular transition. This is intentionally
-   * OUTSIDE canTransition() rather than calling it directly, and
-   * that gap is worth stating explicitly rather than hiding it:
-   * canTransition expects a full `Note`/`NoteVersion` shape (matching
-   * noteAttributes.ts), but the list view only has `NoteSummary`
-   * (matching noteSummary.ts) — a deliberately lighter shape for
-   * 100k+-row scale. Reconstructing a fake Note/Version per row just
-   * to satisfy the guard's type signature would be wasted work for a
-   * list screen. The Note Detail page (Day 3), which DOES have the
-   * full Note object, is where the real canTransition/getAllowedActions
-   * call belongs for actions on an individual note. This inline
-   * check exists only to gate which rows a BULK action applies to,
-   * and duplicates just the one status condition — not the general
-   * pattern. Flagging this here so it doesn't quietly drift out of
-   * sync with noteGuards.ts if that guard's condition ever changes.
-   */
   const eligibleForRegeneration = selectedNotes.filter(
     (note) => note.status === "FAILED",
   );
@@ -314,16 +199,6 @@ export function NotesPage() {
       return;
     }
 
-    /*
-     * Optimistic update pattern, same shape as everywhere else in
-     * this app: snapshot current state, apply the change immediately
-     * so the UI feels instant, then either discard the snapshot on
-     * success or restore it on failure. `previousItems` captures
-     * the exact pre-mutation array by closing over `items` at call
-     * time — not a live reference, so it can't be mutated out from
-     * under the rollback by anything else that runs while the
-     * request is in flight.
-     */
     const previousItems = items;
     const selectedIdSet = new Set(
       selectedNotes.map((note) => note.id),
@@ -346,14 +221,6 @@ export function NotesPage() {
         reviewer,
       );
 
-      /*
-       * Reconcile against the server's actual `updated` list rather
-       * than trusting the optimistic guess unconditionally. The mock
-       * backend independently enforces "not LOCKED" too (noteStore.ts),
-       * so this should normally match — but if it ever diverges (a
-       * note locked between the optimistic apply and the server
-       * processing it), the updatedIds set here is the correction.
-       */
       const updatedIdSet = new Set(response.updated);
 
       setItems((currentItems) =>
@@ -366,9 +233,6 @@ export function NotesPage() {
             return item;
           }
 
-          // Server didn't update this one; revert just this row
-          // from the pre-mutation snapshot rather than the whole
-          // list, since other rows' optimistic updates DID succeed.
           const original = previousItems.find(
             (previousItem) => previousItem.id === item.id,
           );
@@ -377,9 +241,6 @@ export function NotesPage() {
         }),
       );
     } catch {
-      // Full rollback: the request itself failed, so nothing the
-      // server said should be trusted — restore the exact
-      // pre-mutation snapshot.
       setItems(previousItems);
       setBulkActionError(
         "Unable to assign reviewer. Changes were rolled back.",
@@ -447,28 +308,13 @@ export function NotesPage() {
     }
   }
 
-  /*
-   * Filters changed (including on first mount) -> the accumulated
-   * page list for the OLD filters is meaningless for the new ones.
-   * Reset everything and fetch page 1 fresh. This is also where the
-   * request token advances, which is what invalidates any in-flight
-   * loadMore() from the previous filter set.
-   */
   useEffect(() => {
     requestTokenRef.current += 1;
     setItems([]);
     setNextCursor(null);
     setHasMore(false);
     void loadFirstPage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
-
-  /*
-   * Changing the URL changes `filters`, which the effect above
-   * already reacts to by resetting and re-fetching. No second
-   * effect is needed here — keeping both would fire two initial
-   * fetches on mount.
-   */
 
   function updateSearchParams(
     update: (
@@ -481,22 +327,8 @@ export function NotesPage() {
 
     update(nextSearchParams);
 
-    /*
-     * Later, the cursor will identify a page produced using
-     * the old filters. It must therefore be removed whenever
-     * any filter or sort value changes.
-     */
     nextSearchParams.delete("cursor");
 
-    /*
-     * By default, this creates a browser-history entry so Back and
-     * Forward can restore earlier filters. For debounced search
-     * (`replace: true`), we deliberately skip that: every pause
-     * while typing would otherwise push a new history entry, so
-     * pressing Back once would only undo the last keystroke-pause
-     * rather than leaving the search box, which is not what a user
-     * expects "Back" to do.
-     */
     setSearchParams(nextSearchParams, {
       replace: options?.replace ?? false,
     });
@@ -515,46 +347,75 @@ export function NotesPage() {
     nextSearchParams.set(name, value);
   }
 
-  function handleStatusesChange(
-    statuses: NoteStatus[],
-  ) {
-    updateSearchParams((nextSearchParams) => {
-      if (statuses.length === 0) {
-        nextSearchParams.delete("status");
-        return;
-      }
+  function clearPatientWithoutContext(
+  nextSearchParams: URLSearchParams,
+) {
+  const hasPatientContext =
+    nextSearchParams.has("status") ||
+    nextSearchParams.has("reviewer") ||
+    nextSearchParams.has("createdFrom") ||
+    nextSearchParams.has("createdTo");
 
+  if (!hasPatientContext) {
+    nextSearchParams.delete("patient");
+  }
+}
+
+  function handleStatusesChange(
+  statuses: NoteStatus[],
+) {
+  updateSearchParams((nextSearchParams) => {
+    if (statuses.length === 0) {
+      nextSearchParams.delete("status");
+    } else {
       nextSearchParams.set(
         "status",
         statuses.join(","),
       );
-    });
-  }
+    }
+
+    clearPatientWithoutContext(
+      nextSearchParams,
+    );
+  });
+}
 
   function handleReviewerChange(
-    reviewerId: string,
-  ) {
-    updateSearchParams((nextSearchParams) => {
-      setOrDeleteSearchParam(
-        nextSearchParams,
-        "reviewer",
-        reviewerId,
-      );
-    });
-  }
+  reviewerId: string,
+) {
+  updateSearchParams((nextSearchParams) => {
+    setOrDeleteSearchParam(
+      nextSearchParams,
+      "reviewer",
+      reviewerId,
+    );
 
-  function handlePatientChange(
-    patientId: string,
-    _patientDisplayName: string,
-  ) {
-    updateSearchParams((nextSearchParams) => {
+    clearPatientWithoutContext(
+      nextSearchParams,
+    );
+  });
+}
+
+  const handlePatientChange = useCallback(
+    (
+      patientId: string,
+      _patientDisplayName: string,
+    ) => {
+      const nextSearchParams =
+        new URLSearchParams(searchParams);
+
       setOrDeleteSearchParam(
         nextSearchParams,
         "patient",
         patientId,
       );
-    });
-  }
+
+      nextSearchParams.delete("cursor");
+
+      setSearchParams(nextSearchParams);
+    },
+    [searchParams, setSearchParams],
+  );
 
   function handleQueryChange(
     query: string,
@@ -572,28 +433,36 @@ export function NotesPage() {
   }
 
   function handleCreatedFromChange(
-    createdFrom: string,
-  ) {
-    updateSearchParams((nextSearchParams) => {
-      setOrDeleteSearchParam(
-        nextSearchParams,
-        "createdFrom",
-        createdFrom,
-      );
-    });
-  }
+  createdFrom: string,
+) {
+  updateSearchParams((nextSearchParams) => {
+    setOrDeleteSearchParam(
+      nextSearchParams,
+      "createdFrom",
+      createdFrom,
+    );
+
+    clearPatientWithoutContext(
+      nextSearchParams,
+    );
+  });
+}
 
   function handleCreatedToChange(
-    createdTo: string,
-  ) {
-    updateSearchParams((nextSearchParams) => {
-      setOrDeleteSearchParam(
-        nextSearchParams,
-        "createdTo",
-        createdTo,
-      );
-    });
-  }
+  createdTo: string,
+) {
+  updateSearchParams((nextSearchParams) => {
+    setOrDeleteSearchParam(
+      nextSearchParams,
+      "createdTo",
+      createdTo,
+    );
+
+    clearPatientWithoutContext(
+      nextSearchParams,
+    );
+  });
+}
 
   function handleSortFieldChange(
     sortField: NoteSortField,
@@ -635,7 +504,6 @@ export function NotesPage() {
     />
   );
 
-  // ---- Full-page states: only apply when we have no rows at all ----
 
   if (isLoading) {
     return (
@@ -683,10 +551,6 @@ export function NotesPage() {
       </main>
     );
   }
-
-  // ---- Populated state: rows are shown; loading/errors for
-  // subsequent pages render as small inline affordances below the
-  // table, never replacing what's already rendered. ----
 
   return (
     <main>
@@ -737,13 +601,6 @@ export function NotesPage() {
   );
 }
 
-/*
- * Kept local to this file rather than split out — it's small, has
- * no reuse elsewhere yet, and its only job is presenting state
- * NotesPage already owns. If a second bulk-action surface appears
- * later (e.g. the Note Detail page needs similar affordances), this
- * is the natural point to extract it into its own component file.
- */
 function BulkActionBar({
   selectedCount,
   eligibleForRegenerationCount,

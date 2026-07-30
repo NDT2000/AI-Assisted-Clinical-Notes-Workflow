@@ -48,7 +48,7 @@ const LAST_NAMES = [
   "Sullivan",
 ] as const;
 
-const REVIEWERS = [
+export const REVIEWERS = [
   {
     id: "reviewer-1",
     displayName: "Alex Kim",
