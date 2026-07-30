@@ -1,10 +1,8 @@
 import { http, HttpResponse } from "msw";
 
 import { reassignNotes, regenerateNotes } from "./noteStore";
-import {
-  simulateNetwork,
-  SimulatedNetworkFailure,
-} from "./mockNetwork";
+import { simulateNetwork, SimulatedNetworkFailure, } from "./mockNetwork";
+import type { UserRole } from "../domain/noteAttributes";
 
 interface AssignReviewerBody {
   noteIds: string[];
@@ -14,6 +12,7 @@ interface AssignReviewerBody {
 
 interface RegenerateBody {
   noteIds: string[];
+  actorRole: UserRole;
 }
 
 export const assignReviewerHandler = http.post(
@@ -61,7 +60,7 @@ export const regenerateHandler = http.post(
 
     const body = (await request.json()) as RegenerateBody;
 
-    const updated = regenerateNotes(body.noteIds);
+    const updated = regenerateNotes(body.noteIds, body.actorRole);
 
     const skipped = body.noteIds.filter(
       (id) => !updated.includes(id),

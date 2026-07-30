@@ -41,25 +41,48 @@ export type TransitionResult =
     };
 
 // Guard for moving from failed to generating
+export function canRequestRegeneration(
+  status: NoteStatus,
+  actorRole: UserRole,
+): GuardResult {
+  if (status !== "FAILED") {
+    return {
+      allowed: false,
+      reason:
+        "Only failed notes can be regenerated",
+    };
+  }
+
+  const isAllowedRole =
+    actorRole === "CLINICIAN" ||
+    actorRole === "ADMIN";
+
+  if (!isAllowedRole) {
+    return {
+      allowed: false,
+      reason:
+        "Only a Clinician or an Administrator can regenerate a note",
+    };
+  }
+
+  return {
+    allowed: true,
+    nextStatus: "GENERATING",
+  };
+}
+
+/*
+ * The full state-machine guard delegates to the same reusable
+ * eligibility rule.
+ */
 export const canRegenerate: GuardFunction = ({
-    actor,
-}) => {
-    const canRegenerateNote =
-        actor.role === "CLINICIAN" ||
-        actor.role === "ADMIN";
-
-        if(!canRegenerateNote) {
-            return {
-                allowed: false,
-                reason: "Only a Clinician or an Administrator can regenerate a note",
-            };
-        }
-
-        return {
-            allowed: true,
-            nextStatus: "GENERATING"
-        };
-};
+  note,
+  actor,
+}) =>
+  canRequestRegeneration(
+    note.status,
+    actor.role,
+  );
 
 // Guard for moving from ready_to_review to in_review
 export const canStartReview: GuardFunction = ({

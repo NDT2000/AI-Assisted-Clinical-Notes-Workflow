@@ -3,14 +3,23 @@ import { useSearchParams } from "react-router-dom";
 
 import type { NoteSortField, SortDirection, } from "../utils/noteListSearchParams";
 import { parseNoteListSearchParams, } from "../utils/noteListSearchParams";
-import type { NoteStatus } from "../../../domain/noteAttributes";
-import type { NoteSummary } from "../../../domain/noteSummary";
+import type { NoteStatus, UserRole } from "../../../domain/noteAttributes";
+import { canRequestRegeneration } from "../../../domain/noteGuards";
+import type { NoteSummary, } from "../../../domain/noteSummary";
 import { getNotes } from "../api/getNotes";
 import { postAssignReviewer, postRequestRegeneration, } from "../api/bulkActions";
 import { NotesFilters } from "../components/NotesFilters";
 import { NotesTable } from "../components/NoteTable";
 import { NotesTableSkeleton } from "../components/NotesTableSkeleton";
-import { REVIEWERS } from "../../../mock-data/generateNoteSummary";
+import { REVIEWERS, } from "../../../mock-data/generateNoteSummary";
+
+const CURRENT_ACTOR_ROLE: UserRole =
+  "CLINICIAN";
+
+type ReviewerOption = {
+  id: string;
+  displayName: string;
+};
 
 export function NotesPage() {
   const [searchParams, setSearchParams] =
@@ -37,14 +46,23 @@ export function NotesPage() {
   const [error, setError] =
     useState<string | null>(null);
 
+  const [
+    loadMoreError,
+    setLoadMoreError,
+  ] = useState<string | null>(null);
+
   const [selectedIds, setSelectedIds] =
     useState<Set<string>>(new Set());
 
-  const [bulkActionError, setBulkActionError] =
-    useState<string | null>(null);
+  const [
+    bulkActionError,
+    setBulkActionError,
+  ] = useState<string | null>(null);
 
-  const [isBulkActionInFlight, setIsBulkActionInFlight] =
-    useState(false);
+  const [
+    isBulkActionInFlight,
+    setIsBulkActionInFlight,
+  ] = useState(false);
 
   const searchParamsString =
     searchParams.toString();
@@ -52,98 +70,216 @@ export function NotesPage() {
   const filters = useMemo(
     () =>
       parseNoteListSearchParams(
-        new URLSearchParams(searchParamsString),
+        new URLSearchParams(
+          searchParamsString,
+        ),
       ),
     [searchParamsString],
   );
 
   const requestTokenRef = useRef(0);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllerRef =
+    useRef<AbortController | null>(null);
 
-  function startNewRequest(): AbortSignal {
-    if (abortControllerRef.current !== null) {
-      abortControllerRef.current.abort();
-    }
+  const loadMoreInFlightRef =
+    useRef(false);
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    return controller.signal;
-  }
-
-  const loadFirstPage = useCallback(async () => {
-    const requestToken = ++requestTokenRef.current;
-    const signal = startNewRequest();
-
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const response = await getNotes(filters, null, signal);
-
-      if (requestToken !== requestTokenRef.current) {
-        return;
+  const startNewRequest =
+    useCallback((): AbortSignal => {
+      if (
+        abortControllerRef.current !==
+        null
+      ) {
+        abortControllerRef.current.abort();
       }
 
-      setItems(response.items);
-      setNextCursor(response.cursor.next);
-      setHasMore(response.cursor.hasMore);
-      setTotal(response.meta.total);
-    } catch (error) {
+      const controller =
+        new AbortController();
+
+      abortControllerRef.current =
+        controller;
+
+      return controller.signal;
+    }, []);
+
+  const loadFirstPage =
+    useCallback(async () => {
+      const requestToken =
+        ++requestTokenRef.current;
+
+      const signal =
+        startNewRequest();
+
+      try {
+        setIsLoading(true);
+        setError(null);
+        setLoadMoreError(null);
+
+        const response = await getNotes(
+          filters,
+          null,
+          signal,
+        );
+
+        if (
+          requestToken !==
+          requestTokenRef.current
+        ) {
+          return;
+        }
+
+        setItems(response.items);
+        setNextCursor(
+          response.cursor.next,
+        );
+        setHasMore(
+          response.cursor.hasMore,
+        );
+        setTotal(response.meta.total);
+      } catch (caughtError) {
+        if (
+          caughtError instanceof
+            DOMException &&
+          caughtError.name ===
+            "AbortError"
+        ) {
+          return;
+        }
+
+        if (
+          requestToken ===
+          requestTokenRef.current
+        ) {
+          setError(
+            "Unable to load notes.",
+          );
+        }
+      } finally {
+        if (
+          requestToken ===
+          requestTokenRef.current
+        ) {
+          setIsLoading(false);
+        }
+      }
+    }, [
+      filters,
+      startNewRequest,
+    ]);
+
+  const loadMore = useCallback(
+    async (
+      forceRetry = false,
+    ): Promise<void> => {
       if (
-        error instanceof DOMException &&
-        error.name === "AbortError"
+        !hasMore ||
+        nextCursor === null ||
+        isLoadingMore ||
+        loadMoreInFlightRef.current
       ) {
         return;
       }
 
-      if (requestToken === requestTokenRef.current) {
-        setError("Unable to load notes.");
-      }
-    } finally {
-      if (requestToken === requestTokenRef.current) {
-        setIsLoading(false);
-      }
-    }
-  }, [filters]);
-
-  const loadMore = useCallback(async () => {
-    if (!hasMore || isLoadingMore || nextCursor === null) {
-      return;
-    }
-
-    const requestToken = requestTokenRef.current;
-    const signal = startNewRequest();
-
-    try {
-      setIsLoadingMore(true);
-
-      const response = await getNotes(filters, nextCursor, signal);
-
-      if (requestToken !== requestTokenRef.current) {
-        return;
-      }
-
-      setItems((previousItems) => [
-        ...previousItems,
-        ...response.items,
-      ]);
-      setNextCursor(response.cursor.next);
-      setHasMore(response.cursor.hasMore);
-    } catch (error) {
       if (
-        error instanceof DOMException &&
-        error.name === "AbortError"
+        loadMoreError !== null &&
+        !forceRetry
       ) {
         return;
       }
-      setError("Unable to load more notes.");
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [filters, hasMore, isLoadingMore, nextCursor]);
 
-  function toggleRow(noteId: string) {
+      const requestToken =
+        requestTokenRef.current;
+
+      const signal =
+        startNewRequest();
+
+      loadMoreInFlightRef.current =
+        true;
+
+      try {
+        setIsLoadingMore(true);
+        setLoadMoreError(null);
+
+        const response = await getNotes(
+          filters,
+          nextCursor,
+          signal,
+        );
+
+        if (
+          requestToken !==
+          requestTokenRef.current
+        ) {
+          return;
+        }
+
+        setItems((previousItems) => {
+          const existingIds = new Set(
+            previousItems.map(
+              (item) => item.id,
+            ),
+          );
+
+          const newItems =
+            response.items.filter(
+              (item) =>
+                !existingIds.has(
+                  item.id,
+                ),
+            );
+
+          return [
+            ...previousItems,
+            ...newItems,
+          ];
+        });
+
+        setNextCursor(
+          response.cursor.next,
+        );
+        setHasMore(
+          response.cursor.hasMore,
+        );
+        setTotal(response.meta.total);
+      } catch (caughtError) {
+        if (
+          caughtError instanceof
+            DOMException &&
+          caughtError.name ===
+            "AbortError"
+        ) {
+          return;
+        }
+
+        if (
+          requestToken ===
+          requestTokenRef.current
+        ) {
+          setLoadMoreError(
+            "Unable to load more notes.",
+          );
+        }
+      } finally {
+        loadMoreInFlightRef.current =
+          false;
+
+        setIsLoadingMore(false);
+      }
+    },
+    [
+      filters,
+      hasMore,
+      isLoadingMore,
+      loadMoreError,
+      nextCursor,
+      startNewRequest,
+    ],
+  );
+
+  function toggleRow(
+    noteId: string,
+  ) {
     setSelectedIds((previous) => {
       const next = new Set(previous);
 
@@ -160,7 +296,9 @@ export function NotesPage() {
   function toggleAllVisible() {
     const allVisibleSelected =
       items.length > 0 &&
-      items.every((item) => selectedIds.has(item.id));
+      items.every((item) =>
+        selectedIds.has(item.id),
+      );
 
     setSelectedIds((previous) => {
       const next = new Set(previous);
@@ -181,27 +319,39 @@ export function NotesPage() {
     setSelectedIds(new Set());
   }
 
-  const selectedNotes = items.filter((item) =>
-    selectedIds.has(item.id),
-  );
+  const selectedNotes =
+    items.filter((item) =>
+      selectedIds.has(item.id),
+    );
 
-  const eligibleForRegeneration = selectedNotes.filter(
-    (note) => note.status === "FAILED",
+  const eligibleForRegeneration =
+  selectedNotes.filter((note) =>
+    canRequestRegeneration(
+      note.status,
+      CURRENT_ACTOR_ROLE,
+    ).allowed,
   );
 
   const ineligibleForRegenerationCount =
-    selectedNotes.length - eligibleForRegeneration.length;
+    selectedNotes.length -
+    eligibleForRegeneration.length;
 
   async function handleBulkAssignReviewer(
-    reviewer: { id: string; displayName: string } | null,
+    reviewer: ReviewerOption | null,
   ) {
-    if (selectedNotes.length === 0 || isBulkActionInFlight) {
+    if (
+      selectedNotes.length === 0 ||
+      isBulkActionInFlight
+    ) {
       return;
     }
 
     const previousItems = items;
+
     const selectedIdSet = new Set(
-      selectedNotes.map((note) => note.id),
+      selectedNotes.map(
+        (note) => note.id,
+      ),
     );
 
     setBulkActionError(null);
@@ -209,39 +359,56 @@ export function NotesPage() {
 
     setItems((currentItems) =>
       currentItems.map((item) =>
-        selectedIdSet.has(item.id) && item.status !== "LOCKED"
-          ? { ...item, assignedReviewer: reviewer }
+        selectedIdSet.has(item.id) &&
+        item.status !== "LOCKED"
+          ? {
+              ...item,
+              assignedReviewer:
+                reviewer,
+            }
           : item,
       ),
     );
 
     try {
-      const response = await postAssignReviewer(
-        Array.from(selectedIdSet),
-        reviewer,
-      );
+      const response =
+        await postAssignReviewer(
+          Array.from(selectedIdSet),
+          reviewer,
+        );
 
-      const updatedIdSet = new Set(response.updated);
+      const updatedIdSet =
+        new Set(response.updated);
 
       setItems((currentItems) =>
         currentItems.map((item) => {
-          if (!selectedIdSet.has(item.id)) {
+          if (
+            !selectedIdSet.has(
+              item.id,
+            )
+          ) {
             return item;
           }
 
-          if (updatedIdSet.has(item.id)) {
+          if (
+            updatedIdSet.has(item.id)
+          ) {
             return item;
           }
 
-          const original = previousItems.find(
-            (previousItem) => previousItem.id === item.id,
-          );
+          const original =
+            previousItems.find(
+              (previousItem) =>
+                previousItem.id ===
+                item.id,
+            );
 
           return original ?? item;
         }),
       );
     } catch {
       setItems(previousItems);
+
       setBulkActionError(
         "Unable to assign reviewer. Changes were rolled back.",
       );
@@ -252,15 +419,19 @@ export function NotesPage() {
 
   async function handleBulkRegenerate() {
     if (
-      eligibleForRegeneration.length === 0 ||
+      eligibleForRegeneration.length ===
+        0 ||
       isBulkActionInFlight
     ) {
       return;
     }
 
     const previousItems = items;
+
     const eligibleIdSet = new Set(
-      eligibleForRegeneration.map((note) => note.id),
+      eligibleForRegeneration.map(
+        (note) => note.id,
+      ),
     );
 
     setBulkActionError(null);
@@ -269,37 +440,53 @@ export function NotesPage() {
     setItems((currentItems) =>
       currentItems.map((item) =>
         eligibleIdSet.has(item.id)
-          ? { ...item, status: "GENERATING" }
+          ? {
+              ...item,
+              status: "GENERATING",
+            }
           : item,
       ),
     );
 
     try {
-      const response = await postRequestRegeneration(
-        Array.from(eligibleIdSet),
-      );
+      const response =
+        await postRequestRegeneration(
+          Array.from(eligibleIdSet,),
+          CURRENT_ACTOR_ROLE,
+        );
 
-      const updatedIdSet = new Set(response.updated);
+      const updatedIdSet =
+        new Set(response.updated);
 
       setItems((currentItems) =>
         currentItems.map((item) => {
-          if (!eligibleIdSet.has(item.id)) {
+          if (
+            !eligibleIdSet.has(
+              item.id,
+            )
+          ) {
             return item;
           }
 
-          if (updatedIdSet.has(item.id)) {
+          if (
+            updatedIdSet.has(item.id)
+          ) {
             return item;
           }
 
-          const original = previousItems.find(
-            (previousItem) => previousItem.id === item.id,
-          );
+          const original =
+            previousItems.find(
+              (previousItem) =>
+                previousItem.id ===
+                item.id,
+            );
 
           return original ?? item;
         }),
       );
     } catch {
       setItems(previousItems);
+
       setBulkActionError(
         "Unable to request regeneration. Changes were rolled back.",
       );
@@ -309,33 +496,61 @@ export function NotesPage() {
   }
 
   useEffect(() => {
-    requestTokenRef.current += 1;
+    setSelectedIds(new Set());
+    setBulkActionError(null);
+  }, [searchParamsString]);
+
+  useEffect(() => {
     setItems([]);
     setNextCursor(null);
     setHasMore(false);
+    setTotal(0);
+    setLoadMoreError(null);
+
     void loadFirstPage();
-  }, [filters]);
+  }, [loadFirstPage]);
+
+  useEffect(() => {
+    return () => {
+      if (
+        abortControllerRef.current !==
+        null
+      ) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   function updateSearchParams(
     update: (
       nextSearchParams: URLSearchParams,
     ) => void,
-    options?: { replace?: boolean },
+    options?: {
+      replace?: boolean;
+    },
   ) {
     const nextSearchParams =
-      new URLSearchParams(searchParams);
+      new URLSearchParams(
+        searchParams,
+      );
 
     update(nextSearchParams);
 
     nextSearchParams.delete("cursor");
 
-    setSearchParams(nextSearchParams, {
-      replace: options?.replace ?? false,
-    });
+    setSearchParams(
+      nextSearchParams,
+      {
+        replace:
+          options?.replace ??
+          false,
+      },
+    );
   }
 
   function setOrDeleteSearchParam(
-    nextSearchParams: URLSearchParams,
+    nextSearchParams:
+      URLSearchParams,
     name: string,
     value: string,
   ) {
@@ -344,78 +559,90 @@ export function NotesPage() {
       return;
     }
 
-    nextSearchParams.set(name, value);
+    nextSearchParams.set(
+      name,
+      value,
+    );
   }
-
-  function clearPatientWithoutContext(
-  nextSearchParams: URLSearchParams,
-) {
-  const hasPatientContext =
-    nextSearchParams.has("status") ||
-    nextSearchParams.has("reviewer") ||
-    nextSearchParams.has("createdFrom") ||
-    nextSearchParams.has("createdTo");
-
-  if (!hasPatientContext) {
-    nextSearchParams.delete("patient");
-  }
-}
 
   function handleStatusesChange(
-  statuses: NoteStatus[],
-) {
-  updateSearchParams((nextSearchParams) => {
-    if (statuses.length === 0) {
-      nextSearchParams.delete("status");
-    } else {
-      nextSearchParams.set(
-        "status",
-        statuses.join(","),
-      );
-    }
+    statuses: NoteStatus[],
+  ) {
+    updateSearchParams(
+      (nextSearchParams) => {
+        if (
+          statuses.length === 0
+        ) {
+          nextSearchParams.delete(
+            "status",
+          );
+        } else {
+          nextSearchParams.set(
+            "status",
+            statuses.join(","),
+          );
+        }
 
-    clearPatientWithoutContext(
-      nextSearchParams,
+        nextSearchParams.delete(
+          "patient",
+        );
+      },
     );
-  });
-}
+  }
 
   function handleReviewerChange(
-  reviewerId: string,
-) {
-  updateSearchParams((nextSearchParams) => {
-    setOrDeleteSearchParam(
-      nextSearchParams,
-      "reviewer",
-      reviewerId,
+    reviewerId: string,
+  ) {
+    updateSearchParams(
+      (nextSearchParams) => {
+        setOrDeleteSearchParam(
+          nextSearchParams,
+          "reviewer",
+          reviewerId,
+        );
+
+        nextSearchParams.delete(
+          "patient",
+        );
+      },
     );
+  }
 
-    clearPatientWithoutContext(
-      nextSearchParams,
+  const handlePatientChange =
+    useCallback(
+      (
+        patientId: string,
+        _patientDisplayName: string,
+      ) => {
+        const nextSearchParams =
+          new URLSearchParams(
+            searchParams,
+          );
+
+        if (patientId === "") {
+          nextSearchParams.delete(
+            "patient",
+          );
+        } else {
+          nextSearchParams.set(
+            "patient",
+            patientId,
+          );
+        }
+
+        nextSearchParams.delete(
+          "cursor",
+        );
+
+        setSearchParams(
+          nextSearchParams,
+        );
+      },
+      [
+        searchParams,
+        setSearchParams,
+      ],
     );
-  });
-}
-
-  const handlePatientChange = useCallback(
-    (
-      patientId: string,
-      _patientDisplayName: string,
-    ) => {
-      const nextSearchParams =
-        new URLSearchParams(searchParams);
-
-      setOrDeleteSearchParam(
-        nextSearchParams,
-        "patient",
-        patientId,
-      );
-
-      nextSearchParams.delete("cursor");
-
-      setSearchParams(nextSearchParams);
-    },
-    [searchParams, setSearchParams],
-  );
 
   function handleQueryChange(
     query: string,
@@ -428,82 +655,103 @@ export function NotesPage() {
           query,
         );
       },
-      { replace: true },
+      {
+        replace: true,
+      },
     );
   }
 
   function handleCreatedFromChange(
-  createdFrom: string,
-) {
-  updateSearchParams((nextSearchParams) => {
-    setOrDeleteSearchParam(
-      nextSearchParams,
-      "createdFrom",
-      createdFrom,
-    );
+    createdFrom: string,
+  ) {
+    updateSearchParams(
+      (nextSearchParams) => {
+        setOrDeleteSearchParam(
+          nextSearchParams,
+          "createdFrom",
+          createdFrom,
+        );
 
-    clearPatientWithoutContext(
-      nextSearchParams,
+        nextSearchParams.delete(
+          "patient",
+        );
+      },
     );
-  });
-}
+  }
 
   function handleCreatedToChange(
-  createdTo: string,
-) {
-  updateSearchParams((nextSearchParams) => {
-    setOrDeleteSearchParam(
-      nextSearchParams,
-      "createdTo",
-      createdTo,
-    );
+    createdTo: string,
+  ) {
+    updateSearchParams(
+      (nextSearchParams) => {
+        setOrDeleteSearchParam(
+          nextSearchParams,
+          "createdTo",
+          createdTo,
+        );
 
-    clearPatientWithoutContext(
-      nextSearchParams,
+        nextSearchParams.delete(
+          "patient",
+        );
+      },
     );
-  });
-}
+  }
 
   function handleSortFieldChange(
     sortField: NoteSortField,
   ) {
-    updateSearchParams((nextSearchParams) => {
-      nextSearchParams.set(
-        "sort",
-        `${sortField}:${filters.sortDirection}`,
-      );
-    });
+    updateSearchParams(
+      (nextSearchParams) => {
+        nextSearchParams.set(
+          "sort",
+          `${sortField}:${filters.sortDirection}`,
+        );
+      },
+    );
   }
 
   function handleSortDirectionChange(
     sortDirection: SortDirection,
   ) {
-    updateSearchParams((nextSearchParams) => {
-      nextSearchParams.set(
-        "sort",
-        `${filters.sortField}:${sortDirection}`,
-      );
-    });
+    updateSearchParams(
+      (nextSearchParams) => {
+        nextSearchParams.set(
+          "sort",
+          `${filters.sortField}:${sortDirection}`,
+        );
+      },
+    );
   }
 
   const filtersSection = (
     <NotesFilters
       filters={filters}
-      onStatusesChange={handleStatusesChange}
-      onReviewerChange={handleReviewerChange}
-      onPatientChange={handlePatientChange}
+      onStatusesChange={
+        handleStatusesChange
+      }
+      onReviewerChange={
+        handleReviewerChange
+      }
+      onPatientChange={
+        handlePatientChange
+      }
       onCreatedFromChange={
         handleCreatedFromChange
       }
-      onCreatedToChange={handleCreatedToChange}
-      onSortFieldChange={handleSortFieldChange}
+      onCreatedToChange={
+        handleCreatedToChange
+      }
+      onSortFieldChange={
+        handleSortFieldChange
+      }
       onSortDirectionChange={
         handleSortDirectionChange
       }
-      onQueryChange={handleQueryChange}
+      onQueryChange={
+        handleQueryChange
+      }
     />
   );
-
 
   if (isLoading) {
     return (
@@ -517,18 +765,25 @@ export function NotesPage() {
     );
   }
 
-  if (error !== null && items.length === 0) {
+  if (
+    error !== null &&
+    items.length === 0
+  ) {
     return (
       <main>
         <h1>Notes</h1>
 
         {filtersSection}
 
-        <p role="alert">{error}</p>
+        <p role="alert">
+          {error}
+        </p>
 
         <button
           type="button"
-          onClick={() => void loadFirstPage()}
+          onClick={() =>
+            void loadFirstPage()
+          }
         >
           Try again
         </button>
@@ -559,41 +814,66 @@ export function NotesPage() {
       {filtersSection}
 
       <p>
-        Showing {items.length} of {total} notes
+        Showing {items.length} of{" "}
+        {total} notes
       </p>
 
       {selectedIds.size > 0 && (
         <BulkActionBar
-          selectedCount={selectedIds.size}
+          selectedCount={
+            selectedIds.size
+          }
           eligibleForRegenerationCount={
             eligibleForRegeneration.length
           }
           ineligibleForRegenerationCount={
             ineligibleForRegenerationCount
           }
-          isBusy={isBulkActionInFlight}
+          isBusy={
+            isBulkActionInFlight
+          }
           error={bulkActionError}
-          onAssignReviewer={handleBulkAssignReviewer}
-          onRegenerate={() => void handleBulkRegenerate()}
-          onClearSelection={clearSelection}
+          onAssignReviewer={
+            handleBulkAssignReviewer
+          }
+          onRegenerate={() =>
+            void handleBulkRegenerate()
+          }
+          onClearSelection={
+            clearSelection
+          }
         />
       )}
 
       <NotesTable
+        key={searchParamsString}
         notes={items}
         hasMore={hasMore}
-        isLoadingMore={isLoadingMore}
+        isLoadingMore={
+          isLoadingMore
+        }
         onLoadMore={loadMore}
         selectedIds={selectedIds}
         onToggleRow={toggleRow}
-        onToggleAllVisible={toggleAllVisible}
+        onToggleAllVisible={
+          toggleAllVisible
+        }
       />
 
-      {error !== null && items.length > 0 && (
+      {loadMoreError !== null && (
         <div role="alert">
-          <p>{error}</p>
-          <button type="button" onClick={() => void loadMore()}>
-            Retry
+          <p>{loadMoreError}</p>
+
+          <button
+            type="button"
+            onClick={() =>
+              void loadMore(true)
+            }
+            disabled={
+              isLoadingMore
+            }
+          >
+            Retry loading more
           </button>
         </div>
       )}
@@ -612,50 +892,80 @@ function BulkActionBar({
   onClearSelection,
 }: {
   selectedCount: number;
-  eligibleForRegenerationCount: number;
-  ineligibleForRegenerationCount: number;
+  eligibleForRegenerationCount:
+    number;
+  ineligibleForRegenerationCount:
+    number;
   isBusy: boolean;
   error: string | null;
   onAssignReviewer: (
-    reviewer: { id: string; displayName: string } | null,
+    reviewer:
+      | ReviewerOption
+      | null,
   ) => void;
   onRegenerate: () => void;
   onClearSelection: () => void;
 }) {
-  const [selectedReviewerId, setSelectedReviewerId] =
-    useState("");
+  const [
+    selectedReviewerId,
+    setSelectedReviewerId,
+  ] = useState("");
 
   function handleAssignClick() {
     const reviewer =
-      REVIEWERS.find((r) => r.id === selectedReviewerId) ?? null;
+      REVIEWERS.find(
+        (candidate) =>
+          candidate.id ===
+          selectedReviewerId,
+      ) ?? null;
 
     onAssignReviewer(reviewer);
   }
 
   return (
-    <div role="toolbar" aria-label="Bulk actions">
-      <p>{selectedCount} selected</p>
+    <div
+      role="toolbar"
+      aria-label="Bulk actions"
+    >
+      <p>
+        {selectedCount} selected
+      </p>
 
       <select
         aria-label="Reviewer to assign"
         value={selectedReviewerId}
         onChange={(event) =>
-          setSelectedReviewerId(event.target.value)
+          setSelectedReviewerId(
+            event.target.value,
+          )
         }
         disabled={isBusy}
       >
-        <option value="">Choose reviewer…</option>
-        {REVIEWERS.map((reviewer) => (
-          <option key={reviewer.id} value={reviewer.id}>
-            {reviewer.displayName}
-          </option>
-        ))}
+        <option value="">
+          Choose reviewer…
+        </option>
+
+        {REVIEWERS.map(
+          (reviewer) => (
+            <option
+              key={reviewer.id}
+              value={reviewer.id}
+            >
+              {
+                reviewer.displayName
+              }
+            </option>
+          ),
+        )}
       </select>
 
       <button
         type="button"
         onClick={handleAssignClick}
-        disabled={isBusy || selectedReviewerId === ""}
+        disabled={
+          isBusy ||
+          selectedReviewerId === ""
+        }
       >
         Assign reviewer
       </button>
@@ -663,29 +973,56 @@ function BulkActionBar({
       <button
         type="button"
         onClick={onRegenerate}
-        disabled={isBusy || eligibleForRegenerationCount === 0}
+        disabled={
+          isBusy ||
+          eligibleForRegenerationCount ===
+            0
+        }
         title={
-          eligibleForRegenerationCount === 0
+          eligibleForRegenerationCount ===
+          0
             ? "Only FAILED notes are eligible for regeneration."
             : undefined
         }
       >
-        Request regeneration ({eligibleForRegenerationCount})
+        Request regeneration (
+        {
+          eligibleForRegenerationCount
+        }
+        )
       </button>
 
-      {ineligibleForRegenerationCount > 0 && (
+      {ineligibleForRegenerationCount >
+        0 && (
         <p>
-          {ineligibleForRegenerationCount} selected note
-          {ineligibleForRegenerationCount === 1 ? "" : "s"} not
-          eligible for regeneration (not FAILED).
+          {
+            ineligibleForRegenerationCount
+          }{" "}
+          selected note
+          {ineligibleForRegenerationCount ===
+          1
+            ? ""
+            : "s"}{" "}
+          not eligible for regeneration
+          (not FAILED).
         </p>
       )}
 
-      <button type="button" onClick={onClearSelection}>
+      <button
+        type="button"
+        onClick={
+          onClearSelection
+        }
+        disabled={isBusy}
+      >
         Clear selection
       </button>
 
-      {error !== null && <p role="alert">{error}</p>}
+      {error !== null && (
+        <p role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

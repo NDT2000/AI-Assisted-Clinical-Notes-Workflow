@@ -1,3 +1,5 @@
+import type { UserRole, } from "../../../domain/noteAttributes";
+
 interface AssignReviewerResponse {
   updated: string[];
 }
@@ -33,13 +35,14 @@ export async function postAssignReviewer(
 
 export async function postRequestRegeneration(
   noteIds: string[],
+  actorRole: UserRole,
 ): Promise<RegenerateResponse> {
   const response = await fetch(
     "/api/notes/bulk/regenerate",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ noteIds }),
+      body: JSON.stringify({ noteIds, actorRole, }),
     },
   );
 

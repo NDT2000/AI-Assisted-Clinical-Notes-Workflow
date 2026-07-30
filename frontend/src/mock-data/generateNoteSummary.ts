@@ -152,15 +152,27 @@ function generateCreatedDate(
   referenceDate: Date,
 ): Date {
   const maximumAgeInDays = 180;
-  const daysAgo = randomInteger(0, maximumAgeInDays, random);
+  const daysAgo = randomInteger(
+    0,
+    maximumAgeInDays,
+    random,
+  );
 
   const createdAt = new Date(referenceDate);
-  createdAt.setUTCDate(createdAt.getUTCDate() - daysAgo);
 
-  const randomHour = randomInteger(8, 17, random);
-  const randomMinute = randomInteger(0, 59, random);
+  createdAt.setUTCDate(
+    createdAt.getUTCDate() - daysAgo,
+  );
 
-  createdAt.setUTCHours(randomHour, randomMinute, 0, 0);
+  const randomHour = randomInteger(8, 17, random,);
+
+  const randomMinute = randomInteger(0, 59, random,);
+
+  createdAt.setUTCHours(randomHour, randomMinute, 0, 0,);
+
+  if (createdAt > referenceDate) {
+    return new Date(referenceDate);
+  }
 
   return createdAt;
 }

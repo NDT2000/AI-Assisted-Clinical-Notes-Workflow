@@ -1,5 +1,7 @@
 import { generateNoteSummaries } from "../mock-data/generateNoteSummary";
 import type { NoteSummary } from "../domain/noteSummary";
+import type { UserRole } from "../domain/noteAttributes";
+import { canRequestRegeneration } from "../domain/noteGuards";
 
 /*
  * The store is intentionally a plain in-memory array, not a "mock" in
@@ -23,16 +25,6 @@ let notes: NoteSummary[] = generateNoteSummaries(
 export function getNotes(): NoteSummary[] {
   return notes;
 }
-
-/*
- * Both mutation functions below return the set of ids ACTUALLY
- * changed, not just "success: true". This matters because a bulk
- * action can be partially valid — e.g. 2 of 3 selected notes are
- * FAILED and eligible for regeneration, 1 is APPROVED and isn't.
- * The caller (the handler) needs to distinguish "updated" from
- * "skipped as ineligible" so the frontend can show a partial-success
- * message rather than a flat success/fail.
- */
 
 export function reassignNotes(
   noteIds: string[],
@@ -62,6 +54,7 @@ export function reassignNotes(
 
 export function regenerateNotes(
   noteIds: string[],
+  actorRole: UserRole,
 ): string[] {
   const noteIdSet = new Set(noteIds);
   const updatedIds: string[] = [];
@@ -71,23 +64,19 @@ export function regenerateNotes(
       return note;
     }
 
-    /*
-     * Mirrors the domain state machine's FAILED -> GENERATING
-     * transition (noteTransitions.ts). This mock store doesn't run
-     * the actual guard functions from noteGuards.ts — see the
-     * frontend eligibility check for why that's a known, documented
-     * gap rather than an oversight — but the STATUS condition here
-     * must stay consistent with the real transition table, or the
-     * mock backend and the real state machine would silently
-     * disagree about what's allowed.
-     */
-    if (note.status !== "FAILED") {
+    const eligibility =
+      canRequestRegeneration(
+        note.status,
+        actorRole,
+      );
+
+    if (!eligibility.allowed) {
       return note;
     }
 
     updatedIds.push(note.id);
 
-    return { ...note, status: "GENERATING" as const };
+    return { ...note, status: eligibility.nextStatus};
   });
 
   return updatedIds;
