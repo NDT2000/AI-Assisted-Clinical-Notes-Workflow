@@ -322,87 +322,216 @@ function PatientFilter({
     patientDisplayName: string,
   ) => void;
 }) {
-  const [inputValue, setInputValue] = useState("");
-  const [results, setResults] = useState<PatientOption[]>([]);
-  const [isOpen, setIsOpen] = useState(false);
+  const [inputValue, setInputValue] =
+    useState("");
 
-  const debounceTimerRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  const [results, setResults] =
+    useState<PatientOption[]>([]);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const [isOpen, setIsOpen] =
+    useState(false);
 
-useEffect(() => {
-  if (isEnabled) {
-    return;
-  }
+  const [isLoading, setIsLoading] =
+    useState(false);
 
-  if (debounceTimerRef.current !== null) {
-    clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = null;
-  }
+  const debounceTimerRef = useRef<
+    ReturnType<typeof setTimeout> | null
+  >(null);
 
-  if (abortControllerRef.current !== null) {
-    abortControllerRef.current.abort();
-    abortControllerRef.current = null;
-  }
+  const lookupAbortControllerRef =
+    useRef<AbortController | null>(null);
 
-  setInputValue("");
-  setResults([]);
-  setIsOpen(false);
-}, [isEnabled]);
+  /*
+   * Keep the latest callback available to effects without
+   * forcing those effects to rerun whenever the parent
+   * component creates a new callback reference.
+   */
+  const onPatientChangeRef =
+    useRef(onPatientChange);
 
-function handleInputChange(
-  event: ChangeEvent<HTMLInputElement>,
-) {
-  const nextValue = event.target.value;
+  useEffect(() => {
+    onPatientChangeRef.current =
+      onPatientChange;
+  }, [onPatientChange]);
 
-  setInputValue(nextValue);
+  /*
+   * The URL stores the stable patient ID rather than the
+   * patient's display name.
+   *
+   * Resolve the display name when:
+   * - the page is refreshed;
+   * - a copied URL is opened;
+   * - browser Back or Forward restores an older patient ID.
+   */
+  useEffect(() => {
+    if (patientId === "") {
+      setInputValue("");
+      return;
+    }
 
-  if (debounceTimerRef.current !== null) {
-    clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = null;
-  }
+    const controller =
+      new AbortController();
 
-  if (abortControllerRef.current !== null) {
-    abortControllerRef.current.abort();
-    abortControllerRef.current = null;
-  }
+    async function restorePatientName() {
+      try {
+        const patient =
+          await getPatientById(
+            patientId,
+            controller.signal,
+          );
 
-  if (nextValue.trim() === "") {
+        if (patient === null) {
+          /*
+           * The URL contains a patient ID that does not
+           * exist in the current mock dataset.
+           */
+          onPatientChangeRef.current(
+            "",
+            "",
+          );
+
+          return;
+        }
+
+        setInputValue(
+          patient.displayName,
+        );
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        /*
+         * Do not remove a potentially valid patient ID
+         * because of a temporary network failure.
+         */
+      }
+    }
+
+    void restorePatientName();
+
+    return () => {
+      controller.abort();
+    };
+  }, [patientId]);
+
+  /*
+   * Patient is a dependent filter.
+   *
+   * When the final contextual filter is removed:
+   * - cancel pending searches;
+   * - clear typeahead state;
+   * - remove the patient filter from the URL.
+   */
+  useEffect(() => {
+    if (isEnabled) {
+      return;
+    }
+
+    if (
+      debounceTimerRef.current !== null
+    ) {
+      clearTimeout(
+        debounceTimerRef.current,
+      );
+
+      debounceTimerRef.current = null;
+    }
+
+    if (
+      lookupAbortControllerRef.current !==
+      null
+    ) {
+      lookupAbortControllerRef.current.abort();
+
+      lookupAbortControllerRef.current =
+        null;
+    }
+
+    setInputValue("");
     setResults([]);
     setIsOpen(false);
-    onPatientChange("", "");
-    return;
-  }
+    setIsLoading(false);
 
-  setIsOpen(true);
+    if (patientId !== "") {
+      onPatientChangeRef.current("", "");
+    }
+  }, [isEnabled, patientId]);
 
-  debounceTimerRef.current = setTimeout(() => {
-    void runLookup(nextValue.trim());
-  }, DEBOUNCE_MS);
-}  
+  /*
+   * Existing patient suggestions may no longer be valid
+   * after status, reviewer or date filters change.
+   */
+  useEffect(() => {
+    if (
+      debounceTimerRef.current !== null
+    ) {
+      clearTimeout(
+        debounceTimerRef.current,
+      );
 
-  async function runLookup(query: string) {
+      debounceTimerRef.current = null;
+    }
+
+    if (
+      lookupAbortControllerRef.current !==
+      null
+    ) {
+      lookupAbortControllerRef.current.abort();
+
+      lookupAbortControllerRef.current =
+        null;
+    }
+
+    setResults([]);
+    setIsOpen(false);
+    setIsLoading(false);
+  }, [
+    filters.statuses,
+    filters.reviewerId,
+    filters.createdFrom,
+    filters.createdTo,
+  ]);
+
+  async function runLookup(
+    query: string,
+  ) {
     if (!isEnabled) {
       return;
     }
 
-    if (abortControllerRef.current !== null) {
-      abortControllerRef.current.abort();
+    if (
+      lookupAbortControllerRef.current !==
+      null
+    ) {
+      lookupAbortControllerRef.current.abort();
     }
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+    const controller =
+      new AbortController();
+
+    lookupAbortControllerRef.current =
+      controller;
+
+    setIsLoading(true);
 
     try {
-      const patients = await getPatients(
-        query,
-        filters,
-        controller.signal,
-      );
+      const patients =
+        await getPatients(
+          query,
+          filters,
+          controller.signal,
+        );
+
+      if (controller.signal.aborted) {
+        return;
+      }
 
       setResults(patients);
+      setIsOpen(true);
     } catch (error) {
       if (
         error instanceof DOMException &&
@@ -412,30 +541,166 @@ function handleInputChange(
       }
 
       setResults([]);
+      setIsOpen(true);
+    } finally {
+      if (
+        lookupAbortControllerRef.current ===
+        controller
+      ) {
+        lookupAbortControllerRef.current =
+          null;
+
+        setIsLoading(false);
+      }
     }
   }
 
-  function handleSelect(patient: PatientOption) {
-    setInputValue(patient.displayName);
+  function handleInputChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    if (!isEnabled) {
+      return;
+    }
+
+    const nextValue =
+      event.target.value;
+
+    setInputValue(nextValue);
+
+    if (
+      debounceTimerRef.current !== null
+    ) {
+      clearTimeout(
+        debounceTimerRef.current,
+      );
+
+      debounceTimerRef.current = null;
+    }
+
+    /*
+     * Cancel the previous request immediately rather than
+     * waiting for the next debounced request to begin.
+     */
+    if (
+      lookupAbortControllerRef.current !==
+      null
+    ) {
+      lookupAbortControllerRef.current.abort();
+
+      lookupAbortControllerRef.current =
+        null;
+    }
+
+    const trimmedValue =
+      nextValue.trim();
+
+    if (trimmedValue === "") {
+      setResults([]);
+      setIsOpen(false);
+      setIsLoading(false);
+
+      if (patientId !== "") {
+        onPatientChange("", "");
+      }
+
+      return;
+    }
+
+    setIsOpen(true);
+
+    debounceTimerRef.current =
+      setTimeout(() => {
+        debounceTimerRef.current =
+          null;
+
+        void runLookup(trimmedValue);
+      }, DEBOUNCE_MS);
+  }
+
+  function handleSelect(
+    patient: PatientOption,
+  ) {
+    if (
+      debounceTimerRef.current !== null
+    ) {
+      clearTimeout(
+        debounceTimerRef.current,
+      );
+
+      debounceTimerRef.current = null;
+    }
+
+    if (
+      lookupAbortControllerRef.current !==
+      null
+    ) {
+      lookupAbortControllerRef.current.abort();
+
+      lookupAbortControllerRef.current =
+        null;
+    }
+
+    setInputValue(
+      patient.displayName,
+    );
+
+    setResults([]);
     setIsOpen(false);
-    onPatientChange(patient.id, patient.displayName);
+    setIsLoading(false);
+
+    onPatientChange(
+      patient.id,
+      patient.displayName,
+    );
   }
 
   function handleClear() {
+    if (
+      debounceTimerRef.current !== null
+    ) {
+      clearTimeout(
+        debounceTimerRef.current,
+      );
+
+      debounceTimerRef.current = null;
+    }
+
+    if (
+      lookupAbortControllerRef.current !==
+      null
+    ) {
+      lookupAbortControllerRef.current.abort();
+
+      lookupAbortControllerRef.current =
+        null;
+    }
+
     setInputValue("");
     setResults([]);
     setIsOpen(false);
+    setIsLoading(false);
+
     onPatientChange("", "");
   }
 
+  /*
+   * Cancel timers and requests when the component unmounts.
+   */
   useEffect(() => {
     return () => {
-      if (debounceTimerRef.current !== null) {
-        clearTimeout(debounceTimerRef.current);
+      if (
+        debounceTimerRef.current !== null
+      ) {
+        clearTimeout(
+          debounceTimerRef.current,
+        );
       }
 
-      if (abortControllerRef.current !== null) {
-        abortControllerRef.current.abort();
+      if (
+        lookupAbortControllerRef.current !==
+        null
+      ) {
+        lookupAbortControllerRef.current.abort();
       }
     };
   }, []);
@@ -451,35 +716,83 @@ function handleInputChange(
         type="text"
         value={inputValue}
         onChange={handleInputChange}
-        onFocus={() => {if (isEnabled) {setIsOpen(true)}}}
+        onFocus={() => {
+          if (
+            isEnabled &&
+            inputValue.trim() !== ""
+          ) {
+            setIsOpen(true);
+          }
+        }}
         disabled={!isEnabled}
-        placeholder={ isEnabled ? "Search patients…" : "Search another filter first"}
+        placeholder={
+          isEnabled
+            ? "Search patients…"
+            : "Select another filter first"
+        }
         role="combobox"
-        aria-expanded={isEnabled && isOpen}
+        aria-autocomplete="list"
+        aria-expanded={
+          isEnabled && isOpen
+        }
         aria-controls="patient-filter-results"
         autoComplete="off"
       />
 
       {patientId !== "" && (
-        <button type="button" onClick={handleClear}>
+        <button
+          type="button"
+          onClick={handleClear}
+          disabled={!isEnabled}
+        >
           Clear
         </button>
       )}
 
-      {isEnabled && isOpen && results.length > 0 && (
-        <ul id="patient-filter-results" role="listbox">
-          {results.map((patient) => (
-            <li key={patient.id} role="option">
-              <button
-                type="button"
-                onClick={() => handleSelect(patient)}
+      {isEnabled &&
+        isOpen &&
+        isLoading && (
+          <p role="status">
+            Searching patients…
+          </p>
+        )}
+
+      {isEnabled &&
+        isOpen &&
+        !isLoading &&
+        results.length > 0 && (
+          <ul
+            id="patient-filter-results"
+            role="listbox"
+          >
+            {results.map((patient) => (
+              <li
+                key={patient.id}
+                role="option"
+                aria-selected={
+                  patient.id === patientId
+                }
               >
-                {patient.displayName}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSelect(patient)
+                  }
+                >
+                  {patient.displayName}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+      {isEnabled &&
+        isOpen &&
+        !isLoading &&
+        inputValue.trim() !== "" &&
+        results.length === 0 && (
+          <p>No matching patients.</p>
+        )}
     </div>
   );
 }
