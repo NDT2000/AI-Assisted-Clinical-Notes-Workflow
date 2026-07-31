@@ -1,12 +1,28 @@
 import { generateNoteSummaries } from "../mock-data/generateNoteSummary";
 import type { NoteSummary } from "../domain/noteSummary";
-import type { UserRole } from "../domain/noteAttributes";
+import type { SoapContent, UserRole } from "../domain/noteAttributes";
 import { canRequestRegeneration } from "../domain/noteGuards";
-import type { NoteDetail } from "../domain/noteDetail";
+import type { NoteDetail, NoteVersionDetail } from "../domain/noteDetail";
 import { generateNoteDetail } from "../mock-data/generateNoteDetail";
+import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../domain/noteSave";
 
 const DEFAULT_SEED_COUNT = 5_000;
 const DEFAULT_SEED_VALUE = 42;
+
+export type SaveNoteVersionStoreResult =
+  | {
+      outcome: "saved";
+      response: SaveNoteVersionResponse;
+    }
+  | {
+      outcome: "not-found";
+    }
+  | {
+      outcome: "version-conflict";
+      currentVersion: NoteVersionDetail;
+    };
+
+const CONTENT_PREVIEW_MAX_LENGTH = 120;
 
 let notes: NoteSummary[] = generateNoteSummaries(
   DEFAULT_SEED_COUNT,
@@ -14,6 +30,50 @@ let notes: NoteSummary[] = generateNoteSummaries(
 );
 
 const noteDetails = new Map<string, NoteDetail>();
+
+function createContentPreview(
+  content: SoapContent,
+): string {
+  const firstNonEmptySection = [
+    content.subjective,
+    content.objective,
+    content.assessment,
+    content.plan,
+  ]
+    .map((section) => section.trim())
+    .find((section) => section.length > 0);
+
+  if (!firstNonEmptySection) {
+    return "No note content available.";
+  }
+
+  if (
+    firstNonEmptySection.length <=
+    CONTENT_PREVIEW_MAX_LENGTH
+  ) {
+    return firstNonEmptySection;
+  }
+
+  return `${firstNonEmptySection.slice(
+    0,
+    CONTENT_PREVIEW_MAX_LENGTH - 3,
+  )}...`;
+}
+
+function createNextVersionId(
+  noteId: string,
+  currentVersionId: string,
+  nextRevision: number,
+): string {
+  const versionPrefix =
+    currentVersionId.replace(/-\d+$/, "");
+
+  if (versionPrefix === currentVersionId) {
+    return `${noteId}-version-${nextRevision}`;
+  }
+
+  return `${versionPrefix}-${nextRevision}`;
+}
 
 export function getNotes(): NoteSummary[] {
   return notes;
@@ -45,6 +105,102 @@ export function getNoteDetail(
   noteDetails.set(noteId, detail);
 
   return detail;
+}
+
+export function saveNoteVersion(
+  noteId: string,
+  request: SaveNoteVersionRequestBody,
+  actor: SaveNoteVersionActor,
+  savedAt: string = new Date().toISOString(),
+): SaveNoteVersionStoreResult {
+  const detail = getNoteDetail(noteId);
+
+  if (!detail) {
+    return {
+      outcome: "not-found",
+    };
+  }
+
+  if (
+    request.baseVersionId !==
+    detail.note.currentVersionId
+  ) {
+    return {
+      outcome: "version-conflict",
+      currentVersion: detail.currentVersion,
+    };
+  }
+
+  const nextRevision =
+    detail.currentVersion.revisionNumber + 1;
+
+  const savedVersion: NoteVersionDetail = {
+    versionId: createNextVersionId(
+      noteId,
+      detail.currentVersion.versionId,
+      nextRevision,
+    ),
+    noteId,
+    revisionNumber: nextRevision,
+    parentVersionId:
+      detail.currentVersion.versionId,
+    content: {
+      ...request.content,
+    },
+    authorId: actor.id,
+    authorRole: actor.role,
+    authorDisplayName: actor.displayName,
+    createdAt: savedAt,
+  };
+
+  const updatedNote = {
+    ...detail.note,
+    currentVersionId:
+      savedVersion.versionId,
+    updatedAt: savedAt,
+  };
+
+  const updatedDetail: NoteDetail = {
+    ...detail,
+    note: updatedNote,
+    currentVersion: savedVersion,
+    versions: [
+      ...detail.versions,
+      savedVersion,
+    ],
+  };
+
+  noteDetails.set(noteId, updatedDetail);
+
+  notes = notes.map((summary) => {
+    if (summary.id !== noteId) {
+      return summary;
+    }
+
+    return {
+      ...summary,
+      currentVersion: {
+        id: savedVersion.versionId,
+        revision:
+          savedVersion.revisionNumber,
+      },
+      contentPreview:
+        createContentPreview(
+          savedVersion.content,
+        ),
+      updatedAt: savedAt,
+    };
+  });
+
+  return {
+    outcome: "saved",
+    response: {
+      clientMutationId:
+        request.clientMutationId,
+      note: updatedNote,
+      savedVersion,
+    },
+  };
 }
 
 export function reassignNotes(

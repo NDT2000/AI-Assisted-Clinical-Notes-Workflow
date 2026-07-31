@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, } from "vitest";
 
 import type { NoteDetail } from "../domain/noteDetail";
 import type { NoteSummary } from "../domain/noteSummary";
+import type { SaveNoteVersionActor, SaveNoteVersionRequestBody } from "../domain/noteSave";
 
-import { getNoteDetail, getNotes, reassignNotes, regenerateNotes, seedNotes, } from "./noteStore";
+import { getNoteDetail, getNotes, reassignNotes, regenerateNotes, saveNoteVersion, seedNotes, } from "./noteStore";
 
 function requireSummary(
   predicate: (
@@ -212,5 +213,218 @@ describe("noteStore detail storage", () => {
     expect(regeneratedDetail).toEqual(
       originalDetail,
     );
+  });
+});
+
+describe("noteStore version saving", () => {
+  beforeEach(() => {
+    seedNotes(100, 42);
+  });
+
+  const actor: SaveNoteVersionActor = {
+    id: "reviewer-test",
+    displayName: "Test Reviewer",
+    role: "REVIEWER",
+  };
+
+  it("creates a new version and updates the detail and summary", () => {
+    const summary = requireSummary();
+    const originalDetail =
+      requireDetail(summary.id);
+
+    const originalVersionCount =
+      originalDetail.versions.length;
+
+    const request: SaveNoteVersionRequestBody =
+      {
+        baseVersionId:
+          originalDetail.currentVersion
+            .versionId,
+        clientMutationId:
+          "mutation-save-1",
+        content: {
+          subjective:
+            "Patient reports improved sleep.",
+          objective:
+            "Patient appears alert and comfortable.",
+          assessment:
+            "Symptoms are improving.",
+          plan:
+            "Continue the current treatment plan.",
+        },
+      };
+
+    const savedAt =
+      "2026-07-31T21:30:00.000Z";
+
+    const result = saveNoteVersion(
+      summary.id,
+      request,
+      actor,
+      savedAt,
+    );
+
+    expect(result.outcome).toBe("saved");
+
+    if (result.outcome !== "saved") {
+      throw new Error(
+        "Expected the version to be saved.",
+      );
+    }
+
+    expect(
+      result.response.clientMutationId,
+    ).toBe("mutation-save-1");
+
+    expect(
+      result.response.savedVersion
+        .revisionNumber,
+    ).toBe(
+      originalDetail.currentVersion
+        .revisionNumber + 1,
+    );
+
+    expect(
+      result.response.savedVersion
+        .parentVersionId,
+    ).toBe(
+      originalDetail.currentVersion
+        .versionId,
+    );
+
+    expect(
+      result.response.savedVersion.content,
+    ).toEqual(request.content);
+
+    expect(
+      result.response.savedVersion.authorId,
+    ).toBe(actor.id);
+
+    expect(
+      result.response.savedVersion
+        .authorRole,
+    ).toBe(actor.role);
+
+    expect(
+      result.response.savedVersion
+        .authorDisplayName,
+    ).toBe(actor.displayName);
+
+    const updatedDetail =
+      requireDetail(summary.id);
+
+    expect(
+      updatedDetail.currentVersion,
+    ).toEqual(
+      result.response.savedVersion,
+    );
+
+    expect(
+      updatedDetail.versions,
+    ).toHaveLength(
+      originalVersionCount + 1,
+    );
+
+    expect(
+      updatedDetail.versions[
+        updatedDetail.versions.length - 1
+      ],
+    ).toEqual(
+      result.response.savedVersion,
+    );
+
+    const updatedSummary =
+      requireSummary(
+        (note) => note.id === summary.id,
+      );
+
+    expect(
+      updatedSummary.currentVersion,
+    ).toEqual({
+      id: result.response.savedVersion
+        .versionId,
+      revision:
+        result.response.savedVersion
+          .revisionNumber,
+    });
+
+    expect(
+      updatedSummary.contentPreview,
+    ).toBe(
+      "Patient reports improved sleep.",
+    );
+
+    expect(updatedSummary.updatedAt).toBe(
+      savedAt,
+    );
+  });
+
+  it("does not save when the base version is stale", () => {
+    const summary = requireSummary();
+    const originalDetail =
+      requireDetail(summary.id);
+
+    const result = saveNoteVersion(
+      summary.id,
+      {
+        baseVersionId:
+          "stale-version-id",
+        clientMutationId:
+          "mutation-conflict-1",
+        content: {
+          subjective:
+            "Conflicting subjective content",
+          objective:
+            "Conflicting objective content",
+          assessment:
+            "Conflicting assessment content",
+          plan:
+            "Conflicting plan content",
+        },
+      },
+      actor,
+      "2026-07-31T21:30:00.000Z",
+    );
+
+    expect(result).toEqual({
+      outcome: "version-conflict",
+      currentVersion:
+        originalDetail.currentVersion,
+    });
+
+    const unchangedDetail =
+      requireDetail(summary.id);
+
+    expect(
+      unchangedDetail.currentVersion,
+    ).toEqual(
+      originalDetail.currentVersion,
+    );
+
+    expect(
+      unchangedDetail.versions,
+    ).toEqual(originalDetail.versions);
+  });
+
+  it("returns not-found for an unknown note", () => {
+    const result = saveNoteVersion(
+      "note-does-not-exist",
+      {
+        baseVersionId: "version-1",
+        clientMutationId:
+          "mutation-missing-1",
+        content: {
+          subjective: "Subjective",
+          objective: "Objective",
+          assessment: "Assessment",
+          plan: "Plan",
+        },
+      },
+      actor,
+    );
+
+    expect(result).toEqual({
+      outcome: "not-found",
+    });
   });
 });
