@@ -1,7 +1,10 @@
-import { useMemo, useState, } from "react";
+import { useCallback, useMemo, useRef, useState, } from "react";
 
 import type { SoapContent, } from "../../../../domain/noteAttributes";
 import type { NoteDetail, } from "../../../../domain/noteDetail";
+import type { SaveNoteVersionActor, } from "../../../../domain/noteSave";
+import type { AutosaveSnapshot, AutosaveSuccess, } from "../../autosave/AutoSaveCoordinator";
+import { useNoteAutosave, } from "../../hooks/useNoteAutosave";
 import { NoteDetailHeader } from "./NoteDetailHeader";
 import { PatientSessionCard } from "./PatientSessionCard";
 import { PresencePanel } from "./PresencePanel";
@@ -11,12 +14,18 @@ import { VersionHistorySidebar } from "./VersionHistorySidebar";
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
+  actor: SaveNoteVersionActor;
 }
 
 type DirtySections = Record<
   SoapSectionKey,
   boolean
 >;
+
+interface AutosaveStatusProps {
+  snapshot: AutosaveSnapshot;
+  onRetry: () => void;
+}
 
 function copySoapContent(
   content: SoapContent,
@@ -52,64 +61,213 @@ function getDirtySections(
   };
 }
 
+function AutosaveStatus({
+  snapshot,
+  onRetry,
+}: AutosaveStatusProps) {
+  switch (snapshot.status) {
+    case "changes-pending":
+      return (
+        <p
+          className="note-autosave-status"
+          role="status"
+        >
+          Changes pending
+        </p>
+      );
+
+    case "saving":
+      return (
+        <p
+          className="note-autosave-status"
+          role="status"
+        >
+          Saving…
+        </p>
+      );
+
+    case "save-failed":
+      return (
+        <div
+          className="note-autosave-status"
+          role="alert"
+        >
+          <span>Save failed.</span>
+
+          <button
+            type="button"
+            onClick={onRetry}
+          >
+            Try again
+          </button>
+        </div>
+      );
+
+    case "conflict":
+      return (
+        <p
+          className="note-autosave-status"
+          role="alert"
+        >
+          Conflict requires attention. This
+          note was updated elsewhere.
+        </p>
+      );
+
+    case "idle":
+      return (
+        <p
+          className="note-autosave-status"
+          role="status"
+        >
+          Saved
+        </p>
+      );
+  }
+}
+
 export function NoteDetailWorkspace({
   detail,
+  actor,
 }: NoteDetailWorkspaceProps) {
   const [
+    workspaceDetail,
+    setWorkspaceDetail,
+  ] = useState<NoteDetail>(() => detail);
+
+  const [
     savedContent,
+    setSavedContent,
   ] = useState<SoapContent>(() =>
     copySoapContent(
       detail.currentVersion.content,
     ),
   );
+
+  const initialDraftContent =
+    copySoapContent(
+      detail.currentVersion.content,
+    );
 
   const [
     draftContent,
     setDraftContent,
-  ] = useState<SoapContent>(() =>
-    copySoapContent(
-      detail.currentVersion.content,
-    ),
+  ] = useState<SoapContent>(
+    initialDraftContent,
   );
 
-  const dirtySections =
-    useMemo(
-      () =>
-        getDirtySections(
-          draftContent,
-          savedContent,
-        ),
-      [
-        draftContent,
-        savedContent,
-      ],
+  const draftContentRef =
+    useRef<SoapContent>(
+      initialDraftContent,
     );
 
+  const dirtySections = useMemo(
+    () =>
+      getDirtySections(
+        draftContent,
+        savedContent,
+      ),
+    [
+      draftContent,
+      savedContent,
+    ],
+  );
+
   const isEditable =
-    detail.note.status === "IN_REVIEW";
+    workspaceDetail.note.status ===
+    "IN_REVIEW";
+
+  const handleSaveSuccess = useCallback(
+    ({
+      response,
+      savedContent:
+        successfullySavedContent,
+    }: AutosaveSuccess): void => {
+      setSavedContent(
+        copySoapContent(
+          successfullySavedContent,
+        ),
+      );
+
+      setWorkspaceDetail(
+        (currentDetail) => {
+          const versionAlreadyExists =
+            currentDetail.versions.some(
+              (version) =>
+                version.versionId ===
+                response.savedVersion
+                  .versionId,
+            );
+
+          return {
+            ...currentDetail,
+
+            note: response.note,
+
+            currentVersion:
+              response.savedVersion,
+
+            versions:
+              versionAlreadyExists
+                ? currentDetail.versions
+                : [
+                    ...currentDetail.versions,
+                    response.savedVersion,
+                  ],
+          };
+        },
+      );
+    },
+    [],
+  );
+
+  const {
+    snapshot: autosaveSnapshot,
+    updateDraft: queueAutosave,
+    retry: retryAutosave,
+  } = useNoteAutosave({
+    noteId: detail.note.id,
+    actor,
+
+    initialBaseVersionId:
+      detail.currentVersion.versionId,
+
+    initialContent:
+      detail.currentVersion.content,
+
+    debounceMs: 500,
+
+    onSaveSuccess:
+      handleSaveSuccess,
+  });
 
   function handleSectionChange(
     section: SoapSectionKey,
     value: string,
   ): void {
-    setDraftContent(
-      (currentContent) => ({
-        ...currentContent,
-        [section]: value,
-      }),
-    );
+    const nextContent: SoapContent = {
+      ...draftContentRef.current,
+      [section]: value,
+    };
+
+    draftContentRef.current =
+      nextContent;
+
+    setDraftContent(nextContent);
+
+    queueAutosave(nextContent);
   }
 
   return (
     <>
       <NoteDetailHeader
-        note={detail.note}
-        patient={detail.patient}
+        note={workspaceDetail.note}
+        patient={workspaceDetail.patient}
         assignedReviewer={
-          detail.assignedReviewer
+          workspaceDetail.assignedReviewer
         }
         revisionNumber={
-          detail.currentVersion
+          workspaceDetail.currentVersion
             .revisionNumber
         }
       />
@@ -117,9 +275,24 @@ export function NoteDetailWorkspace({
       <div className="note-detail-layout">
         <div className="note-detail-main">
           <PatientSessionCard
-            patient={detail.patient}
-            session={detail.session}
+            patient={
+              workspaceDetail.patient
+            }
+            session={
+              workspaceDetail.session
+            }
           />
+
+          {isEditable ? (
+            <AutosaveStatus
+              snapshot={
+                autosaveSnapshot
+              }
+              onRetry={
+                retryAutosave
+              }
+            />
+          ) : null}
 
           <SoapEditor
             content={draftContent}
@@ -133,7 +306,9 @@ export function NoteDetailWorkspace({
           />
 
           <ReviewTimeline
-            events={detail.timeline}
+            events={
+              workspaceDetail.timeline
+            }
           />
         </div>
 
@@ -142,13 +317,18 @@ export function NoteDetailWorkspace({
           aria-label="Note supporting information"
         >
           <PresencePanel
-            presence={detail.presence}
+            presence={
+              workspaceDetail.presence
+            }
           />
 
           <VersionHistorySidebar
-            versions={detail.versions}
+            versions={
+              workspaceDetail.versions
+            }
             currentVersionId={
-              detail.currentVersion
+              workspaceDetail
+                .currentVersion
                 .versionId
             }
           />

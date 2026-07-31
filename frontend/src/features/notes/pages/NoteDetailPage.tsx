@@ -3,10 +3,15 @@ import { Link, useParams, } from "react-router-dom";
 import type { UserRole, } from "../../../domain/noteAttributes";
 import { useNoteDetail, } from "../hooks/useNoteDetail";
 import { NoteDetailWorkspace } from "../components/note-detail/NoteDetailWorkspace";
+import type { SaveNoteVersionActor } from "../../../domain/noteSave";
 import "../components/css/NoteDetailPage.css";
 
-const CURRENT_ACTOR_ROLE: UserRole =
-  "REVIEWER";
+const CURRENT_ACTOR:
+  SaveNoteVersionActor = {
+    id: "reviewer-1",
+    displayName: "Current Reviewer",
+    role: "REVIEWER",
+  };
 
 export function NoteDetailPage() {
   const { noteId } = useParams<{
@@ -18,7 +23,7 @@ export function NoteDetailPage() {
     retry,
   } = useNoteDetail(
     noteId,
-    CURRENT_ACTOR_ROLE,
+    CURRENT_ACTOR.role,
   );
 
   if (state.status === "loading") {
@@ -109,7 +114,8 @@ export function NoteDetailPage() {
 
       <NoteDetailWorkspace
         key={detail.note.id}
-        detail={detail} 
+        detail={detail}
+        actor={CURRENT_ACTOR} 
       />
     </main>
   );
