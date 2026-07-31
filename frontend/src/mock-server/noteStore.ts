@@ -2,17 +2,8 @@ import { generateNoteSummaries } from "../mock-data/generateNoteSummary";
 import type { NoteSummary } from "../domain/noteSummary";
 import type { UserRole } from "../domain/noteAttributes";
 import { canRequestRegeneration } from "../domain/noteGuards";
-
-/*
- * The store is intentionally a plain in-memory array, not a "mock" in
- * the sense of canned/static data. seed() genuinely regenerates real
- * records; getNotesHandler filters/sorts/paginates against whatever is
- * currently in `notes`, exactly like a real database-backed handler
- * would query a real table.
- *
- * Resets on server restart — acceptable per the doc, since seeding is
- * deterministic and expected to run at the start of every session.
- */
+import type { NoteDetail } from "../domain/noteDetail";
+import { generateNoteDetail } from "../mock-data/generateNoteDetail";
 
 const DEFAULT_SEED_COUNT = 5_000;
 const DEFAULT_SEED_VALUE = 42;
@@ -22,8 +13,38 @@ let notes: NoteSummary[] = generateNoteSummaries(
   DEFAULT_SEED_VALUE,
 );
 
+const noteDetails = new Map<string, NoteDetail>();
+
 export function getNotes(): NoteSummary[] {
   return notes;
+}
+
+export function getNoteSummary(
+  noteId: string,
+): NoteSummary | undefined {
+  return notes.find((note) => note.id === noteId);
+}
+
+export function getNoteDetail(
+  noteId: string,
+): NoteDetail | undefined {
+  const cachedDetail = noteDetails.get(noteId);
+
+  if (cachedDetail) {
+    return cachedDetail;
+  }
+
+  const summary = getNoteSummary(noteId);
+
+  if (!summary) {
+    return undefined;
+  }
+
+  const detail = generateNoteDetail(summary);
+
+  noteDetails.set(noteId, detail);
+
+  return detail;
 }
 
 export function reassignNotes(
@@ -38,13 +59,13 @@ export function reassignNotes(
       return note;
     }
 
-    // A LOCKED note is read-only by design; reassignment must not
-    // silently succeed against it even in this simplified mock.
     if (note.status === "LOCKED") {
       return note;
     }
 
     updatedIds.push(note.id);
+
+    noteDetails.delete(note.id);
 
     return { ...note, assignedReviewer: reviewer };
   });
@@ -76,6 +97,8 @@ export function regenerateNotes(
 
     updatedIds.push(note.id);
 
+    noteDetails.delete(note.id);
+
     return { ...note, status: eligibility.nextStatus};
   });
 
@@ -87,5 +110,6 @@ export function seedNotes(
   seed: number = DEFAULT_SEED_VALUE,
 ): number {
   notes = generateNoteSummaries(count, seed);
+  noteDetails.clear();
   return notes.length;
 }
