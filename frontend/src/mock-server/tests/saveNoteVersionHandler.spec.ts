@@ -396,5 +396,182 @@ describe(
         });
       },
     );
+
+    it(
+      "returns the original saved response when the same mutation is retried",
+      async () => {
+        const noteId = requireFirstNoteId();
+
+        const originalDetail =
+          getNoteDetail(noteId);
+
+        if (!originalDetail) {
+          throw new Error(
+            "Expected note detail.",
+          );
+        }
+
+        const originalVersionCount =
+          originalDetail.versions.length;
+
+        const requestBody = {
+          baseVersionId:
+            originalDetail.currentVersion
+              .versionId,
+          clientMutationId:
+            "mutation-http-retry-1",
+          content: {
+            subjective:
+              "Updated subjective",
+            objective:
+              "Updated objective",
+            assessment:
+              "Updated assessment",
+            plan: "Updated plan",
+          },
+        };
+
+        const firstResponse = await fetch(
+          `http://localhost/api/notes/${noteId}/versions`,
+          {
+            method: "POST",
+            headers: getActorHeaders(),
+            body: JSON.stringify(requestBody),
+          },
+        );
+
+        expect(firstResponse.status).toBe(
+          201,
+        );
+
+        const firstBody =
+          (await firstResponse.json()) as
+            SaveNoteVersionResponse;
+
+        const retryResponse = await fetch(
+          `http://localhost/api/notes/${noteId}/versions`,
+          {
+            method: "POST",
+            headers: getActorHeaders(),
+            body: JSON.stringify(requestBody),
+          },
+        );
+
+        expect(retryResponse.status).toBe(
+          201,
+        );
+
+        const retryBody =
+          (await retryResponse.json()) as
+            SaveNoteVersionResponse;
+
+        expect(retryBody).toEqual(firstBody);
+
+        const detailAfterRetry =
+          getNoteDetail(noteId);
+
+        expect(
+          detailAfterRetry?.versions,
+        ).toHaveLength(
+          originalVersionCount + 1,
+        );
+
+        expect(
+          detailAfterRetry?.currentVersion
+            .versionId,
+        ).toBe(
+          firstBody.savedVersion.versionId,
+        );
+      },
+    );
+
+    it(
+      "returns 409 when a mutation ID is reused for different content",
+      async () => {
+        const noteId = requireFirstNoteId();
+
+        const originalDetail =
+          getNoteDetail(noteId);
+
+        if (!originalDetail) {
+          throw new Error(
+            "Expected note detail.",
+          );
+        }
+
+        const originalVersionCount =
+          originalDetail.versions.length;
+
+        const firstRequestBody = {
+          baseVersionId:
+            originalDetail.currentVersion
+              .versionId,
+          clientMutationId:
+            "mutation-http-reused-1",
+          content: {
+            subjective:
+              "First subjective",
+            objective:
+              "First objective",
+            assessment:
+              "First assessment",
+            plan: "First plan",
+          },
+        };
+
+        const firstResponse = await fetch(
+          `http://localhost/api/notes/${noteId}/versions`,
+          {
+            method: "POST",
+            headers: getActorHeaders(),
+            body: JSON.stringify(
+              firstRequestBody,
+            ),
+          },
+        );
+
+        expect(firstResponse.status).toBe(
+          201,
+        );
+
+        const conflictingResponse =
+          await fetch(
+            `http://localhost/api/notes/${noteId}/versions`,
+            {
+              method: "POST",
+              headers: getActorHeaders(),
+              body: JSON.stringify({
+                ...firstRequestBody,
+                content: {
+                  ...firstRequestBody.content,
+                  subjective:
+                    "Different subjective",
+                },
+              }),
+            },
+          );
+
+        expect(
+          conflictingResponse.status,
+        ).toBe(409);
+
+        const conflictBody =
+          (await conflictingResponse.json()) as
+            ErrorResponse;
+
+        expect(conflictBody.error).toBe(
+          "idempotency_conflict",
+        );
+
+        const detailAfterConflict =
+          getNoteDetail(noteId);
+
+        expect(
+          detailAfterConflict?.versions,
+        ).toHaveLength(
+          originalVersionCount + 1,
+        );
+      },
+    );
   },
 );
