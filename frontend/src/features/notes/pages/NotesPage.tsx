@@ -10,7 +10,7 @@ import { getNotes } from "../api/getNotes";
 import { postAssignReviewer, postRequestRegeneration, } from "../api/bulkActions";
 import { NotesFilters } from "../components/note-list/NotesFilters";
 import { NotesTable } from "../components/note-list/NoteTable";
-import { NotesTableSkeleton } from "../components/NotesTableSkeleton";
+import { NotesTableSkeleton } from "../components/note-list/NotesTableSkeleton";
 import { REVIEWERS, } from "../../../mock-data/generateNoteSummary";
 
 const CURRENT_ACTOR_ROLE: UserRole =
