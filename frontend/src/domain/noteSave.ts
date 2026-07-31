@@ -1,11 +1,5 @@
-import type {
-  Note,
-  SoapContent,
-  UserRole,
-} from "./noteAttributes";
-import type {
-  NoteVersionDetail,
-} from "./noteDetail";
+import type { Note, SoapContent, UserRole, } from "./noteAttributes";
+import type { NoteVersionDetail, } from "./noteDetail";
 
 export interface SaveNoteVersionActor {
   id: string;
@@ -32,6 +26,7 @@ export type SaveNoteVersionErrorCode =
   | "forbidden"
   | "not_found"
   | "version_conflict"
+  | "idempotency_conflict"
   | "internal_error";
 
 export interface SaveNoteVersionStandardErrorResponse {

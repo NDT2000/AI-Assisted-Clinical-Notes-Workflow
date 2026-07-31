@@ -20,6 +20,9 @@ export type SaveNoteVersionStoreResult =
   | {
       outcome: "version-conflict";
       currentVersion: NoteVersionDetail;
+    }
+  | {
+      outcome: "idempotency-conflict";
     };
 
 const CONTENT_PREVIEW_MAX_LENGTH = 120;
@@ -30,6 +33,20 @@ let notes: NoteSummary[] = generateNoteSummaries(
 );
 
 const noteDetails = new Map<string, NoteDetail>();
+
+interface SaveMutationRecord {
+  actorId: string;
+  actorRole: UserRole;
+  request: SaveNoteVersionRequestBody;
+  response: SaveNoteVersionResponse;
+}
+
+const saveMutationRecords = new Map<
+  string,
+  SaveMutationRecord
+>();
+
+
 
 function createContentPreview(
   content: SoapContent,
@@ -107,12 +124,76 @@ export function getNoteDetail(
   return detail;
 }
 
+function createSaveMutationKey(
+  noteId: string,
+  clientMutationId: string,
+): string {
+  return `${noteId}:${clientMutationId}`;
+}
+
+function hasSameSoapContent(
+  first: SoapContent,
+  second: SoapContent,
+): boolean {
+  return (
+    first.subjective === second.subjective &&
+    first.objective === second.objective &&
+    first.assessment === second.assessment &&
+    first.plan === second.plan
+  );
+}
+
+function isSameLogicalSave(
+  record: SaveMutationRecord,
+  request: SaveNoteVersionRequestBody,
+  actor: SaveNoteVersionActor,
+): boolean {
+  return (
+    record.actorId === actor.id &&
+    record.actorRole === actor.role &&
+    record.request.baseVersionId ===
+      request.baseVersionId &&
+    record.request.clientMutationId ===
+      request.clientMutationId &&
+    hasSameSoapContent(
+      record.request.content,
+      request.content,
+    )
+  );
+}
+
 export function saveNoteVersion(
   noteId: string,
   request: SaveNoteVersionRequestBody,
   actor: SaveNoteVersionActor,
   savedAt: string = new Date().toISOString(),
 ): SaveNoteVersionStoreResult {
+  const mutationKey = createSaveMutationKey(
+    noteId,
+    request.clientMutationId,
+  );
+
+  const previousMutation =
+    saveMutationRecords.get(mutationKey);
+
+  if (previousMutation) {
+    if (
+      !isSameLogicalSave(
+        previousMutation,
+        request,
+        actor,
+      )
+    ) {
+      return {
+        outcome: "idempotency-conflict",
+      };
+    }
+
+    return {
+      outcome: "saved",
+      response: previousMutation.response,
+    };
+  }
   const detail = getNoteDetail(noteId);
 
   if (!detail) {
@@ -192,14 +273,28 @@ export function saveNoteVersion(
     };
   });
 
+  const response: SaveNoteVersionResponse = {
+    clientMutationId:
+      request.clientMutationId,
+    note: updatedNote,
+    savedVersion,
+  };
+
+  saveMutationRecords.set(mutationKey, {
+    actorId: actor.id,
+    actorRole: actor.role,
+    request: {
+      ...request,
+      content: {
+        ...request.content,
+      },
+    },
+    response,
+  });
+
   return {
     outcome: "saved",
-    response: {
-      clientMutationId:
-        request.clientMutationId,
-      note: updatedNote,
-      savedVersion,
-    },
+    response,
   };
 }
 
@@ -267,5 +362,6 @@ export function seedNotes(
 ): number {
   notes = generateNoteSummaries(count, seed);
   noteDetails.clear();
+  saveMutationRecords.clear();
   return notes.length;
 }

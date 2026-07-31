@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, } from "vitest";
 
-import type { NoteDetail } from "../domain/noteDetail";
-import type { NoteSummary } from "../domain/noteSummary";
-import type { SaveNoteVersionActor, SaveNoteVersionRequestBody } from "../domain/noteSave";
+import type { NoteDetail } from "../../domain/noteDetail";
+import type { NoteSummary } from "../../domain/noteSummary";
+import type { SaveNoteVersionActor, SaveNoteVersionRequestBody } from "../../domain/noteSave";
 
-import { getNoteDetail, getNotes, reassignNotes, regenerateNotes, saveNoteVersion, seedNotes, } from "./noteStore";
+import { getNoteDetail, getNotes, reassignNotes, regenerateNotes, saveNoteVersion, seedNotes, } from "../noteStore";
 
 function requireSummary(
   predicate: (
@@ -426,5 +426,173 @@ describe("noteStore version saving", () => {
     expect(result).toEqual({
       outcome: "not-found",
     });
+  });
+
+  it("returns the original response when the same save is retried", () => {
+    const summary = requireSummary();
+    const originalDetail =
+      requireDetail(summary.id);
+
+    const request: SaveNoteVersionRequestBody = {
+      baseVersionId:
+        originalDetail.currentVersion
+          .versionId,
+      clientMutationId:
+        "mutation-idempotent-1",
+      content: {
+        subjective:
+          "Updated subjective",
+        objective:
+          "Updated objective",
+        assessment:
+          "Updated assessment",
+        plan:
+          "Updated plan",
+      },
+    };
+
+    const firstResult = saveNoteVersion(
+      summary.id,
+      request,
+      actor,
+      "2026-07-31T21:30:00.000Z",
+    );
+
+    expect(firstResult.outcome).toBe(
+      "saved",
+    );
+
+    if (firstResult.outcome !== "saved") {
+      throw new Error(
+        "Expected the first save to succeed.",
+      );
+    }
+
+    const detailAfterFirstSave =
+      requireDetail(summary.id);
+
+    const versionCountAfterFirstSave =
+      detailAfterFirstSave.versions.length;
+
+    const retryResult = saveNoteVersion(
+      summary.id,
+      request,
+      actor,
+      "2026-07-31T21:35:00.000Z",
+    );
+
+    expect(retryResult.outcome).toBe(
+      "saved",
+    );
+
+    if (retryResult.outcome !== "saved") {
+      throw new Error(
+        "Expected the retry to return the saved response.",
+      );
+    }
+
+    expect(retryResult.response).toEqual(
+      firstResult.response,
+    );
+
+    const detailAfterRetry =
+      requireDetail(summary.id);
+
+    expect(
+      detailAfterRetry.versions,
+    ).toHaveLength(
+      versionCountAfterFirstSave,
+    );
+
+    expect(
+      detailAfterRetry.currentVersion
+        .versionId,
+    ).toBe(
+      firstResult.response.savedVersion
+        .versionId,
+    );
+
+    expect(
+      detailAfterRetry.currentVersion
+        .createdAt,
+    ).toBe(
+      "2026-07-31T21:30:00.000Z",
+    );
+  });
+
+  it("rejects reuse of a mutation ID with different content", () => {
+    const summary = requireSummary();
+    const originalDetail =
+      requireDetail(summary.id);
+
+    const firstResult = saveNoteVersion(
+      summary.id,
+      {
+        baseVersionId:
+          originalDetail.currentVersion
+            .versionId,
+        clientMutationId:
+          "mutation-reused-1",
+        content: {
+          subjective:
+            "First subjective",
+          objective:
+            "First objective",
+          assessment:
+            "First assessment",
+          plan: "First plan",
+        },
+      },
+      actor,
+      "2026-07-31T21:30:00.000Z",
+    );
+
+    expect(firstResult.outcome).toBe(
+      "saved",
+    );
+
+    const detailAfterFirstSave =
+      requireDetail(summary.id);
+
+    const result = saveNoteVersion(
+      summary.id,
+      {
+        baseVersionId:
+          originalDetail.currentVersion
+            .versionId,
+        clientMutationId:
+          "mutation-reused-1",
+        content: {
+          subjective:
+            "Different subjective",
+          objective:
+            "First objective",
+          assessment:
+            "First assessment",
+          plan: "First plan",
+        },
+      },
+      actor,
+      "2026-07-31T21:35:00.000Z",
+    );
+
+    expect(result).toEqual({
+      outcome: "idempotency-conflict",
+    });
+
+    const detailAfterConflict =
+      requireDetail(summary.id);
+
+    expect(
+      detailAfterConflict.versions,
+    ).toHaveLength(
+      detailAfterFirstSave.versions.length,
+    );
+
+    expect(
+      detailAfterConflict.currentVersion,
+    ).toEqual(
+      detailAfterFirstSave.currentVersion,
+    );
   });
 });
