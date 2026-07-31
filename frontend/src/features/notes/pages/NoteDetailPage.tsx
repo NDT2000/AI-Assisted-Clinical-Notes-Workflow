@@ -2,6 +2,8 @@ import { Link, useParams, } from "react-router-dom";
 
 import type { UserRole, } from "../../../domain/noteAttributes";
 import { useNoteDetail, } from "../hooks/useNoteDetail";
+import { NoteDetailWorkspace } from "../components/note-detail/NoteDetailWorkspace";
+import "../components/css/NoteDetailPage.css";
 
 const CURRENT_ACTOR_ROLE: UserRole =
   "REVIEWER";
@@ -98,153 +100,17 @@ export function NoteDetailPage() {
   const detail = state.note;
 
   return (
-    <main>
-      <Link to="/notes">
+    <main className="note-detail-page">
+      <Link
+        className="note-detail-back-line"
+        to="/notes">
         Back to notes
       </Link>
 
-      <header>
-        <h1>
-          {detail.patient.displayName}
-        </h1>
-
-        <p>
-          Note ID: {detail.note.id}
-        </p>
-      </header>
-
-      <section
-        aria-labelledby="workflow-heading"
-      >
-        <h2 id="workflow-heading">
-          Workflow
-        </h2>
-
-        <dl>
-          <div>
-            <dt>Status</dt>
-            <dd>
-              {detail.note.status}
-            </dd>
-          </div>
-
-          <div>
-            <dt>Assigned reviewer</dt>
-            <dd>
-              {detail.assignedReviewer
-                ?.displayName ??
-                "Unassigned"}
-            </dd>
-          </div>
-
-          <div>
-            <dt>Current revision</dt>
-            <dd>
-              {
-                detail.currentVersion
-                  .revisionNumber
-              }
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section
-        aria-labelledby="patient-heading"
-      >
-        <h2 id="patient-heading">
-          Patient
-        </h2>
-
-        <dl>
-          <div>
-            <dt>Name</dt>
-            <dd>
-              {
-                detail.patient
-                  .displayName
-              }
-            </dd>
-          </div>
-
-          <div>
-            <dt>
-              Medical record number
-            </dt>
-            <dd>
-              {
-                detail.patient
-                  .medicalRecordNumber
-              }
-            </dd>
-          </div>
-
-          <div>
-            <dt>Date of birth</dt>
-            <dd>
-              {
-                detail.patient
-                  .dateOfBirth
-              }
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section
-        aria-labelledby="session-heading"
-      >
-        <h2 id="session-heading">
-          Session
-        </h2>
-
-        <dl>
-          <div>
-            <dt>Clinician</dt>
-            <dd>
-              {
-                detail.session
-                  .clinician
-                  .displayName
-              }
-            </dd>
-          </div>
-
-          <div>
-            <dt>Started</dt>
-            <dd>
-              {new Date(
-                detail.session.startedAt,
-              ).toLocaleString()}
-            </dd>
-          </div>
-
-          <div>
-            <dt>Ended</dt>
-            <dd>
-              {new Date(
-                detail.session.endedAt,
-              ).toLocaleString()}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section
-        aria-labelledby="content-heading"
-      >
-        <h2 id="content-heading">
-          Current note
-        </h2>
-
-        <p>
-          Revision{" "}
-          {
-            detail.currentVersion
-              .revisionNumber
-          } loaded successfully.
-        </p>
-      </section>
+      <NoteDetailWorkspace
+        key={detail.note.id}
+        detail={detail} 
+      />
     </main>
   );
 }

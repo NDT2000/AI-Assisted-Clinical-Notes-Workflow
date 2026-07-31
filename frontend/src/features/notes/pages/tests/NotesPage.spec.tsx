@@ -2,19 +2,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor, } from "@testing-libr
 import { MemoryRouter, Route, Routes, } from "react-router-dom";
 import { afterEach, describe, expect, it, vi, } from "vitest";
 
-import type { NoteSummary, } from "../../../domain/noteSummary";
-import type { NoteListResponse, } from "../api/noteListResponse";
-import { getNotes } from "../api/getNotes";
-import { NotesPage } from "./NotesPage";
+import type { NoteSummary, } from "../../../../domain/noteSummary";
+import type { NoteListResponse, } from "../../api/noteListResponse";
+import { getNotes } from "../../api/getNotes";
+import { NotesPage } from "../NotesPage";
 
 vi.mock("../api/getNotes", () => ({
   getNotes: vi.fn(),
 }));
 
-/*
- * Keep this test focused on NotesPage request behavior.
- * The real filter component already has separate debounce tests.
- */
 vi.mock(
   "../components/NotesFilters",
   () => ({
@@ -206,10 +202,6 @@ describe(
           );
         });
 
-        /*
-         * Starting the second request must cancel the first
-         * request.
-         */
         expect(
           firstSignal.aborted,
         ).toBe(true);

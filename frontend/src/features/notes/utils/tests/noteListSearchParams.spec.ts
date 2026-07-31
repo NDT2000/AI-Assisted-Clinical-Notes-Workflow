@@ -1,6 +1,6 @@
 import { describe, expect, it, } from "vitest";
 
-import { DEFAULT_NOTE_LIST_FILTERS, parseNoteListSearchParams, } from "./noteListSearchParams";
+import { DEFAULT_NOTE_LIST_FILTERS, parseNoteListSearchParams, } from "../noteListSearchParams";
 
 function parse(
   queryString: string,

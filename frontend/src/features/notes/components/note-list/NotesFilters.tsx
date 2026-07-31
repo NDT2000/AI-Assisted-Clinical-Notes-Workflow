@@ -1,10 +1,10 @@
 import { type ChangeEvent, useEffect, useRef, useState, } from "react";
 
-import { NOTE_STATUS, type NoteStatus, } from "../../../domain/noteAttributes";
-import type { NoteListFilters, NoteSortField, SortDirection, } from "../utils/noteListSearchParams";
-import { getPatientById, getPatients, type PatientOption, } from "../api/getPatients";
+import { NOTE_STATUS, type NoteStatus, } from "../../../../domain/noteAttributes";
+import type { NoteListFilters, NoteSortField, SortDirection, } from "../../utils/noteListSearchParams";
+import { getPatientById, getPatients, type PatientOption, } from "../../api/getPatients";
 
-import { REVIEWERS } from "../../../mock-data/generateNoteSummary";
+import { REVIEWERS } from "../../../../mock-data/generateNoteSummary";
 
 interface NotesFiltersProps {
   filters: NoteListFilters;

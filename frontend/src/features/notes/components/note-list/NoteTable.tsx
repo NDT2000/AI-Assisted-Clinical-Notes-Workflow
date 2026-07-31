@@ -6,7 +6,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Link } from "react-router-dom";
 
-import type { NoteSummary } from "../../../domain/noteSummary";
+import type { NoteSummary } from "../../../../domain/noteSummary";
 
 interface NotesTableProps {
   notes: NoteSummary[];

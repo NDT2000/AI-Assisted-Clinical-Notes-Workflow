@@ -1,0 +1,628 @@
+/* This is the css for Note Detail Header */
+.note-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 24px;
+}
+
+.note-detail-back-link {
+  align-self: flex-start;
+}
+
+.note-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+
+  padding: 20px;
+
+  border: 1px solid var(--border);
+  border-radius: 12px;
+
+  background: var(--bg);
+}
+
+.note-detail-header-content {
+  min-width: 0;
+}
+
+.note-detail-header h1 {
+  margin: 0 0 10px;
+
+  text-align: left;
+  font-size: 32px;
+}
+
+.note-detail-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+
+  color: var(--text);
+}
+
+.note-detail-status-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+
+  text-align: right;
+}
+
+.note-status-badge {
+  display: inline-flex;
+  align-items: center;
+
+  min-height: 28px;
+  padding: 2px 10px;
+
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+
+  color: var(--accent);
+  background: var(--accent-bg);
+
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@media (max-width: 700px) {
+  .note-detail-header {
+    flex-direction: column;
+  }
+
+  .note-detail-status-area {
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
+/* This is the css for Patient Session Card */
+.note-detail-card {
+  padding: 20px;
+
+  border: 1px solid var(--border);
+  border-radius: 12px;
+
+  background: var(--bg);
+}
+
+.note-detail-card h2 {
+  margin: 0 0 16px;
+  text-align: left;
+}
+
+.patient-session-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 18px 24px;
+
+  margin: 0;
+}
+
+.patient-session-grid > div {
+  min-width: 0;
+}
+
+.patient-session-grid dt {
+  margin-bottom: 4px;
+
+  color: var(--text);
+  font-size: 14px;
+}
+
+.patient-session-grid dd {
+  margin: 0;
+
+  color: var(--text-h);
+  font-weight: 500;
+
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .patient-session-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* This is the css for SOAP content */
+.soap-editor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+
+  margin-bottom: 20px;
+}
+
+.soap-editor-heading h2 {
+  margin-bottom: 6px;
+}
+
+.soap-editor-heading p {
+  margin: 0;
+  color: var(--text);
+}
+
+.soap-readonly-badge,
+.soap-dirty-indicator {
+  display: inline-flex;
+  align-items: center;
+
+  flex-shrink: 0;
+
+  padding: 3px 9px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.soap-section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.soap-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.soap-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.soap-section-header label {
+  color: var(--text-h);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.soap-section-header p {
+  margin: 4px 0 0;
+
+  color: var(--text);
+  font-size: 14px;
+}
+
+.soap-section textarea {
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+
+  padding: 12px;
+
+  border: 1px solid var(--border);
+  border-radius: 8px;
+
+  color: var(--text-h);
+  background: var(--bg);
+
+  font: inherit;
+  line-height: 1.5;
+
+  box-sizing: border-box;
+}
+
+.soap-section textarea:read-only {
+  cursor: default;
+  background: var(--code-bg);
+}
+
+.soap-section textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.soap-dirty-indicator {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+@media (max-width: 600px) {
+  .soap-editor-heading,
+  .soap-section-header {
+    flex-direction: column;
+  }
+}
+
+/* Presence User Bar css */
+.presence-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.presence-heading h2 {
+  margin-bottom: 0;
+}
+
+.presence-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0 7px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.presence-empty {
+  margin: 16px 0 0;
+  color: var(--text);
+}
+
+.presence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  margin: 16px 0 0;
+  padding: 0;
+
+  list-style: none;
+}
+
+.presence-item {
+  display: grid;
+  grid-template-columns:
+    auto
+    minmax(0, 1fr)
+    auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.presence-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 36px;
+  height: 36px;
+
+  border-radius: 50%;
+
+  color: var(--accent);
+  background: var(--accent-bg);
+
+  font-weight: 700;
+}
+
+.presence-user-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  min-width: 0;
+}
+
+.presence-user-details strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presence-user-details span,
+.presence-user-details time {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.presence-activity {
+  padding: 3px 8px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.presence-activity-editing {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+@media (max-width: 500px) {
+  .presence-item {
+    grid-template-columns:
+      auto
+      minmax(0, 1fr);
+  }
+
+  .presence-activity {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+.note-detail-layout {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(280px, 340px);
+  gap: 20px;
+  align-items: start;
+}
+
+.note-detail-main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+
+  min-width: 0;
+}
+
+.note-detail-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .note-detail-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* CSS for version history */
+.version-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.version-history-heading h2 {
+  margin-bottom: 0;
+}
+
+.version-history-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0 7px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.version-history-empty {
+  margin: 16px 0 0;
+  color: var(--text);
+}
+
+.version-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  margin: 16px 0 0;
+  padding: 0;
+
+  list-style: none;
+}
+
+.version-history-item {
+  padding: 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.version-history-item-current {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.version-history-item-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 12px;
+}
+
+.version-current-badge {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 3px 8px;
+
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+
+  color: var(--accent);
+  background: var(--bg);
+
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.version-history-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  margin: 0;
+}
+
+.version-history-details > div {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.version-history-details dt {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.version-history-details dd {
+  min-width: 0;
+  margin: 0;
+
+  color: var(--text-h);
+  font-size: 13px;
+
+  overflow-wrap: anywhere;
+}
+
+/* Revie Timeline css */
+.review-timeline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-timeline-heading h2 {
+  margin-bottom: 0;
+}
+
+.review-timeline-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0 7px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.review-timeline-empty {
+  margin: 16px 0 0;
+  color: var(--text);
+}
+
+.review-timeline-list {
+  display: flex;
+  flex-direction: column;
+
+  margin: 20px 0 0;
+  padding: 0;
+
+  list-style: none;
+}
+
+.review-timeline-item {
+  position: relative;
+
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 14px;
+
+  padding-bottom: 22px;
+}
+
+.review-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.review-timeline-item::before {
+  content: "";
+
+  position: absolute;
+  top: 16px;
+  bottom: 0;
+  left: 5px;
+
+  width: 2px;
+
+  background: var(--border);
+}
+
+.review-timeline-item:last-child::before {
+  display: none;
+}
+
+.review-timeline-marker {
+  position: relative;
+  z-index: 1;
+
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+
+  border: 2px solid var(--accent-border);
+  border-radius: 50%;
+
+  background: var(--accent-bg);
+}
+
+.review-timeline-content {
+  min-width: 0;
+}
+
+.review-timeline-transition {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+
+  color: var(--text-h);
+}
+
+.review-timeline-actor {
+  margin: 6px 0 0;
+
+  color: var(--text);
+  font-size: 14px;
+}
+
+.review-timeline-reason {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+
+  border-left: 3px solid var(--accent-border);
+  border-radius: 4px;
+
+  color: var(--text-h);
+  background: var(--code-bg);
+}
+
+.review-timeline-time {
+  display: block;
+
+  margin-top: 8px;
+
+  color: var(--text);
+  font-size: 13px;
+}
