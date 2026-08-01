@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 
 import type { SoapContent, UserRole, } from "../domain/noteAttributes";
 import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, } from "../domain/noteSave";
-import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
+// import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
 import { devFailureControls } from "./devFailureControls";
 import { saveNoteVersion } from "./noteStore";
 
