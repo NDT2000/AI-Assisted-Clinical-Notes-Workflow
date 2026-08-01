@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, within, } from "@testing-library/react";
 import  userEvent from "@testing-library/user-event";
 import { beforeEach, afterEach, describe, expect, it, vi, } from "vitest";
+import type { TransitionNoteResponse, } from "../../../../domain/noteTransition";
+import type { NoteTransitionState, } from "../../hooks/useNoteTransition";
 
 const autosaveMocks = vi.hoisted(() => ({
   updateDraft: vi.fn(),
@@ -14,6 +16,24 @@ const autosaveMocks = vi.hoisted(() => ({
 
   onSaveSuccess: undefined as
     | ((result: AutosaveSuccess) => void)
+    | undefined,
+}));
+
+const transitionMocks = vi.hoisted(() => ({
+  execute: vi.fn(),
+  reset: vi.fn(),
+
+  state: {
+    status: "idle",
+    trigger: null,
+    message: null,
+    currentVersion: null,
+  } as NoteTransitionState,
+
+  onSuccess: undefined as
+    | ((
+        response: TransitionNoteResponse,
+      ) => void)
     | undefined,
 }));
 
@@ -35,6 +55,29 @@ vi.mock(
           updateDraft:
             autosaveMocks.updateDraft,
           retry: autosaveMocks.retry,
+        };
+      },
+    ),
+  }),
+);
+
+vi.mock(
+  "../../hooks/useNoteTransition",
+  () => ({
+    useNoteTransition: vi.fn(
+      (options: {
+        onSuccess: (
+          response: TransitionNoteResponse,
+        ) => void;
+      }) => {
+        transitionMocks.onSuccess =
+          options.onSuccess;
+
+        return {
+          state: transitionMocks.state,
+          execute:
+            transitionMocks.execute,
+          reset: transitionMocks.reset,
         };
       },
     ),
@@ -186,7 +229,235 @@ describe("NoteDetailWorkspace", () => {
     };
     autosaveMocks.onSaveSuccess =
       undefined;
+    transitionMocks.execute.mockReset();
+    transitionMocks.reset.mockReset();
+
+    transitionMocks.state = {
+      status: "idle",
+      trigger: null,
+      message: null,
+      currentVersion: null,
+    };
+
+    transitionMocks.onSuccess = undefined;
   });
+
+  it(
+    "submits rejection with its reason and current saved version",
+    async () => {
+      const user = userEvent.setup();
+      const detail = createNoteDetail();
+
+      render(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      await user.type(
+        screen.getByLabelText(
+          "Rejection reason",
+        ),
+        "The assessment requires correction.",
+      );
+
+      await user.click(
+        screen.getByRole("button", {
+          name: "Reject",
+        }),
+      );
+
+      expect(
+        transitionMocks.execute,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        transitionMocks.execute,
+      ).toHaveBeenCalledWith({
+        baseVersionId:
+          detail.currentVersion.versionId,
+        trigger: "REJECT",
+        rejectionReason:
+          "The assessment requires correction.",
+      });
+    },
+  );
+
+  it(
+    "disables workflow actions while autosave is in progress",
+    () => {
+      autosaveMocks.snapshot = {
+        status: "saving",
+        hasPendingChanges: true,
+        error: null,
+      };
+
+      render(
+        <NoteDetailWorkspace
+          detail={createNoteDetail()}
+          actor={actor}
+        />,
+      );
+
+      const returnToQueueButton =
+        screen.getByRole("button", {
+          name: "Return to Queue",
+        });
+
+      expect(
+        returnToQueueButton,
+      ).toBeDisabled();
+
+      expect(
+        returnToQueueButton,
+      ).toHaveAccessibleDescription(
+        "Wait for the current save to finish.",
+      );
+
+      expect(
+        screen.getByRole("button", {
+          name: "Approve",
+        }),
+      ).toBeDisabled();
+
+      expect(
+        screen.getByRole("button", {
+          name: "Reject",
+        }),
+      ).toBeDisabled();
+    },
+  );
+
+  it(
+    "uses the latest saved version and reconciles a successful transition",
+    async () => {
+      const user = userEvent.setup();
+      const detail = createNoteDetail();
+
+      render(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      const savedVersion = {
+        ...detail.currentVersion,
+        versionId: "version-2",
+        revisionNumber: 2,
+        parentVersionId:
+          detail.currentVersion.versionId,
+        createdAt:
+          "2026-07-31T21:00:00.000Z",
+      };
+
+      const savedNote = {
+        ...detail.note,
+        currentVersionId:
+          savedVersion.versionId,
+        updatedAt: savedVersion.createdAt,
+      };
+
+      act(() => {
+        autosaveMocks.onSaveSuccess?.({
+          savedContent:
+            savedVersion.content,
+
+          response: {
+            clientMutationId:
+              "mutation-transition-test",
+
+            note: savedNote,
+
+            savedVersion,
+          },
+        });
+      });
+
+      await user.click(
+        screen.getByRole("button", {
+          name: "Return to Queue",
+        }),
+      );
+
+      expect(
+        transitionMocks.execute,
+      ).toHaveBeenCalledWith({
+        baseVersionId:
+          savedVersion.versionId,
+        trigger: "RETURN_TO_QUEUE",
+      });
+
+      const transitionResponse: TransitionNoteResponse =
+        {
+          note: {
+            ...savedNote,
+            status: "READY_FOR_REVIEW",
+            updatedAt:
+              "2026-07-31T21:05:00.000Z",
+          },
+
+          currentVersion: savedVersion,
+
+          timelineEvent: {
+            eventId: "transition-event-1",
+            noteId: detail.note.id,
+            versionId:
+              savedVersion.versionId,
+            fromStatus: "IN_REVIEW",
+            toStatus:
+              "READY_FOR_REVIEW",
+            actorId: actor.id,
+            actorRole: actor.role,
+            actorDisplayName:
+              actor.displayName,
+            occurredAt:
+              "2026-07-31T21:05:00.000Z",
+          },
+        };
+
+      act(() => {
+        transitionMocks.onSuccess?.(
+          transitionResponse,
+        );
+      });
+
+      expect(
+        screen.getByText(
+          "Ready For Review",
+          {
+            selector:
+              ".note-status-badge",
+          },
+        ),
+      ).toBeInTheDocument();
+
+      const timeline =
+        screen.getByRole("region", {
+          name: /review timeline/i,
+        });
+
+      expect(
+        within(timeline).getByText(
+          "1",
+          {
+            selector:
+              ".review-timeline-count",
+          },
+        ),
+      ).toBeInTheDocument();
+
+      expect(
+        within(timeline).getByText(
+          actor.displayName,
+          {
+            exact: false,
+          },
+        ),
+      ).toBeInTheDocument();
+    },
+  );
 
   it(
     "shows a save failure and allows the user to retry",
