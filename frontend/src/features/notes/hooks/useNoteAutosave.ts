@@ -90,9 +90,6 @@ export function useNoteAutosave({
 
   const pendingDraftRef =
     useRef<SoapContent | null>(null);
-
-  const initialization =
-    initializationRef.current;
   
   useEffect(() => {
     onSaveSuccessRef.current =

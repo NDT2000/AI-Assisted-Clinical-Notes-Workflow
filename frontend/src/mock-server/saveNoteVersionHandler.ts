@@ -3,6 +3,7 @@ import { http, HttpResponse } from "msw";
 import type { SoapContent, UserRole, } from "../domain/noteAttributes";
 import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, } from "../domain/noteSave";
 import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
+import { devFailureControls } from "./devFailureControls";
 import { saveNoteVersion } from "./noteStore";
 
 const EDITING_ROLES: readonly UserRole[] = [
@@ -10,6 +11,14 @@ const EDITING_ROLES: readonly UserRole[] = [
   "REVIEWER",
   "ADMIN",
 ];
+
+function wait(
+  delayMs: number,
+): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
 
 function isRecord(
   value: unknown,
@@ -104,28 +113,6 @@ export const saveNoteVersionHandler =
         );
       }
 
-      try {
-        await simulateNetwork();
-      } catch (error) {
-        if (
-          error instanceof
-          SimulatedNetworkFailure
-        ) {
-          return HttpResponse.json(
-            {
-              error: "internal_error",
-              message:
-                "Simulated network failure.",
-            },
-            {
-              status: 503,
-            },
-          );
-        }
-
-        throw error;
-      }
-
       const noteId =
         typeof params.noteId === "string"
           ? params.noteId
@@ -178,9 +165,66 @@ export const saveNoteVersionHandler =
         );
       }
 
+      const controls =
+        devFailureControls.consumeSaveControls();
+
+      if (controls.delayMs !== null) {
+        await wait(controls.delayMs);
+      }
+
+      if (controls.shouldFail) {
+        return HttpResponse.json(
+          {
+            error: "internal_error",
+            message:
+              "Development control: the next save was intentionally failed.",
+          },
+          {
+            status: 503,
+          },
+        );
+      }
+
+      if (
+        controls.delayMs === null &&
+        !controls.shouldConflict
+      ) {
+        try {
+          await simulateNetwork();
+        } catch (error) {
+          if (
+            error instanceof
+            SimulatedNetworkFailure
+          ) {
+            return HttpResponse.json(
+              {
+                error: "internal_error",
+                message:
+                  "Simulated network failure.",
+              },
+              {
+                status: 503,
+              },
+            );
+          }
+
+          throw error;
+        }
+      }
+
+      const effectiveRequestBody:
+        SaveNoteVersionRequestBody =
+          controls.shouldConflict
+            ? {
+                ...requestBody,
+                baseVersionId:
+                  `development-conflict:${requestBody.baseVersionId}`,
+              }
+            : requestBody;
+
       const result = saveNoteVersion(
         noteId,
-        requestBody,
+        effectiveRequestBody,
         actor,
       );
 
