@@ -2,6 +2,7 @@ import { http, HttpResponse, } from "msw";
 
 import type { UserRole } from "../domain/noteAttributes";
 import { USER_NOTE_ACTION_TRIGGERS, type TransitionNoteActor, type TransitionNoteRequestBody, type UserNoteActionTrigger, } from "../domain/noteTransition";
+import { devFailureControls } from "./devFailureControls";
 import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
 import { transitionNote } from "./noteStore";
 
@@ -114,28 +115,6 @@ export const transitionNoteHandler =
         );
       }
 
-      try {
-        await simulateNetwork();
-      } catch (error) {
-        if (
-          error instanceof
-          SimulatedNetworkFailure
-        ) {
-          return HttpResponse.json(
-            {
-              error: "internal_error",
-              message:
-                "Simulated network failure.",
-            },
-            {
-              status: 503,
-            },
-          );
-        }
-
-        throw error;
-      }
-
       const noteId =
         typeof params.noteId === "string"
           ? params.noteId
@@ -187,6 +166,45 @@ export const transitionNoteHandler =
             status: 400,
           },
         );
+      }
+
+      const controls =
+        devFailureControls.consumeTransitionControls();
+
+      if (controls.shouldReject) {
+        return HttpResponse.json(
+          {
+            error:
+              "transition_not_allowed",
+            message:
+              "Development control: the next transition was intentionally rejected.",
+          },
+          {
+            status: 422,
+          },
+        );
+      }
+
+      try {
+        await simulateNetwork();
+      } catch (error) {
+        if (
+          error instanceof
+          SimulatedNetworkFailure
+        ) {
+          return HttpResponse.json(
+            {
+              error: "internal_error",
+              message:
+                "Simulated network failure.",
+            },
+            {
+              status: 503,
+            },
+          );
+        }
+
+        throw error;
       }
 
       const result = transitionNote(
