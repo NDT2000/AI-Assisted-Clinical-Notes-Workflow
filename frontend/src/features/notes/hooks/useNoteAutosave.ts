@@ -25,6 +25,13 @@ interface UseNoteAutosaveResult {
   retry: () => void;
 }
 
+interface NoteAutosaveInitialization {
+  noteId: string;
+  baseVersionId: string;
+  content: SoapContent;
+  debounceMs: number;
+}
+
 const INITIAL_SNAPSHOT: AutosaveSnapshot = {
   status: "idle",
   hasPendingChanges: false,
@@ -62,6 +69,17 @@ export function useNoteAutosave({
       null,
     );
 
+  const actorRef =
+    useRef<SaveNoteVersionActor>(actor);
+
+  const initializationRef =
+    useRef<NoteAutosaveInitialization>({
+      noteId,
+      baseVersionId: initialBaseVersionId,
+      content: cloneContent(initialContent),
+      debounceMs,
+    });
+
   const activeRequestRef =
     useRef<AbortController | null>(
       null,
@@ -73,18 +91,51 @@ export function useNoteAutosave({
   const pendingDraftRef =
     useRef<SoapContent | null>(null);
 
+  const initialization =
+    initializationRef.current;
+  
   useEffect(() => {
     onSaveSuccessRef.current =
       onSaveSuccess;
   }, [onSaveSuccess]);
 
   useEffect(() => {
+    actorRef.current = actor;
+  }, [actor]);
+
+  useEffect(() => {
+    initializationRef.current = {
+      noteId,
+      baseVersionId: initialBaseVersionId,
+      content: cloneContent(initialContent),
+      debounceMs,
+    };
+  }, [
+    debounceMs,
+    initialBaseVersionId,
+    initialContent.subjective,
+    initialContent.objective,
+    initialContent.assessment,
+    initialContent.plan,
+    noteId,
+  ]);
+
+  useEffect(() => {
+    const initialization =
+      initializationRef.current;
+
     const coordinator =
       new AutosaveCoordinator({
-        initialBaseVersionId,
+        initialBaseVersionId:
+          initialization.baseVersionId,
+
         initialContent:
-          cloneContent(initialContent),
-        debounceMs,
+          cloneContent(
+            initialization.content,
+          ),
+
+        debounceMs:
+          initialization.debounceMs,
 
         save: async (request) => {
           const controller =
@@ -95,8 +146,8 @@ export function useNoteAutosave({
 
           try {
             return await saveNoteVersion(
-              noteId,
-              actor,
+              initialization.noteId,
+              actorRef.current,
               request,
               controller.signal,
             );
@@ -148,18 +199,7 @@ export function useNoteAutosave({
 
       coordinatorRef.current = null;
     };
-  }, [
-    actor.id,
-    actor.displayName,
-    actor.role,
-    debounceMs,
-    initialBaseVersionId,
-    initialContent.subjective,
-    initialContent.objective,
-    initialContent.assessment,
-    initialContent.plan,
-    noteId,
-  ]);
+  }, [noteId]);
 
   const updateDraft = useCallback(
     (content: SoapContent) => {
