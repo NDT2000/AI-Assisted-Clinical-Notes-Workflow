@@ -251,6 +251,44 @@ export class AutosaveCoordinator {
     this.executeAttempt(attempt);
   }
 
+  resolveConflict(
+    resolvedContent: SoapContent,
+    serverBaseVersionId: string,
+  ): void {
+    if (
+      this.disposed ||
+      this.inFlightAttempt ||
+      !this.conflictAttempt
+    ) {
+      return;
+    }
+
+    this.clearDebounceTimer();
+
+    this.conflictAttempt = null;
+    this.failedAttempt = null;
+    this.queuedContent = null;
+
+    this.baseVersionId =
+      serverBaseVersionId;
+
+    const attempt: SaveAttempt = {
+      request: {
+        baseVersionId:
+          serverBaseVersionId,
+
+        clientMutationId:
+          this.createClientMutationId(),
+
+        content: cloneContent(
+          resolvedContent,
+        ),
+      },
+    };
+
+    this.executeAttempt(attempt);
+  }
+
   getSnapshot(): AutosaveSnapshot {
     return {
       status: this.status,

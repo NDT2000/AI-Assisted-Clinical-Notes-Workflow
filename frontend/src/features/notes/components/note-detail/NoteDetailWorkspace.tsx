@@ -16,6 +16,7 @@ import { PresencePanel, } from "./PresencePanel";
 import { ReviewTimeline, } from "./ReviewTimeline";
 import { SoapEditor, type SoapSectionKey, } from "./SoapEditor";
 import { VersionHistorySidebar, } from "./VersionHistorySidebar";
+import { VersionConflictResolver, } from "./VersionConflictResolver";
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
@@ -431,8 +432,10 @@ export function NoteDetailWorkspace({
   
   const {
     snapshot: autosaveSnapshot,
+    conflict: autosaveConflict,
     updateDraft: queueAutosave,
     retry: retryAutosave,
+    resolveConflict: resolveAutosaveConflict,
   } = useNoteAutosave({
     noteId: detail.note.id,
     actor,
@@ -447,6 +450,64 @@ export function NoteDetailWorkspace({
     onSaveSuccess:
       handleSaveSuccess,
   });
+
+  const handleConflictResolve =
+    useCallback(
+      (
+        resolvedContent: SoapContent,
+      ): void => {
+        if (!autosaveConflict) {
+          return;
+        }
+
+        const nextContent =
+          copySoapContent(
+            resolvedContent,
+          );
+
+        draftContentRef.current =
+          nextContent;
+
+        setDraftContent(nextContent);
+        setHistoricalVersionId(null);
+
+        setWorkspaceDetail(
+          (currentDetail) => {
+            const serverVersion =
+              autosaveConflict.currentVersion;
+
+            const serverVersionExists =
+              currentDetail.versions.some(
+                (version) =>
+                  version.versionId ===
+                  serverVersion.versionId,
+              );
+
+            if (serverVersionExists) {
+              return currentDetail;
+            }
+
+            return {
+              ...currentDetail,
+              versions: [
+                ...currentDetail.versions,
+                serverVersion,
+              ],
+            };
+          },
+        );
+
+      resolveAutosaveConflict(
+        nextContent,
+        autosaveConflict.currentVersion
+          .versionId,
+      );
+    },
+    [
+      autosaveConflict,
+      resolveAutosaveConflict,
+    ],
+  );
 
   const {
     state: transitionState,
@@ -756,19 +817,38 @@ export function NoteDetailWorkspace({
             </p>
           ) : null}
 
-          <SoapEditor
-            content={displayedContent}
-            readOnly={
-              !isEditable ||
-              isViewingHistoricalVersion
-            }
-            dirtySections={
-              displayedDirtySections
-            }
-            onSectionChange={
-              handleSectionChange
-            }
-          />
+          {autosaveConflict !== null &&
+            !isViewingHistoricalVersion ? (
+              <VersionConflictResolver
+                ancestorContent={
+                  autosaveConflict
+                    .commonAncestor?.content ??
+                  savedContent
+                }
+                localContent={draftContent}
+                serverContent={
+                  autosaveConflict
+                    .currentVersion.content
+                }
+                onResolve={
+                  handleConflictResolve
+                }
+              />
+            ) : (
+              <SoapEditor
+                content={displayedContent}
+                readOnly={
+                  !isEditable ||
+                  isViewingHistoricalVersion
+                }
+                dirtySections={
+                  displayedDirtySections
+                }
+                onSectionChange={
+                  handleSectionChange
+                }
+              />
+            )}
 
           <ReviewTimeline
             events={

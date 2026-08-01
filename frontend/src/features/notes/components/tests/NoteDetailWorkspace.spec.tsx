@@ -3,10 +3,14 @@ import  userEvent from "@testing-library/user-event";
 import { beforeEach, afterEach, describe, expect, it, vi, } from "vitest";
 import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteResponse, } from "../../../../domain/noteTransition";
 import type { NoteTransitionFailure, NoteTransitionState, } from "../../hooks/useNoteTransition";
+import type { NoteAutosaveConflict, } from "../../autosave/noteAutosaveConflict";
 
 const autosaveMocks = vi.hoisted(() => ({
   updateDraft: vi.fn(),
   retry: vi.fn(),
+  resolveConflict: vi.fn(),
+
+  conflict : null as NoteAutosaveConflict | null,
 
   snapshot: {
     status: "idle",
@@ -64,9 +68,12 @@ vi.mock(
         return {
           snapshot: 
             autosaveMocks.snapshot,
+          conflict:
+            autosaveMocks.conflict,
           updateDraft:
             autosaveMocks.updateDraft,
           retry: autosaveMocks.retry,
+          resolveConflict: autosaveMocks.resolveConflict,
         };
       },
     ),
@@ -246,6 +253,8 @@ describe("NoteDetailWorkspace", () => {
   beforeEach(() => {
     autosaveMocks.updateDraft.mockReset();
     autosaveMocks.retry.mockReset();
+    autosaveMocks.resolveConflict.mockReset();
+    autosaveMocks.conflict = null;
 
     autosaveMocks.snapshot = {
       status: "idle",
@@ -761,6 +770,145 @@ describe("NoteDetailWorkspace", () => {
       expect(
         autosaveMocks.retry,
       ).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it(
+    "shows the conflict resolver and submits resolved content against the server head",
+    async () => {
+      const user = userEvent.setup();
+      const detail = createNoteDetail();
+
+      const { rerender } = render(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      const planInput =
+        screen.getByRole("textbox", {
+          name: "Plan",
+        });
+
+      await user.clear(planInput);
+
+      await user.type(
+        planInput,
+        "Local plan content.",
+      );
+
+      const serverVersion:
+        NoteVersionDetail = {
+        ...detail.currentVersion,
+
+        versionId:
+          "version-server-2",
+
+        revisionNumber: 2,
+
+        parentVersionId:
+          detail.currentVersion.versionId,
+
+        content: {
+          ...detail.currentVersion.content,
+          plan: "Server plan content.",
+        },
+
+        createdAt:
+          "2026-08-01T20:00:00.000Z",
+      };
+
+      autosaveMocks.snapshot = {
+        status: "conflict",
+        hasPendingChanges: true,
+        error: new Error(
+          "Version conflict",
+        ),
+      };
+
+      autosaveMocks.conflict = {
+        message:
+          "The note was updated elsewhere.",
+
+        currentVersion:
+          serverVersion,
+
+        commonAncestor:
+          detail.currentVersion,
+      };
+
+      rerender(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      expect(
+        screen.getByRole("heading", {
+          name: "Resolve version conflict",
+        }),
+      ).toBeInTheDocument();
+
+      expect(
+        screen.getByText(
+          "Local plan content.",
+        ),
+      ).toBeInTheDocument();
+
+      expect(
+        screen.getByText(
+          "Server plan content.",
+        ),
+      ).toBeInTheDocument();
+
+      expect(
+        screen.getByText(
+          detail.currentVersion.content.plan,
+        ),
+      ).toBeInTheDocument();
+
+      const returnToQueueButton =
+        screen.getByRole("button", {
+          name: "Return to Queue",
+        });
+
+      expect(
+        returnToQueueButton,
+      ).toBeDisabled();
+
+      expect(
+        returnToQueueButton,
+      ).toHaveAccessibleDescription(
+        "Resolve the version conflict before running an action.",
+      );
+
+      await user.click(
+        screen.getByRole("radio", {
+          name: "Keep my version for Plan",
+        }),
+      );
+
+      await user.click(
+        screen.getByRole("button", {
+          name: "Save resolved version",
+        }),
+      );
+
+      expect(
+        autosaveMocks.resolveConflict,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        autosaveMocks.resolveConflict,
+      ).toHaveBeenCalledWith(
+        {
+          ...detail.currentVersion.content,
+          plan: "Local plan content.",
+        },
+        serverVersion.versionId,
+      );
     },
   );
 

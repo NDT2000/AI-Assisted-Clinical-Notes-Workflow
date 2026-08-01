@@ -185,31 +185,38 @@ export const saveNoteVersionHandler =
         );
       }
 
+      // if (
+      //   controls.delayMs === null &&
+      //   !controls.shouldConflict
+      // ) {
+      //   try {
+      //     await simulateNetwork();
+      //   } catch (error) {
+      //     if (
+      //       error instanceof
+      //       SimulatedNetworkFailure
+      //     ) {
+      //       return HttpResponse.json(
+      //         {
+      //           error: "internal_error",
+      //           message:
+      //             "Simulated network failure.",
+      //         },
+      //         {
+      //           status: 503,
+      //         },
+      //       );
+      //     }
+
+      //     throw error;
+      //   }
+      // }
+
       if (
         controls.delayMs === null &&
         !controls.shouldConflict
       ) {
-        try {
-          await simulateNetwork();
-        } catch (error) {
-          if (
-            error instanceof
-            SimulatedNetworkFailure
-          ) {
-            return HttpResponse.json(
-              {
-                error: "internal_error",
-                message:
-                  "Simulated network failure.",
-              },
-              {
-                status: 503,
-              },
-            );
-          }
-
-          throw error;
-        }
+        await wait(100);
       }
 
       const effectiveRequestBody:

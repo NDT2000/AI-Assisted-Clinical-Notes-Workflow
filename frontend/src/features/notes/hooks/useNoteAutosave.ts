@@ -25,6 +25,10 @@ interface UseNoteAutosaveResult {
     content: SoapContent,
   ) => void;
   retry: () => void;
+  resolveConflict: (
+    resolvedContent: SoapContent,
+    serverBaseVersionId: string,
+  ) => void;
 }
 
 interface NoteAutosaveInitialization {
@@ -225,6 +229,19 @@ export function useNoteAutosave({
     coordinatorRef.current?.retry();
   }, []);
 
+  const resolveConflict = useCallback(
+    (
+      resolvedContent: SoapContent,
+      serverBaseVersionId: string,
+    ): void => {
+      coordinatorRef.current?.resolveConflict(
+        cloneContent(resolvedContent),
+        serverBaseVersionId,
+      );
+    },
+    [],
+  );
+
   const conflict =
   snapshot.status === "conflict"
     ? getNoteAutosaveConflict(
@@ -237,5 +254,6 @@ export function useNoteAutosave({
     conflict,
     updateDraft,
     retry,
+    resolveConflict,
   };
 }
