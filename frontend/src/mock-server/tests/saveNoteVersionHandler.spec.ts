@@ -352,47 +352,75 @@ describe(
     );
 
     it(
-      "returns 409 when the base version is stale",
+      "returns the server head and common ancestor when the base version is stale",
       async () => {
         const noteId =
           requireFirstNoteId();
 
-        const currentDetail =
+        const originalDetail =
           getNoteDetail(noteId);
 
-        if (!currentDetail) {
+        if (!originalDetail) {
           throw new Error(
             "Expected note detail.",
           );
         }
 
-        const response = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
+        const originalVersion =
+          originalDetail.currentVersion;
+
+        const concurrentSaveResponse =
+          await postSave(noteId, {
+            baseVersionId:
+              originalVersion.versionId,
+            clientMutationId:
+              "mutation-concurrent-save-1",
+            content: {
+              subjective:
+                "Concurrent subjective",
+              objective:
+                "Concurrent objective",
+              assessment:
+                "Concurrent assessment",
+              plan:
+                "Concurrent plan",
+            },
+          });
+
+        expect(
+          concurrentSaveResponse.status,
+        ).toBe(201);
+
+        const detailAfterConcurrentSave =
+          getNoteDetail(noteId);
+
+        if (!detailAfterConcurrentSave) {
+          throw new Error(
+            "Expected updated note detail.",
+          );
+        }
+
+        const response = await postSave(
+          noteId,
           {
-            method: "POST",
-            headers: getActorHeaders(),
-            body: JSON.stringify({
-              baseVersionId:
-                "stale-version-id",
-              clientMutationId:
-                "mutation-conflict-1",
-              content: {
-                subjective:
-                  "Conflicting subjective",
-                objective:
-                  "Conflicting objective",
-                assessment:
-                  "Conflicting assessment",
-                plan:
-                  "Conflicting plan",
-              },
-            }),
+            baseVersionId:
+              originalVersion.versionId,
+            clientMutationId:
+              "mutation-conflict-1",
+            content: {
+              subjective:
+                "Conflicting subjective",
+              objective:
+                "Conflicting objective",
+              assessment:
+                "Conflicting assessment",
+              plan:
+                "Conflicting plan",
+            },
           },
         );
 
-        expect(response.status).toBe(
-          409,
-        );
+        expect(response.status).toBe(409);
 
         const body =
           (await response.json()) as
@@ -402,10 +430,12 @@ describe(
           "version_conflict",
         );
 
-        expect(
-          body.currentVersion,
-        ).toEqual(
-          currentDetail.currentVersion,
+        expect(body.currentVersion).toEqual(
+          detailAfterConcurrentSave.currentVersion,
+        );
+
+        expect(body.commonAncestor).toEqual(
+          originalVersion,
         );
       },
     );
@@ -586,6 +616,10 @@ describe(
         expect(
           simulateNetworkMock,
         ).toHaveBeenCalledTimes(1);
+
+        expect(
+          conflictBody.commonAncestor,
+        ).toBeNull();
       },
     );
 

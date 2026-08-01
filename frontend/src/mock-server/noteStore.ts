@@ -6,6 +6,7 @@ import type { NoteDetail, NoteVersionDetail, ReviewTimelineEvent } from "../doma
 import { generateNoteDetail } from "../mock-data/generateNoteDetail";
 import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../domain/noteSave";
 import type { TransitionNoteActor, TransitionNoteRequestBody, TransitionNoteResponse, } from "../domain/noteTransition";
+import { findCommonAncestor } from "../domain/versionGraph";
 
 const DEFAULT_SEED_COUNT = 5_000;
 const DEFAULT_SEED_VALUE = 42;
@@ -21,6 +22,7 @@ export type SaveNoteVersionStoreResult =
   | {
       outcome: "version-conflict";
       currentVersion: NoteVersionDetail;
+      commonAncestor: NoteVersionDetail | null;
     }
   | {
       outcome: "idempotency-conflict";
@@ -235,9 +237,17 @@ export function saveNoteVersion(
     request.baseVersionId !==
     detail.note.currentVersionId
   ) {
+    const commonAncestor =
+      findCommonAncestor(
+        detail.versions,
+        request.baseVersionId,
+        detail.currentVersion.versionId,
+      );
+
     return {
       outcome: "version-conflict",
       currentVersion: detail.currentVersion,
+      commonAncestor,
     };
   }
 

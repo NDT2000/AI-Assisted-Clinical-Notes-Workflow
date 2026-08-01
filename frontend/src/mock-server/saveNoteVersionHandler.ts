@@ -249,6 +249,8 @@ export const saveNoteVersionHandler =
                 "The note has been updated since this draft was opened.",
               currentVersion:
                 result.currentVersion,
+              commonAncestor:
+                result.commonAncestor,
             },
             {
               status: 409,

@@ -47,6 +47,7 @@ export interface SaveNoteVersionConflictResponse {
   error: "version_conflict";
   message: string;
   currentVersion: NoteVersionDetail;
+  commonAncestor: NoteVersionDetail | null;
 }
 
 // The possible values of response if saving of note version is unsuccessful.
