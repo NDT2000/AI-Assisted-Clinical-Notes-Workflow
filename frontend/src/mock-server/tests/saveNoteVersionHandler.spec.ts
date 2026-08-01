@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, } from "vitest";
 import { setupServer } from "msw/node";
 
-import type { SaveNoteVersionConflictResponse, SaveNoteVersionResponse, } from "../../domain/noteSave";
+import type { SaveNoteVersionConflictResponse, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../../domain/noteSave";
 
 vi.mock("../mockNetwork", async () => {
   const actual =
@@ -16,6 +16,7 @@ vi.mock("../mockNetwork", async () => {
 });
 
 import { SimulatedNetworkFailure, simulateNetwork, } from "../mockNetwork";
+import { devFailureControls, } from "../devFailureControls";
 import { getNoteDetail, getNotes, seedNotes, } from "../noteStore";
 import { saveNoteVersionHandler, } from "../saveNoteVersionHandler";
 
@@ -53,6 +54,52 @@ function requireFirstNoteId(): string {
   return summary.id;
 }
 
+function createSaveRequestBody(
+  noteId: string,
+  clientMutationId: string,
+  value: string,
+): SaveNoteVersionRequestBody {
+  const detail = getNoteDetail(noteId);
+
+  if (!detail) {
+    throw new Error(
+      "Expected note detail.",
+    );
+  }
+
+  return {
+    baseVersionId:
+      detail.currentVersion.versionId,
+
+    clientMutationId,
+
+    content: {
+      subjective:
+        `${value} subjective`,
+      objective:
+        `${value} objective`,
+      assessment:
+        `${value} assessment`,
+      plan:
+        `${value} plan`,
+    },
+  };
+}
+
+function postSave(
+  noteId: string,
+  body: SaveNoteVersionRequestBody,
+): Promise<Response> {
+  return fetch(
+    `http://localhost/api/notes/${noteId}/versions`,
+    {
+      method: "POST",
+      headers: getActorHeaders(),
+      body: JSON.stringify(body),
+    },
+  );
+}
+
 describe(
   "saveNoteVersionHandler",
   () => {
@@ -64,6 +111,7 @@ describe(
 
     beforeEach(() => {
       seedNotes(100, 42);
+      devFailureControls.reset();
 
       simulateNetworkMock.mockReset();
       simulateNetworkMock.mockResolvedValue(
@@ -72,6 +120,7 @@ describe(
     });
 
     afterEach(() => {
+      devFailureControls.reset();
       server.resetHandlers();
     });
 
@@ -204,7 +253,7 @@ describe(
 
         expect(
           simulateNetworkMock,
-        ).toHaveBeenCalledTimes(1);
+        ).not.toHaveBeenCalled();
       },
     );
 
@@ -372,13 +421,13 @@ describe(
         const noteId =
           requireFirstNoteId();
 
-        const response = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
-          {
-            method: "POST",
-            headers: getActorHeaders(),
-            body: JSON.stringify({}),
-          },
+        const response = await postSave(
+          noteId,
+          createSaveRequestBody(
+            noteId,
+            "mutation-network-failure-1",
+            "Network failure",
+          ),
         );
 
         expect(response.status).toBe(
@@ -394,6 +443,213 @@ describe(
           message:
             "Simulated network failure.",
         });
+
+        expect(
+          simulateNetworkMock,
+        ).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it(
+      "fails only the next valid save when the development failure is armed",
+      async () => {
+        const noteId =
+          requireFirstNoteId();
+
+        devFailureControls
+          .armFailNextSave();
+
+        const failedResponse =
+          await postSave(
+            noteId,
+            createSaveRequestBody(
+              noteId,
+              "mutation-dev-failure-1",
+              "Failed save",
+            ),
+          );
+
+        expect(
+          failedResponse.status,
+        ).toBe(503);
+
+        const failedBody =
+          (await failedResponse.json()) as
+            ErrorResponse;
+
+        expect(failedBody).toEqual({
+          error: "internal_error",
+          message:
+            "Development control: the next save was intentionally failed.",
+        });
+
+        expect(
+          devFailureControls
+            .getSnapshot()
+            .failNextSave,
+        ).toBe(false);
+
+        expect(
+          simulateNetworkMock,
+        ).not.toHaveBeenCalled();
+
+        const followingResponse =
+          await postSave(
+            noteId,
+            createSaveRequestBody(
+              noteId,
+              "mutation-after-dev-failure-1",
+              "Following save",
+            ),
+          );
+
+        expect(
+          followingResponse.status,
+        ).toBe(201);
+
+        expect(
+          simulateNetworkMock,
+        ).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it(
+      "causes a version conflict only for the next valid save",
+      async () => {
+        const noteId =
+          requireFirstNoteId();
+
+        const originalDetail =
+          getNoteDetail(noteId);
+
+        if (!originalDetail) {
+          throw new Error(
+            "Expected note detail.",
+          );
+        }
+
+        devFailureControls
+          .armConflictNextSave();
+
+        const conflictResponse =
+          await postSave(
+            noteId,
+            createSaveRequestBody(
+              noteId,
+              "mutation-dev-conflict-1",
+              "Conflict save",
+            ),
+          );
+
+        expect(
+          conflictResponse.status,
+        ).toBe(409);
+
+        const conflictBody =
+          (await conflictResponse.json()) as
+            SaveNoteVersionConflictResponse;
+
+        expect(
+          conflictBody.error,
+        ).toBe("version_conflict");
+
+        expect(
+          conflictBody.currentVersion,
+        ).toEqual(
+          originalDetail.currentVersion,
+        );
+
+        expect(
+          devFailureControls
+            .getSnapshot()
+            .conflictNextSave,
+        ).toBe(false);
+
+        expect(
+          simulateNetworkMock,
+        ).not.toHaveBeenCalled();
+
+        const followingResponse =
+          await postSave(
+            noteId,
+            createSaveRequestBody(
+              noteId,
+              "mutation-after-dev-conflict-1",
+              "Following save",
+            ),
+          );
+
+        expect(
+          followingResponse.status,
+        ).toBe(201);
+
+        expect(
+          simulateNetworkMock,
+        ).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it(
+      "delays only the next valid save",
+      async () => {
+        const noteId =
+          requireFirstNoteId();
+
+        const delayMs = 40;
+
+        devFailureControls
+          .armDelayNextSave(delayMs);
+
+        const startedAt = Date.now();
+
+        const delayedResponse =
+          await postSave(
+            noteId,
+            createSaveRequestBody(
+              noteId,
+              "mutation-dev-delay-1",
+              "Delayed save",
+            ),
+          );
+
+        const elapsedMs =
+          Date.now() - startedAt;
+
+        expect(
+          delayedResponse.status,
+        ).toBe(201);
+
+        expect(elapsedMs).toBeGreaterThanOrEqual(
+          30,
+        );
+
+        expect(
+          devFailureControls
+            .getSnapshot()
+            .delayNextSaveMs,
+        ).toBeNull();
+
+        expect(
+          simulateNetworkMock,
+        ).not.toHaveBeenCalled();
+
+        const followingResponse =
+          await postSave(
+            noteId,
+            createSaveRequestBody(
+              noteId,
+              "mutation-after-dev-delay-1",
+              "Following save",
+            ),
+          );
+
+        expect(
+          followingResponse.status,
+        ).toBe(201);
+
+        expect(
+          simulateNetworkMock,
+        ).toHaveBeenCalledTimes(1);
       },
     );
 
