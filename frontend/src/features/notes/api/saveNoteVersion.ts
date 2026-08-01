@@ -6,6 +6,9 @@ interface SaveNoteVersionRequestErrorOptions {
   code: SaveNoteVersionErrorCode;
   message: string;
   currentVersion?: NoteVersionDetail;
+  commonAncestor?:
+    | NoteVersionDetail
+    | null;
 }
 
 export class SaveNoteVersionRequestError
@@ -16,6 +19,11 @@ export class SaveNoteVersionRequestError
 
   readonly currentVersion:
     | NoteVersionDetail
+    | undefined;
+
+  readonly commonAncestor:
+    | NoteVersionDetail
+    | null
     | undefined;
 
   constructor(
@@ -30,6 +38,8 @@ export class SaveNoteVersionRequestError
     this.code = options.code;
     this.currentVersion =
       options.currentVersion;
+    this.commonAncestor =
+      options.commonAncestor;
 
     Object.setPrototypeOf(
       this,
@@ -106,6 +116,11 @@ function createRequestError(
     | NoteVersionDetail
     | undefined;
 
+  let commonAncestor:
+    | NoteVersionDetail
+    | null
+    | undefined;
+
   if (isRecord(body)) {
     if (isSaveErrorCode(body.error)) {
       code = body.error;
@@ -125,6 +140,16 @@ function createRequestError(
       currentVersion =
         body.currentVersion as unknown as
           NoteVersionDetail;
+
+      if (body.commonAncestor === null) {
+        commonAncestor = null;
+      } else if (
+        isRecord(body.commonAncestor)
+      ) {
+        commonAncestor =
+          body.commonAncestor as unknown as
+            NoteVersionDetail;
+      }
     }
   }
 
@@ -133,6 +158,7 @@ function createRequestError(
     code,
     message,
     currentVersion,
+    commonAncestor,
   });
 }
 

@@ -144,6 +144,13 @@ describe("saveNoteVersion", () => {
       createSuccessResponse()
         .savedVersion;
 
+    const commonAncestor = {
+      ...currentVersion,
+      versionId: "version-1",
+      revisionNumber: 1,
+      parentVersionId: null,
+    };
+
     server.use(
       http.post(
         "*/api/notes/:noteId/versions",
@@ -155,6 +162,7 @@ describe("saveNoteVersion", () => {
               message:
                 "The note has changed.",
               currentVersion,
+              commonAncestor,
             },
             {
               status: 409,
@@ -185,6 +193,7 @@ describe("saveNoteVersion", () => {
       message:
         "The note has changed.",
       currentVersion,
+      commonAncestor,
     });
 
     expect(

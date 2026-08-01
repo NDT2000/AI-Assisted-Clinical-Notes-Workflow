@@ -4,6 +4,7 @@ import type { SoapContent, } from "../../../domain/noteAttributes";
 import type { SaveNoteVersionActor, } from "../../../domain/noteSave";
 import { AutosaveCoordinator, } from "../autosave/AutosaveCoordinator";
 import type { AutosaveSnapshot, AutosaveSuccess, } from "../autosave/AutosaveCoordinator";
+import { getNoteAutosaveConflict, type NoteAutosaveConflict } from "../autosave/noteAutosaveConflict";
 import { classifySaveNoteVersionError, saveNoteVersion, } from "../api/saveNoteVersion";
 
 interface UseNoteAutosaveOptions {
@@ -19,6 +20,7 @@ interface UseNoteAutosaveOptions {
 
 interface UseNoteAutosaveResult {
   snapshot: AutosaveSnapshot;
+  conflict: NoteAutosaveConflict | null;
   updateDraft: (
     content: SoapContent,
   ) => void;
@@ -223,8 +225,16 @@ export function useNoteAutosave({
     coordinatorRef.current?.retry();
   }, []);
 
+  const conflict =
+  snapshot.status === "conflict"
+    ? getNoteAutosaveConflict(
+        snapshot.error,
+      )
+    : null;
+
   return {
     snapshot,
+    conflict,
     updateDraft,
     retry,
   };
