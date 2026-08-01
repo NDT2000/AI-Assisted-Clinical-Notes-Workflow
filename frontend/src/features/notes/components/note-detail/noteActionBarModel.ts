@@ -1,6 +1,7 @@
 import type { Trigger } from "../../../../domain/noteAttributes";
 import type { Actor, Guard, } from "../../../../domain/noteGuards";
 import { canTransition } from "../../../../domain/noteGuards";
+import type { UserNoteActionTrigger } from "../../../../domain/noteTransition";
 import { noteTransitions } from "../../../../domain/noteTransitions";
 
 interface ActionDefinition {
@@ -37,10 +38,13 @@ const ACTION_DEFINITIONS = {
     label: "Amend",
     requiresReason: false,
   },
-} satisfies Partial<Record<Trigger, ActionDefinition>>;
+} satisfies Record<
+  UserNoteActionTrigger,
+  ActionDefinition
+>;
 
 export type UserActionTrigger =
-  keyof typeof ACTION_DEFINITIONS;
+  UserNoteActionTrigger;
 
 export type ActionExecutionState =
   | "IDLE"

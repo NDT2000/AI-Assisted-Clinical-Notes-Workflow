@@ -5,6 +5,7 @@ import { getPatientsHandler } from "./patientsHandler";
 import { assignReviewerHandler, regenerateHandler, } from "./bulkActionsHandler";
 import { getNoteDetailHandler, } from "./getNoteDetailHandler";
 import { saveNoteVersionHandler } from "./saveNoteVersionHandler";
+import { transitionNoteHandler } from "./transitionNoteHandler";
 
 export const handlers: RequestHandler[] = [
     getNoteDetailHandler,
@@ -14,4 +15,5 @@ export const handlers: RequestHandler[] = [
     assignReviewerHandler,
     regenerateHandler,
     saveNoteVersionHandler,
+    transitionNoteHandler,
 ];

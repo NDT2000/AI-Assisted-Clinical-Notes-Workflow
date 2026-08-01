@@ -1,10 +1,11 @@
 import { generateNoteSummaries } from "../mock-data/generateNoteSummary";
 import type { NoteSummary } from "../domain/noteSummary";
 import type { SoapContent, UserRole } from "../domain/noteAttributes";
-import { canRequestRegeneration } from "../domain/noteGuards";
-import type { NoteDetail, NoteVersionDetail } from "../domain/noteDetail";
+import { canRequestRegeneration, canTransition } from "../domain/noteGuards";
+import type { NoteDetail, NoteVersionDetail, ReviewTimelineEvent } from "../domain/noteDetail";
 import { generateNoteDetail } from "../mock-data/generateNoteDetail";
 import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../domain/noteSave";
+import type { TransitionNoteActor, TransitionNoteRequestBody, TransitionNoteResponse, } from "../domain/noteTransition";
 
 const DEFAULT_SEED_COUNT = 5_000;
 const DEFAULT_SEED_VALUE = 42;
@@ -23,6 +24,23 @@ export type SaveNoteVersionStoreResult =
     }
   | {
       outcome: "idempotency-conflict";
+    };
+
+export type TransitionNoteStoreResult =
+  | {
+      outcome: "transitioned";
+      response: TransitionNoteResponse;
+    }
+  | {
+      outcome: "not-found";
+    }
+  | {
+      outcome: "version-conflict";
+      currentVersion: NoteVersionDetail;
+    }
+  | {
+      outcome: "transition-rejected";
+      reason: string;
     };
 
 const CONTENT_PREVIEW_MAX_LENGTH = 120;
@@ -45,8 +63,6 @@ const saveMutationRecords = new Map<
   string,
   SaveMutationRecord
 >();
-
-
 
 function createContentPreview(
   content: SoapContent,
@@ -295,6 +311,122 @@ export function saveNoteVersion(
   return {
     outcome: "saved",
     response,
+  };
+}
+
+export function transitionNote(
+  noteId: string,
+  request: TransitionNoteRequestBody,
+  actor: TransitionNoteActor,
+  transitionedAt: string = new Date().toISOString(),
+): TransitionNoteStoreResult {
+  const detail = getNoteDetail(noteId);
+
+  if (!detail) {
+    return {
+      outcome: "not-found",
+    };
+  }
+
+  if (
+    request.baseVersionId !==
+    detail.note.currentVersionId
+  ) {
+    return {
+      outcome: "version-conflict",
+      currentVersion: detail.currentVersion,
+    };
+  }
+
+  const transitionResult = canTransition({
+    note: detail.note,
+    version: detail.currentVersion,
+    actor,
+    action: request.trigger,
+    now: transitionedAt,
+    ...(request.rejectionReason !== undefined
+      ? {
+          rejectionReason:
+            request.rejectionReason,
+        }
+      : {}),
+  });
+
+  if (!transitionResult.allowed) {
+    return {
+      outcome: "transition-rejected",
+      reason: transitionResult.reason,
+    };
+  }
+
+  const updatedNote = {
+    ...detail.note,
+    status: transitionResult.nextStatus,
+    updatedAt: transitionedAt,
+    ...(transitionResult.nextStatus ===
+    "APPROVED"
+      ? {
+          approvedAt: transitionedAt,
+        }
+      : {}),
+  };
+
+  const rejectionReason =
+    request.trigger === "REJECT"
+      ? request.rejectionReason?.trim()
+      : undefined;
+
+  const timelineEvent: ReviewTimelineEvent = {
+    eventId: `${noteId}-transition-${
+      detail.timeline.length + 1
+    }`,
+    noteId,
+    versionId:
+      detail.currentVersion.versionId,
+    fromStatus: detail.note.status,
+    toStatus: transitionResult.nextStatus,
+    actorId: actor.id,
+    actorRole: actor.role,
+    actorDisplayName: actor.displayName,
+    occurredAt: transitionedAt,
+    ...(rejectionReason
+      ? {
+          reason: rejectionReason,
+        }
+      : {}),
+  };
+
+  const updatedDetail: NoteDetail = {
+    ...detail,
+    note: updatedNote,
+    timeline: [
+      ...detail.timeline,
+      timelineEvent,
+    ],
+  };
+
+  noteDetails.set(noteId, updatedDetail);
+
+  notes = notes.map((summary) => {
+    if (summary.id !== noteId) {
+      return summary;
+    }
+
+    return {
+      ...summary,
+      status: transitionResult.nextStatus,
+      updatedAt: transitionedAt,
+    };
+  });
+
+  return {
+    outcome: "transitioned",
+    response: {
+      note: updatedNote,
+      timelineEvent,
+      currentVersion:
+        detail.currentVersion,
+    },
   };
 }
 
