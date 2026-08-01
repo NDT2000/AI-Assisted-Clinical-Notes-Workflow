@@ -5,9 +5,46 @@ import { afterEach, describe, expect, it, vi, } from "vitest";
 import type { NoteSummary, } from "../../../../domain/noteSummary";
 import type { NoteListResponse, } from "../../api/noteListResponse";
 import { getNotes } from "../../api/getNotes";
+
+vi.mock(
+  "@tanstack/react-virtual",
+  () => ({
+    useVirtualizer: ({
+      count,
+    }: {
+      count: number;
+    }) => ({
+      getVirtualItems: () =>
+        Array.from(
+          { length: count },
+          (_, index) => ({
+            key: index,
+            index,
+            start: index * 44,
+            size: 44,
+            end: (index + 1) * 44,
+            lane: 0,
+          }),
+        ),
+
+      getTotalSize: () =>
+        count * 44,
+
+      measureElement: () =>
+        undefined,
+
+      scrollToIndex: () =>
+        undefined,
+    }),
+  }),
+);
+
 import { NotesPage } from "../NotesPage";
 
-vi.mock("../api/getNotes", () => ({
+const getNotesMock =
+  vi.mocked(getNotes);
+
+vi.mock("../../api/getNotes", () => ({
   getNotes: vi.fn(),
 }));
 
@@ -190,10 +227,25 @@ describe(
           firstSignal.aborted,
         ).toBe(false);
 
-        fireEvent.click(
-          screen.getByRole("button", {
-            name: "Change query",
+        fireEvent.change(
+          screen.getByRole("searchbox", {
+            name: /search patient or note content/i,
           }),
+          {
+            target: {
+              value: "new query",
+            },
+          },
+        );
+        await waitFor(
+          () => {
+            expect(
+              getNotesMock,
+            ).toHaveBeenCalledTimes(2);
+          },
+          {
+            timeout: 1500,
+          },
         );
 
         await waitFor(() => {

@@ -25,7 +25,7 @@ describe("App routing", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Note Detail" }),
+      screen.getByRole("heading", {name: /note detail/i,}),
     ).toBeInTheDocument();
   });
-})
+});

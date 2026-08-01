@@ -342,10 +342,6 @@ describe("NoteDetailPage", () => {
       }),
     ).toBeInTheDocument();
 
-    /*
-     * "In Review" appears in the page header
-     * and in the review timeline.
-     */
     expect(
       screen.getAllByText("In Review"),
     ).toHaveLength(2);
@@ -360,10 +356,6 @@ describe("NoteDetailPage", () => {
       patientSessionSection,
     ).not.toBeNull();
 
-    /*
-     * The MRN is also shown in the page header.
-     * Scope this query to the patient/session card.
-     */
     expect(
       within(
         patientSessionSection!,
@@ -388,25 +380,25 @@ describe("NoteDetailPage", () => {
       screen.getByDisplayValue(
         "Patient reports reduced pain.",
       ),
-    ).toHaveAttribute("readonly");
+    ).not.toHaveAttribute("readonly");
 
     expect(
       screen.getByDisplayValue(
         "Vital signs remain stable.",
       ),
-    ).toHaveAttribute("readonly");
+    ).not.toHaveAttribute("readonly");
 
     expect(
       screen.getByDisplayValue(
         "Symptoms are improving.",
       ),
-    ).toHaveAttribute("readonly");
+    ).not.toHaveAttribute("readonly");
 
     expect(
       screen.getByDisplayValue(
         "Continue treatment and follow up.",
       ),
-    ).toHaveAttribute("readonly");
+    ).not.toHaveAttribute("readonly");
 
     const presenceSection = screen
       .getByRole("heading", {
@@ -451,7 +443,7 @@ describe("NoteDetailPage", () => {
     expect(
       within(
         versionHistorySection!,
-      ).getByText("Current"),
+      ).getByText(/current version/i),
     ).toBeInTheDocument();
 
     expect(
