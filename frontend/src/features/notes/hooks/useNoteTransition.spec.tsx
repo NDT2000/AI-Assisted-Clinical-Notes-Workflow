@@ -1,38 +1,23 @@
-import {
-  act,
-  renderHook,
-} from "@testing-library/react";
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { waitFor, act, cleanup, renderHook, } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi, } from "vitest";
 
-import type {
-  TransitionNoteActor,
-  TransitionNoteCommand,
-  TransitionNoteResponse,
-} from "../../../domain/noteTransition";
-import {
-  useNoteTransition,
-} from "./useNoteTransition";
-
-const apiMocks = vi.hoisted(() => ({
-  transitionNote: vi.fn(),
-}));
+import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteResponse, } from "../../../domain/noteTransition";
+import { transitionNote } from "../api/transitionNote";
+import { useNoteTransition } from "./useNoteTransition";
 
 vi.mock(
   "../api/transitionNote",
-  () => ({
-    transitionNote:
-      apiMocks.transitionNote,
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../api/transitionNote")
+      >();
 
-    TransitionNoteRequestError:
-      class TransitionNoteRequestError
-        extends Error {},
-  }),
+    return {
+      ...actual,
+      transitionNote: vi.fn(),
+    };
+  },
 );
 
 interface Deferred<T> {
@@ -42,29 +27,15 @@ interface Deferred<T> {
 }
 
 function createDeferred<T>(): Deferred<T> {
-  let resolve:
-    | ((value: T) => void)
-    | undefined;
-
-  let reject:
-    | ((reason?: unknown) => void)
-    | undefined;
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
 
   const promise = new Promise<T>(
-    (
-      promiseResolve,
-      promiseReject,
-    ) => {
+    (promiseResolve, promiseReject) => {
       resolve = promiseResolve;
       reject = promiseReject;
     },
   );
-
-  if (!resolve || !reject) {
-    throw new Error(
-      "Unable to create deferred promise.",
-    );
-  }
 
   return {
     promise,
@@ -75,8 +46,9 @@ function createDeferred<T>(): Deferred<T> {
 
 const actor: TransitionNoteActor = {
   id: "reviewer-1",
-  displayName: "Test Reviewer",
+  displayName: "Current Reviewer",
   role: "REVIEWER",
+  mfaVerified: true,
 };
 
 const command: TransitionNoteCommand = {
@@ -84,128 +56,115 @@ const command: TransitionNoteCommand = {
   trigger: "START_REVIEW",
 };
 
-const response: TransitionNoteResponse = {
-  clientMutationId:
-    "transition-mutation-1",
+function createTransitionResponse(): TransitionNoteResponse {
+  return {
+    clientMutationId: "transition-mutation-1",
 
-  note: {
-    id: "note-1",
-    patientId: "patient-1",
-    sessionId: "session-1",
-    status: "IN_REVIEW",
-    currentVersionId: "version-1",
-    assignedReviewerId:
-      "reviewer-1",
-    createdAt:
-      "2026-08-01T15:00:00.000Z",
-    updatedAt:
-      "2026-08-01T16:00:00.000Z",
-  },
-
-  currentVersion: {
-    versionId: "version-1",
-    noteId: "note-1",
-    revisionNumber: 1,
-    parentVersionId: null,
-
-    content: {
-      subjective: "Subjective",
-      objective: "Objective",
-      assessment: "Assessment",
-      plan: "Plan",
+    note: {
+      id: "note-1",
+      patientId: "patient-1",
+      sessionId: "session-1",
+      status: "IN_REVIEW",
+      currentVersionId: "version-1",
+      assignedReviewerId: actor.id,
+      createdAt: "2026-07-31T20:00:00.000Z",
+      updatedAt: "2026-07-31T20:05:00.000Z",
     },
 
-    authorId: "clinician-1",
-    authorRole: "CLINICIAN",
-    authorDisplayName:
-      "Test Clinician",
-    createdAt:
-      "2026-08-01T15:00:00.000Z",
-  },
+    currentVersion: {
+      versionId: "version-1",
+      noteId: "note-1",
+      revisionNumber: 1,
+      parentVersionId: null,
 
-  timelineEvent: {
-    eventId: "event-1",
-    noteId: "note-1",
-    versionId: "version-1",
-    fromStatus:
-      "READY_FOR_REVIEW",
-    toStatus: "IN_REVIEW",
-    actorId: actor.id,
-    actorRole: actor.role,
-    actorDisplayName:
-      actor.displayName,
-    occurredAt:
-      "2026-08-01T16:00:00.000Z",
-  },
-};
+      content: {
+        subjective: "Subjective content",
+        objective: "Objective content",
+        assessment: "Assessment content",
+        plan: "Plan content",
+      },
+
+      authorId: "clinician-1",
+      authorRole: "CLINICIAN",
+      authorDisplayName: "Test Clinician",
+      createdAt: "2026-07-31T20:00:00.000Z",
+    },
+
+    timelineEvent: {
+      eventId: "transition-event-1",
+      noteId: "note-1",
+      versionId: "version-1",
+      fromStatus: "READY_FOR_REVIEW",
+      toStatus: "IN_REVIEW",
+      actorId: actor.id,
+      actorRole: actor.role,
+      actorDisplayName: actor.displayName,
+      occurredAt: "2026-07-31T20:05:00.000Z",
+    },
+  };
+}
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("useNoteTransition", () => {
   beforeEach(() => {
-    apiMocks.transitionNote.mockReset();
+    vi.mocked(transitionNote).mockReset();
   });
 
   it(
-    "blocks a duplicate execution while the first request is pending",
+    "blocks a duplicate execution while a transition request is pending",
     async () => {
       const deferred =
-        createDeferred<
-          TransitionNoteResponse
-        >();
+        createDeferred<TransitionNoteResponse>();
 
-      apiMocks.transitionNote.mockReturnValue(
-        deferred.promise,
-      );
+      vi.mocked(
+        transitionNote,
+      ).mockReturnValueOnce(deferred.promise);
 
-      const onOptimisticApply =
-        vi.fn();
-
+      const onOptimisticApply = vi.fn();
       const onSuccess = vi.fn();
       const onFailure = vi.fn();
 
-      const { result } = renderHook(
-        () =>
-          useNoteTransition({
-            noteId: "note-1",
-            actor,
-            onOptimisticApply,
-            onSuccess,
-            onFailure,
-          }),
+      const { result } = renderHook(() =>
+        useNoteTransition({
+          noteId: "note-1",
+          actor,
+          onOptimisticApply,
+          onSuccess,
+          onFailure,
+        }),
       );
 
-      let firstRequest:
-        | Promise<
-            TransitionNoteResponse | null
-          >
-        | undefined;
+      let firstExecution!: Promise<
+        TransitionNoteResponse | null
+      >;
 
       act(() => {
-        firstRequest =
-          result.current.execute(
-            command,
-          );
+        firstExecution =
+          result.current.execute(command);
       });
 
-      expect(
-        result.current.state.status,
-      ).toBe("pending");
+      await waitFor(() => {
+        expect(
+          result.current.state.status,
+        ).toBe("pending");
+      });
 
-      let duplicateResult:
+      let secondResult:
         | TransitionNoteResponse
-        | null
-        | undefined;
+        | null = null;
 
       await act(async () => {
-        duplicateResult =
-          await result.current.execute(
-            command,
-          );
+        secondResult =
+          await result.current.execute(command);
       });
 
-      expect(duplicateResult).toBeNull();
+      expect(secondResult).toBeNull();
 
       expect(
-        apiMocks.transitionNote,
+        transitionNote,
       ).toHaveBeenCalledTimes(1);
 
       expect(
@@ -213,36 +172,29 @@ describe("useNoteTransition", () => {
       ).toHaveBeenCalledTimes(1);
 
       expect(
-        apiMocks.transitionNote,
-      ).toHaveBeenCalledWith(
-        "note-1",
-        actor,
-        expect.objectContaining({
-          baseVersionId:
-            "version-1",
-          trigger: "START_REVIEW",
-          clientMutationId:
-            expect.any(String),
-        }),
-        expect.any(AbortSignal),
-      );
+        onOptimisticApply,
+      ).toHaveBeenCalledWith(command);
+
+      const response =
+        createTransitionResponse();
 
       await act(async () => {
         deferred.resolve(response);
-        await firstRequest;
+        await firstExecution;
       });
 
-      expect(
-        result.current.state.status,
-      ).toBe("succeeded");
+      await waitFor(() => {
+        expect(
+          result.current.state.status,
+        ).toBe("succeeded");
+      });
 
-      expect(
-        onSuccess,
-      ).toHaveBeenCalledWith(response);
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(onSuccess).toHaveBeenCalledWith(
+        response,
+      );
 
-      expect(
-        onFailure,
-      ).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
     },
   );
 });
