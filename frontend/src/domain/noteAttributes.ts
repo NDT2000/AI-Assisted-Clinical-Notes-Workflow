@@ -9,6 +9,7 @@ export type NoteStatus =
     | "AMENDED"
     | "LOCKED";
 
+// This is an array of the same set of statuses which can be traversed
 export const NOTE_STATUS: readonly NoteStatus[] = [
     "GENERATING",
     "FAILED",

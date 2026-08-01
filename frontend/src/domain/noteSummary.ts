@@ -1,5 +1,6 @@
 import type { NoteStatus } from "./noteAttributes";
 
+// Basic template for a summary of a note, used in lists and overviews.
 export interface NoteSummary {
   id: string;
 

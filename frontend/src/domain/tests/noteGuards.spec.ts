@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { canTransition } from "./noteGuards";
-import type { Note, NoteVersion } from "./noteAttributes";
+import { canTransition } from "../noteGuards";
+import type { Note, NoteVersion } from "../noteAttributes";
 
 const baseNote: Note = {
   id: "note-1",

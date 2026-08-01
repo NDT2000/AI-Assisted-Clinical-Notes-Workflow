@@ -71,10 +71,7 @@ export function canRequestRegeneration(
   };
 }
 
-/*
- * The full state-machine guard delegates to the same reusable
- * eligibility rule.
- */
+
 export const canRegenerate: GuardFunction = ({
   note,
   actor,
@@ -268,6 +265,7 @@ export const canReturnToQueue: GuardFunction = ({
   };
 };
 
+// Guard for moving from in_review to ready_for_review
 export function canTransition(
   context: Guard,
 ): GuardResult {
