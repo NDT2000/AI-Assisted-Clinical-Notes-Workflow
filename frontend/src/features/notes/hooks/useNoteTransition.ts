@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, } from "react";
 
 import type { NoteVersionDetail } from "../../../domain/noteDetail";
-import type { TransitionNoteActor, TransitionNoteRequestBody, TransitionNoteResponse, UserNoteActionTrigger, } from "../../../domain/noteTransition";
+import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteRequestBody, TransitionNoteResponse, UserNoteActionTrigger, } from "../../../domain/noteTransition";
 import { transitionNote, TransitionNoteRequestError, } from "../api/transitionNote";
 
 export type NoteTransitionState =
@@ -49,7 +49,7 @@ interface UseNoteTransitionOptions {
 interface UseNoteTransitionResult {
   state: NoteTransitionState;
   execute: (
-    request: TransitionNoteRequestBody,
+    request: TransitionNoteCommand,
   ) => Promise<
     TransitionNoteResponse | null
   >;
@@ -96,13 +96,18 @@ export function useNoteTransition({
 
   const execute = useCallback(
     async (
-      request: TransitionNoteRequestBody,
-    ): Promise<
-      TransitionNoteResponse | null
+      command: TransitionNoteCommand,
+    ): Promise<TransitionNoteResponse | null
     > => {
       if (activeRequestRef.current) {
         return null;
       }
+
+      const request: TransitionNoteRequestBody = {
+        ...command,
+        clientMutationId:
+          crypto.randomUUID(),
+      };
 
       const controller =
         new AbortController();

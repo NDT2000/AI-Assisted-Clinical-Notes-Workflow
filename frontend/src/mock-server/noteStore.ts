@@ -39,9 +39,13 @@ export type TransitionNoteStoreResult =
       currentVersion: NoteVersionDetail;
     }
   | {
+      outcome: "idempotency-conflict";
+    }
+  | {
       outcome: "transition-rejected";
       reason: string;
     };
+  
 
 const CONTENT_PREVIEW_MAX_LENGTH = 120;
 
@@ -51,12 +55,21 @@ let notes: NoteSummary[] = generateNoteSummaries(
 );
 
 const noteDetails = new Map<string, NoteDetail>();
+const transitionMutations = new Map<
+  string,
+  TransitionMutationRecord
+>();
 
 interface SaveMutationRecord {
   actorId: string;
   actorRole: UserRole;
   request: SaveNoteVersionRequestBody;
   response: SaveNoteVersionResponse;
+}
+
+interface TransitionMutationRecord {
+  requestSignature: string;
+  response: TransitionNoteResponse;
 }
 
 const saveMutationRecords = new Map<
@@ -314,12 +327,58 @@ export function saveNoteVersion(
   };
 }
 
+function getTransitionMutationKey(
+  noteId: string,
+  clientMutationId: string,
+): string {
+  return `${noteId}:${clientMutationId}`;
+}
+
+function getTransitionRequestSignature(
+  request: TransitionNoteRequestBody,
+): string {
+  return JSON.stringify({
+    baseVersionId: request.baseVersionId,
+    trigger: request.trigger,
+    rejectionReason:
+      request.rejectionReason ?? null,
+  });
+}
+
 export function transitionNote(
   noteId: string,
   request: TransitionNoteRequestBody,
   actor: TransitionNoteActor,
   transitionedAt: string = new Date().toISOString(),
 ): TransitionNoteStoreResult {
+  const mutationKey =
+    getTransitionMutationKey(
+      noteId,
+      request.clientMutationId,
+    );
+
+  const requestSignature =
+    getTransitionRequestSignature(request);
+
+  const existingMutation =
+    transitionMutations.get(mutationKey);
+
+  if (existingMutation) {
+    if (
+      existingMutation.requestSignature !==
+      requestSignature
+    ) {
+      return {
+        outcome: "idempotency-conflict",
+      };
+    }
+
+    return {
+      outcome: "transitioned",
+      response: existingMutation.response,
+    };
+  }
+
   const detail = getNoteDetail(noteId);
 
   if (!detail) {
@@ -377,9 +436,8 @@ export function transitionNote(
       : undefined;
 
   const timelineEvent: ReviewTimelineEvent = {
-    eventId: `${noteId}-transition-${
-      detail.timeline.length + 1
-    }`,
+    eventId:
+      `${noteId}-transition-${request.clientMutationId}`,
     noteId,
     versionId:
       detail.currentVersion.versionId,
@@ -419,14 +477,23 @@ export function transitionNote(
     };
   });
 
+  const response: TransitionNoteResponse = {
+    clientMutationId:
+      request.clientMutationId,
+    note: updatedNote,
+    timelineEvent,
+    currentVersion:
+      detail.currentVersion,
+  };
+
+  transitionMutations.set(mutationKey, {
+    requestSignature,
+    response,
+  });
+
   return {
     outcome: "transitioned",
-    response: {
-      note: updatedNote,
-      timelineEvent,
-      currentVersion:
-        detail.currentVersion,
-    },
+    response,
   };
 }
 
@@ -494,6 +561,7 @@ export function seedNotes(
 ): number {
   notes = generateNoteSummaries(count, seed);
   noteDetails.clear();
+  transitionMutations.clear();
   saveMutationRecords.clear();
   return notes.length;
 }

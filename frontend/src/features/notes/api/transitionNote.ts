@@ -40,6 +40,7 @@ const TRANSITION_ERROR_CODES:
     "forbidden",
     "not_found",
     "version_conflict",
+    "idempotency_conflict",
     "transition_not_allowed",
     "internal_error",
   ];
@@ -70,6 +71,9 @@ function isTransitionResponse(
 ): value is TransitionNoteResponse {
   return (
     isRecord(value) &&
+    typeof value.clientMutationId ===
+      "string" &&
+    value.clientMutationId.length > 0 &&
     isRecord(value.note) &&
     isRecord(value.timelineEvent) &&
     isRecord(value.currentVersion)

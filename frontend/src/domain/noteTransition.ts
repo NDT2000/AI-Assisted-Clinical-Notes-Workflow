@@ -21,13 +21,18 @@ export interface TransitionNoteActor {
   mfaVerified?: boolean;
 }
 
-export interface TransitionNoteRequestBody {
+export interface TransitionNoteCommand {
   baseVersionId: string;
   trigger: UserNoteActionTrigger;
   rejectionReason?: string;
 }
 
+export interface TransitionNoteRequestBody extends TransitionNoteCommand {
+  clientMutationId: string;
+}
+
 export interface TransitionNoteResponse {
+  clientMutationId: string;
   note: Note;
   timelineEvent: ReviewTimelineEvent;
   currentVersion: NoteVersionDetail;
@@ -38,6 +43,7 @@ export type TransitionNoteErrorCode =
   | "forbidden"
   | "not_found"
   | "version_conflict"
+  | "idempotency_conflict"
   | "transition_not_allowed"
   | "internal_error";
 

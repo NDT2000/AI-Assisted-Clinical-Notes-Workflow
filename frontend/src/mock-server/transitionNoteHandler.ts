@@ -44,6 +44,10 @@ function isTransitionNoteRequestBody(
     typeof value.baseVersionId ===
       "string" &&
     value.baseVersionId.trim().length > 0 &&
+    typeof value.clientMutationId ===
+      "string" &&
+    value.clientMutationId.trim().length >
+      0 &&
     isUserNoteActionTrigger(
       value.trigger,
     ) &&
@@ -177,7 +181,7 @@ export const transitionNoteHandler =
           {
             error: "invalid_request",
             message:
-              "baseVersionId and a valid transition trigger are required.",
+              "baseVersionId, clientMutationId and a valid transition trigger are required.",
           },
           {
             status: 400,
@@ -201,6 +205,18 @@ export const transitionNoteHandler =
             },
             {
               status: 404,
+            },
+          );
+        
+        case "idempotency-conflict":
+          return HttpResponse.json(
+            {
+              error: "idempotency_conflict",
+              message:
+                "This clientMutationId has already been used for a different transition request.",
+            },
+            {
+              status: 409,
             },
           );
 

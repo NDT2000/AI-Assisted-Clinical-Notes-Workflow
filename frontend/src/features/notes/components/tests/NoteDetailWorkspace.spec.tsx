@@ -391,6 +391,8 @@ describe("NoteDetailWorkspace", () => {
 
       const transitionResponse: TransitionNoteResponse =
         {
+          clientMutationId:
+            "transition-mutation-1",
           note: {
             ...savedNote,
             status: "READY_FOR_REVIEW",
