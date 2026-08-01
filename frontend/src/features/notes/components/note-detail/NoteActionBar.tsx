@@ -18,7 +18,7 @@ const EXECUTION_STATE_TEXT = {
     "The action has been applied while the request completes.",
   SUCCEEDED: "Action completed successfully.",
   FAILED_AND_ROLLED_BACK:
-    "The action failed and the previous status was restored.",
+    "The action failed. The note remains unchanged.",
 } satisfies Record<
   AvailableNoteAction["executionState"],
   string | undefined

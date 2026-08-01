@@ -2,19 +2,22 @@ import { useCallback, useMemo, useRef, useState, } from "react";
 
 import type { SoapContent, } from "../../../../domain/noteAttributes";
 import type { NoteDetail, } from "../../../../domain/noteDetail";
-import type { SaveNoteVersionActor, } from "../../../../domain/noteSave";
+import type { TransitionNoteActor, TransitionNoteResponse, UserNoteActionTrigger, } from "../../../../domain/noteTransition";
 import type { AutosaveSnapshot, AutosaveSuccess, } from "../../autosave/AutosaveCoordinator";
 import { useNoteAutosave, } from "../../hooks/useNoteAutosave";
-import { NoteDetailHeader } from "./NoteDetailHeader";
-import { PatientSessionCard } from "./PatientSessionCard";
-import { PresencePanel } from "./PresencePanel";
-import { ReviewTimeline } from "./ReviewTimeline";
+import { useNoteTransition, } from "../../hooks/useNoteTransition";
+import { NoteActionBar, } from "./NoteActionBar";
+import { deriveAvailableNoteActions, type ActionExecutionState, } from "./noteActionBarModel";
+import { NoteDetailHeader, } from "./NoteDetailHeader";
+import { PatientSessionCard, } from "./PatientSessionCard";
+import { PresencePanel, } from "./PresencePanel";
+import { ReviewTimeline, } from "./ReviewTimeline";
 import { SoapEditor, type SoapSectionKey, } from "./SoapEditor";
-import { VersionHistorySidebar } from "./VersionHistorySidebar";
+import { VersionHistorySidebar, } from "./VersionHistorySidebar";
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
-  actor: SaveNoteVersionActor;
+  actor: TransitionNoteActor;
 }
 
 type DirtySections = Record<
@@ -62,11 +65,11 @@ function getDirtySections(
 }
 
 const CLEAN_SECTIONS: DirtySections = {
-    subjective: false,
-    objective: false,
-    assessment: false,
-    plan: false,
-  };
+  subjective: false,
+  objective: false,
+  assessment: false,
+  plan: false,
+};
 
 function AutosaveStatus({
   snapshot,
@@ -168,6 +171,11 @@ export function NoteDetailWorkspace({
     setHistoricalVersionId,
   ] = useState<string | null>(null);
 
+  const [
+    rejectionReason,
+    setRejectionReason,
+  ] = useState("");
+
   const historicalVersion = useMemo(
     () => {
       if (
@@ -267,6 +275,32 @@ export function NoteDetailWorkspace({
     [],
   );
 
+  const handleTransitionSuccess =
+    useCallback(
+      (
+        response: TransitionNoteResponse,
+      ): void => {
+        setWorkspaceDetail(
+          (currentDetail) => ({
+            ...currentDetail,
+
+            note: response.note,
+
+            currentVersion:
+              response.currentVersion,
+
+            timeline: [
+              ...currentDetail.timeline,
+              response.timelineEvent,
+            ],
+          }),
+        );
+
+        setRejectionReason("");
+      },
+      [],
+    );
+
   const {
     snapshot: autosaveSnapshot,
     updateDraft: queueAutosave,
@@ -274,7 +308,6 @@ export function NoteDetailWorkspace({
   } = useNoteAutosave({
     noteId: detail.note.id,
     actor,
-
     initialBaseVersionId:
       detail.currentVersion.versionId,
 
@@ -286,6 +319,163 @@ export function NoteDetailWorkspace({
     onSaveSuccess:
       handleSaveSuccess,
   });
+
+  const {
+    state: transitionState,
+    execute: executeTransition,
+  } = useNoteTransition({
+    noteId: workspaceDetail.note.id,
+    actor,
+    onSuccess:
+      handleTransitionSuccess,
+  });
+
+  const hasDirtySections =
+    Object.values(
+      dirtySections,
+    ).some(Boolean);
+
+  const workspaceBlockReason =
+    useMemo(() => {
+      if (
+        isViewingHistoricalVersion
+      ) {
+        return "Return to the current version before running an action.";
+      }
+
+      if (
+        autosaveSnapshot.status ===
+        "changes-pending"
+      ) {
+        return "Wait for pending changes to be saved.";
+      }
+
+      if (
+        autosaveSnapshot.status ===
+        "saving"
+      ) {
+        return "Wait for the current save to finish.";
+      }
+
+      if (
+        autosaveSnapshot.status ===
+        "save-failed"
+      ) {
+        return "Resolve the save failure before running an action.";
+      }
+
+      if (
+        autosaveSnapshot.status ===
+        "conflict"
+      ) {
+        return "Resolve the version conflict before running an action.";
+      }
+
+      if (hasDirtySections) {
+        return "Wait for unsaved changes to be saved.";
+      }
+
+      if (
+        transitionState.status ===
+        "pending"
+      ) {
+        return "Wait for the current action to finish.";
+      }
+
+      if (
+        transitionState.status ===
+        "conflicted"
+      ) {
+        return "Reload the latest note version before running another action.";
+      }
+
+      return undefined;
+    }, [
+      autosaveSnapshot.status,
+      hasDirtySections,
+      isViewingHistoricalVersion,
+      transitionState.status,
+    ]);
+
+  const actionExecutionStates =
+    useMemo<
+      Partial<
+        Record<
+          UserNoteActionTrigger,
+          ActionExecutionState
+        >
+      >
+    >(() => {
+      if (
+        transitionState.trigger === null
+      ) {
+        return {};
+      }
+
+      if (
+        transitionState.status ===
+        "pending"
+      ) {
+        return {
+          [transitionState.trigger]:
+            "PENDING",
+        };
+      }
+
+      if (
+        transitionState.status ===
+        "succeeded"
+      ) {
+        return {
+          [transitionState.trigger]:
+            "SUCCEEDED",
+        };
+      }
+
+      if (
+        transitionState.status ===
+          "failed" ||
+        transitionState.status ===
+          "conflicted"
+      ) {
+        return {
+          [transitionState.trigger]:
+            "FAILED_AND_ROLLED_BACK",
+        };
+      }
+
+      return {};
+    }, [transitionState]);
+
+  const availableActions = useMemo(
+    () =>
+      deriveAvailableNoteActions({
+        note: workspaceDetail.note,
+
+        version:
+          workspaceDetail.currentVersion,
+
+        actor,
+
+        now:
+          new Date().toISOString(),
+
+        rejectionReason,
+
+        workspaceBlockReason,
+
+        executionStates:
+          actionExecutionStates,
+      }),
+    [
+      actionExecutionStates,
+      actor,
+      rejectionReason,
+      workspaceBlockReason,
+      workspaceDetail.currentVersion,
+      workspaceDetail.note,
+    ],
+  );
 
   function handleSectionChange(
     section: SoapSectionKey,
@@ -300,8 +490,25 @@ export function NoteDetailWorkspace({
       nextContent;
 
     setDraftContent(nextContent);
-
     queueAutosave(nextContent);
+  }
+
+  function handleAction(
+    trigger: UserNoteActionTrigger,
+  ): void {
+    void executeTransition({
+      baseVersionId:
+        workspaceDetail.currentVersion
+          .versionId,
+
+      trigger,
+
+      ...(trigger === "REJECT"
+        ? {
+            rejectionReason,
+          }
+        : {}),
+    });
   }
 
   function handleVersionSelect(
@@ -324,7 +531,9 @@ export function NoteDetailWorkspace({
     <>
       <NoteDetailHeader
         note={workspaceDetail.note}
-        patient={workspaceDetail.patient}
+        patient={
+          workspaceDetail.patient
+        }
         assignedReviewer={
           workspaceDetail.assignedReviewer
         }
@@ -356,14 +565,51 @@ export function NoteDetailWorkspace({
             />
           ) : null}
 
+          <NoteActionBar
+            actions={availableActions}
+            rejectionReason={
+              rejectionReason
+            }
+            onRejectionReasonChange={
+              setRejectionReason
+            }
+            onAction={handleAction}
+          />
+
+          {transitionState.status ===
+            "failed" ||
+          transitionState.status ===
+            "conflicted" ? (
+            <p
+              className="note-action-error"
+              role="alert"
+            >
+              {transitionState.message}
+            </p>
+          ) : null}
+
+          {transitionState.status ===
+          "succeeded" ? (
+            <p
+              className="note-action-success"
+              role="status"
+            >
+              Action completed successfully.
+            </p>
+          ) : null}
+
           {historicalVersion ? (
             <p
               className="historical-version-notice"
               role="status"
             >
               Viewing revision{" "}
-              {historicalVersion.revisionNumber}.
-              Historical versions are read-only.
+              {
+                historicalVersion
+                  .revisionNumber
+              }
+              . Historical versions are
+              read-only.
             </p>
           ) : null}
 

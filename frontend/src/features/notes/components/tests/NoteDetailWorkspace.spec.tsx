@@ -265,9 +265,9 @@ describe("NoteDetailWorkspace", () => {
       );
 
       expect(
-        screen.getByText(
-          /unsaved changes/i,
-        ),
+        screen.getByText("Unsaved changes", {
+          selector: ".soap-dirty-indicator",
+        }),
       ).toBeInTheDocument();
 
       const savedVersion = {
