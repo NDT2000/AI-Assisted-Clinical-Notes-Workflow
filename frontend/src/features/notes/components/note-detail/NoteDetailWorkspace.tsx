@@ -15,8 +15,9 @@ import { PatientSessionCard, } from "./PatientSessionCard";
 import { PresencePanel, } from "./PresencePanel";
 import { ReviewTimeline, } from "./ReviewTimeline";
 import { SoapEditor, type SoapSectionKey, } from "./SoapEditor";
-import { VersionHistorySidebar, } from "./VersionHistorySidebar";
+import { VersionHistorySidebar, type VersionComparisonStatus } from "./VersionHistorySidebar";
 import { VersionConflictResolver, } from "./VersionConflictResolver";
+import { VersionDiffViewer, } from "./VersionDiffViewer";
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
@@ -175,6 +176,24 @@ export function NoteDetailWorkspace({
   ] = useState<string | null>(null);
 
   const [
+  comparisonStatus,
+  setComparisonStatus,
+] =
+  useState<VersionComparisonStatus>(
+    "closed",
+  );
+
+const [
+  compareFromVersionId,
+  setCompareFromVersionId,
+] = useState<string | null>(null);
+
+const [
+  compareToVersionId,
+  setCompareToVersionId,
+] = useState<string | null>(null);
+
+  const [
     rejectionReason,
     setRejectionReason,
   ] = useState("");
@@ -200,6 +219,58 @@ export function NoteDetailWorkspace({
       workspaceDetail.versions,
     ],
   );
+
+  const compareFromVersion = useMemo(
+  () => {
+    if (
+      compareFromVersionId === null
+    ) {
+      return null;
+    }
+
+    return (
+      workspaceDetail.versions.find(
+        (version) =>
+          version.versionId ===
+          compareFromVersionId,
+      ) ?? null
+    );
+  },
+  [
+    compareFromVersionId,
+    workspaceDetail.versions,
+  ],
+);
+
+const compareToVersion = useMemo(
+  () => {
+    if (
+      compareToVersionId === null
+    ) {
+      return null;
+    }
+
+    return (
+      workspaceDetail.versions.find(
+        (version) =>
+          version.versionId ===
+          compareToVersionId,
+      ) ?? null
+    );
+  },
+  [
+    compareToVersionId,
+    workspaceDetail.versions,
+  ],
+);
+
+const isComparisonOpen =
+  comparisonStatus !== "closed";
+
+const isComparingVersions =
+  comparisonStatus === "active" &&
+  compareFromVersion !== null &&
+  compareToVersion !== null;
 
   const draftContentRef =
     useRef<SoapContent>(
@@ -533,6 +604,9 @@ export function NoteDetailWorkspace({
 
   const workspaceBlockReason =
     useMemo(() => {
+      if (isComparisonOpen) {
+        return "Exit version comparison before running an action.";
+      }
       if (
         isViewingHistoricalVersion
       ) {
@@ -589,6 +663,7 @@ export function NoteDetailWorkspace({
     }, [
       autosaveSnapshot.status,
       hasDirtySections,
+      isComparisonOpen,
       isViewingHistoricalVersion,
       transitionState.status,
     ]);
@@ -672,6 +747,7 @@ export function NoteDetailWorkspace({
           actionExecutionStates,
       }),
     [
+      isComparisonOpen,
       actionExecutionStates,
       actor,
       rejectionReason,
@@ -715,9 +791,68 @@ export function NoteDetailWorkspace({
     });
   }
 
+  function handleStartComparison(): void {
+    const currentVersion =
+      workspaceDetail.currentVersion;
+
+    const previousVersion = [
+      ...workspaceDetail.versions,
+    ]
+      .filter(
+        (version) =>
+          version.versionId !==
+          currentVersion.versionId,
+      )
+      .sort(
+        (firstVersion, secondVersion) =>
+          secondVersion.revisionNumber -
+          firstVersion.revisionNumber,
+      )[0];
+
+    if (!previousVersion) {
+      return;
+    }
+
+    setHistoricalVersionId(null);
+
+    setCompareFromVersionId(
+      previousVersion.versionId,
+    );
+
+    setCompareToVersionId(
+      currentVersion.versionId,
+    );
+
+    setComparisonStatus("selecting");
+  }
+
+  function handleShowComparison(): void {
+    if (
+      compareFromVersion === null ||
+      compareToVersion === null ||
+      compareFromVersion.versionId ===
+        compareToVersion.versionId
+    ) {
+      return;
+    }
+
+    setHistoricalVersionId(null);
+    setComparisonStatus("active");
+  }
+
+  function handleExitComparison(): void {
+    setComparisonStatus("closed");
+    setCompareFromVersionId(null);
+    setCompareToVersionId(null);
+  }
+
   function handleVersionSelect(
     versionId: string,
   ): void {
+    if (isComparisonOpen) {
+      return;
+    }
+
     const isCurrentVersion =
       versionId ===
       workspaceDetail.currentVersion
@@ -834,6 +969,18 @@ export function NoteDetailWorkspace({
                   handleConflictResolve
                 }
               />
+            ) : isComparingVersions ? (
+              <VersionDiffViewer
+                fromVersion={
+                  compareFromVersion
+                }
+                toVersion={
+                  compareToVersion
+                }
+                onClose={
+                  handleExitComparison
+                }
+              />
             ) : (
               <SoapEditor
                 content={displayedContent}
@@ -880,8 +1027,32 @@ export function NoteDetailWorkspace({
               workspaceDetail.currentVersion
                 .versionId
             }
+            comparisonStatus={
+              comparisonStatus
+            }
+            compareFromVersionId={
+              compareFromVersionId
+            }
+            compareToVersionId={
+              compareToVersionId
+            }
             onSelectVersion={
               handleVersionSelect
+            }
+            onStartComparison={
+              handleStartComparison
+            }
+            onCompareFromVersionChange={
+              setCompareFromVersionId
+            }
+            onCompareToVersionChange={
+              setCompareToVersionId
+            }
+            onShowComparison={
+              handleShowComparison
+            }
+            onExitComparison={
+              handleExitComparison
             }
           />
         </aside>
