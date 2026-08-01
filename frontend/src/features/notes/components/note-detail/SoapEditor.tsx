@@ -1,4 +1,4 @@
-import type { SoapContent, } from "../../../domain/noteAttributes";
+import type { SoapContent, } from "../../../../domain/noteAttributes";
 
 export type SoapSectionKey =
   keyof SoapContent;

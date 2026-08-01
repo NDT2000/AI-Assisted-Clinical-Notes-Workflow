@@ -1,4 +1,4 @@
-import type { PatientInformation, SessionInformation, } from "../../../domain/noteDetail";
+import type { PatientInformation, SessionInformation, } from "../../../../domain/noteDetail";
 
 interface PatientSessionCardProps {
   patient: PatientInformation;

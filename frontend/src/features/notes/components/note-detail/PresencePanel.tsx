@@ -1,4 +1,4 @@
-import type { PresenceUser, } from "../../../domain/noteDetail";
+import type { PresenceUser, } from "../../../../domain/noteDetail";
 
 interface PresencePanelProps {
   presence: PresenceUser[];

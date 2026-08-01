@@ -1,13 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, } from "vitest";
 import { setupServer } from "msw/node";
 
-import type { NoteDetail } from "../domain/noteDetail";
+import type { NoteDetail } from "../../domain/noteDetail";
 
-vi.mock("./mockNetwork", async () => {
+vi.mock("../mockNetwork", async () => {
   const actual =
     await vi.importActual<
-      typeof import("./mockNetwork")
-    >("./mockNetwork");
+      typeof import("../mockNetwork")
+    >("../mockNetwork");
 
   return {
     ...actual,
@@ -15,9 +15,9 @@ vi.mock("./mockNetwork", async () => {
   };
 });
 
-import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
-import { getNoteDetailHandler } from "./getNoteDetailHandler";
-import { getNotes, seedNotes, } from "./noteStore";
+import { SimulatedNetworkFailure, simulateNetwork, } from "../mockNetwork";
+import { getNoteDetailHandler } from "../getNoteDetailHandler";
+import { getNotes, seedNotes, } from "../noteStore";
 
 const server = setupServer(
   getNoteDetailHandler,

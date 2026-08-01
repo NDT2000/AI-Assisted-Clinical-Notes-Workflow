@@ -1,8 +1,56 @@
-import { cleanup, fireEvent, render, screen, within, } from "@testing-library/react";
-import { afterEach, describe, expect, it, } from "vitest";
+import { act, cleanup, fireEvent, render, screen, within, } from "@testing-library/react";
+import  userEvent from "@testing-library/user-event";
+import { beforeEach, afterEach, describe, expect, it, vi, } from "vitest";
+
+const autosaveMocks = vi.hoisted(() => ({
+  updateDraft: vi.fn(),
+  retry: vi.fn(),
+
+  snapshot: {
+    status: "idle",
+    hasPendingChanges: false,
+    error: null,
+  } as AutosaveSnapshot,
+
+  onSaveSuccess: undefined as
+    | ((result: AutosaveSuccess) => void)
+    | undefined,
+}));
+
+vi.mock(
+  "../../hooks/useNoteAutosave",
+  () => ({
+    useNoteAutosave: vi.fn(
+      (options: {
+        onSaveSuccess: (
+          result: AutosaveSuccess,
+        ) => void;
+      }) => {
+        autosaveMocks.onSaveSuccess =
+          options.onSaveSuccess;
+
+        return {
+          snapshot: 
+            autosaveMocks.snapshot,
+          updateDraft:
+            autosaveMocks.updateDraft,
+          retry: autosaveMocks.retry,
+        };
+      },
+    ),
+  }),
+);
 
 import type { NoteDetail, NoteVersionDetail, } from "../../../../domain/noteDetail";
 import { NoteDetailWorkspace } from "../note-detail/NoteDetailWorkspace";
+import type { SaveNoteVersionActor } from "../../../../domain/noteSave";
+import type {AutosaveSuccess, AutosaveSnapshot} from "../../autosave/AutosaveCoordinator";
+
+const actor: SaveNoteVersionActor = {
+  id: "reviewer-1",
+  displayName: "Test Reviewer",
+  role: "REVIEWER",
+};
 
 type NoteStatus =
   NoteDetail["note"]["status"];
@@ -128,10 +176,316 @@ afterEach(() => {
 });
 
 describe("NoteDetailWorkspace", () => {
+  beforeEach(() => {
+    autosaveMocks.updateDraft.mockReset();
+    autosaveMocks.retry.mockReset();
+    autosaveMocks.snapshot = {
+      status: "idle",
+      hasPendingChanges: false,
+      error: null,
+    };
+    autosaveMocks.onSaveSuccess =
+      undefined;
+  });
+
+  it(
+    "shows a save failure and allows the user to retry",
+    async () => {
+      const user = userEvent.setup();
+      const detail = createNoteDetail();
+
+      autosaveMocks.snapshot = {
+        status: "save-failed",
+        hasPendingChanges: true,
+        error: new Error(
+          "The save request failed.",
+        ),
+      };
+
+      render(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      expect(
+        screen.getByRole("alert"),
+      ).toHaveTextContent(
+        /save failed/i,
+      );
+
+      const retryButton =
+        screen.getByRole("button", {
+          name: /try again/i,
+        });
+
+      await user.click(retryButton);
+
+      expect(
+        autosaveMocks.retry,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it(
+    "queues the complete SOAP draft and clears dirty state after a successful save",
+    async () => {
+      const user = userEvent.setup();
+      const detail = createNoteDetail();
+
+      render(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      const subjectiveInput =
+        screen.getByRole("textbox", {
+          name: /subjective/i,
+        });
+
+      await user.clear(subjectiveInput);
+      await user.type(
+        subjectiveInput,
+        "Updated subjective content",
+      );
+
+      const savedContent = {
+        ...detail.currentVersion.content,
+        subjective:
+          "Updated subjective content",
+      };
+
+      expect(
+        autosaveMocks.updateDraft,
+      ).toHaveBeenLastCalledWith(
+        savedContent,
+      );
+
+      expect(
+        screen.getByText(
+          /unsaved changes/i,
+        ),
+      ).toBeInTheDocument();
+
+      const savedVersion = {
+        ...detail.currentVersion,
+        versionId: "version-saved-2",
+        revisionNumber:
+          detail.currentVersion
+            .revisionNumber + 1,
+        parentVersionId:
+          detail.currentVersion
+            .versionId,
+        content: savedContent,
+        createdAt:
+          "2026-07-31T21:00:00.000Z",
+      };
+
+      const saveResult: AutosaveSuccess = {
+        savedContent,
+
+        response: {
+          clientMutationId:
+            "mutation-test-1",
+
+          note: {
+            ...detail.note,
+            currentVersionId:
+              savedVersion.versionId,
+            updatedAt:
+              savedVersion.createdAt,
+          },
+
+          savedVersion,
+        },
+      };
+
+      act(() => {
+        autosaveMocks.onSaveSuccess?.(
+          saveResult,
+        );
+      });
+
+      expect(
+        screen.queryByText(
+          /unsaved changes/i,
+        ),
+      ).not.toBeInTheDocument();
+
+      const versionHistory =
+        screen.getByRole("region", {
+          name: /version history/i,
+        });
+
+      expect(
+        within(versionHistory).getByRole(
+          "button",
+          {
+            name: new RegExp(
+              `Revision ${savedVersion.revisionNumber}`,
+              "i",
+            ),
+          },
+        ),
+      ).toBeInTheDocument();
+
+      expect(subjectiveInput).toHaveValue(
+        "Updated subjective content",
+      );
+    },
+  );
+
+  it(
+    "shows an older version as read-only without replacing the current draft",
+    async () => {
+      const user = userEvent.setup();
+      const originalDetail =
+        createNoteDetail();
+
+      const historicalVersion = {
+        ...originalDetail.currentVersion,
+        versionId: "version-1",
+        revisionNumber: 1,
+        parentVersionId: null,
+        content: {
+          subjective:
+            "Historical subjective content",
+          objective:
+            "Historical objective content",
+          assessment:
+            "Historical assessment content",
+          plan:
+            "Historical plan content",
+        },
+        createdAt:
+          "2026-07-30T10:00:00.000Z",
+      };
+
+      const currentVersion = {
+        ...originalDetail.currentVersion,
+        versionId: "version-2",
+        revisionNumber: 2,
+        parentVersionId:
+          historicalVersion.versionId,
+        createdAt:
+          "2026-07-31T10:00:00.000Z",
+      };
+
+      const detail = {
+        ...originalDetail,
+
+        note: {
+          ...originalDetail.note,
+          currentVersionId:
+            currentVersion.versionId,
+        },
+
+        currentVersion,
+
+        versions: [
+          historicalVersion,
+          currentVersion,
+        ],
+      };
+
+      render(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      const subjectiveInput =
+        screen.getByRole("textbox", {
+          name: /subjective/i,
+        });
+
+      await user.clear(subjectiveInput);
+      await user.type(
+        subjectiveInput,
+        "Unsaved current draft content",
+      );
+
+      expect(subjectiveInput).toHaveValue(
+        "Unsaved current draft content",
+      );
+
+      const versionHistory =
+        screen.getByRole("region", {
+          name: /version history/i,
+        });
+
+      await user.click(
+        within(versionHistory).getByRole(
+          "button",
+          {
+            name: new RegExp(
+              `Revision ${historicalVersion.revisionNumber}`,
+              "i",
+            ),
+          },
+        ),
+      );
+
+      expect(
+        screen.getByText(
+          new RegExp(
+            `Viewing revision ${historicalVersion.revisionNumber}`,
+            "i",
+          ),
+        ),
+      ).toBeInTheDocument();
+
+      const historicalSubjectiveInput =
+        screen.getByRole("textbox", {
+          name: /subjective/i,
+        });
+
+      expect(
+        historicalSubjectiveInput,
+      ).toHaveValue(
+        historicalVersion.content.subjective,
+      );
+
+      expect(
+        historicalSubjectiveInput,
+      ).toHaveAttribute("readonly");
+
+      await user.click(
+        within(versionHistory).getByRole(
+          "button",
+          {
+            name: new RegExp(
+              `Revision ${detail.currentVersion.revisionNumber}`,
+              "i",
+            ),
+          },
+        ),
+      );
+
+      const restoredDraftInput =
+        screen.getByRole("textbox", {
+          name: /subjective/i,
+        });
+
+      expect(restoredDraftInput).toHaveValue(
+        "Unsaved current draft content",
+      );
+
+      expect(
+        restoredDraftInput,
+      ).not.toHaveAttribute("readonly");
+    },
+  );
+
   it("initially renders all SOAP sections as clean", () => {
     render(
       <NoteDetailWorkspace
         detail={createNoteDetail()}
+        actor={actor}
       />,
     );
 
@@ -146,6 +500,7 @@ describe("NoteDetailWorkspace", () => {
     render(
       <NoteDetailWorkspace
         detail={createNoteDetail()}
+        actor={actor}
       />,
     );
 
@@ -228,9 +583,6 @@ describe("NoteDetailWorkspace", () => {
       ),
     ).not.toBeInTheDocument();
 
-    /*
-     * Change Plan as well.
-     */
     fireEvent.change(
       plan.field,
       {
@@ -263,11 +615,6 @@ describe("NoteDetailWorkspace", () => {
       ),
     ).toBeInTheDocument();
 
-    /*
-     * Restore Subjective to its saved value.
-     * Subjective should become clean while
-     * Plan remains dirty.
-     */
     fireEvent.change(
       subjective.field,
       {
@@ -305,6 +652,7 @@ describe("NoteDetailWorkspace", () => {
     render(
       <NoteDetailWorkspace
         detail={createNoteDetail()}
+        actor={actor}
       />,
     );
 
@@ -373,6 +721,7 @@ describe("NoteDetailWorkspace", () => {
         detail={createNoteDetail(
           "READY_FOR_REVIEW",
         )}
+        actor={actor}
       />,
     );
 
@@ -408,10 +757,6 @@ describe("NoteDetailWorkspace", () => {
       screen.getByText("Read only"),
     ).toBeInTheDocument();
 
-    /*
-     * Even if a change event is triggered manually,
-     * the controlled editor must ignore it.
-     */
     fireEvent.change(
       subjective.field,
       {

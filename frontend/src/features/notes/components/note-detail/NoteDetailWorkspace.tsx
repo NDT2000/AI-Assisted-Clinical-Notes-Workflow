@@ -3,7 +3,7 @@ import { useCallback, useMemo, useRef, useState, } from "react";
 import type { SoapContent, } from "../../../../domain/noteAttributes";
 import type { NoteDetail, } from "../../../../domain/noteDetail";
 import type { SaveNoteVersionActor, } from "../../../../domain/noteSave";
-import type { AutosaveSnapshot, AutosaveSuccess, } from "../../autosave/AutoSaveCoordinator";
+import type { AutosaveSnapshot, AutosaveSuccess, } from "../../autosave/AutosaveCoordinator";
 import { useNoteAutosave, } from "../../hooks/useNoteAutosave";
 import { NoteDetailHeader } from "./NoteDetailHeader";
 import { PatientSessionCard } from "./PatientSessionCard";
@@ -60,6 +60,13 @@ function getDirtySections(
       savedContent.plan,
   };
 }
+
+const CLEAN_SECTIONS: DirtySections = {
+    subjective: false,
+    objective: false,
+    assessment: false,
+    plan: false,
+  };
 
 function AutosaveStatus({
   snapshot,
@@ -156,6 +163,33 @@ export function NoteDetailWorkspace({
     initialDraftContent,
   );
 
+  const [
+    historicalVersionId,
+    setHistoricalVersionId,
+  ] = useState<string | null>(null);
+
+  const historicalVersion = useMemo(
+    () => {
+      if (
+        historicalVersionId === null
+      ) {
+        return null;
+      }
+
+      return (
+        workspaceDetail.versions.find(
+          (version) =>
+            version.versionId ===
+            historicalVersionId,
+        ) ?? null
+      );
+    },
+    [
+      historicalVersionId,
+      workspaceDetail.versions,
+    ],
+  );
+
   const draftContentRef =
     useRef<SoapContent>(
       initialDraftContent,
@@ -172,6 +206,18 @@ export function NoteDetailWorkspace({
       savedContent,
     ],
   );
+
+  const isViewingHistoricalVersion =
+    historicalVersion !== null;
+
+  const displayedContent =
+    historicalVersion?.content ??
+    draftContent;
+
+  const displayedDirtySections =
+    isViewingHistoricalVersion
+      ? CLEAN_SECTIONS
+      : dirtySections;
 
   const isEditable =
     workspaceDetail.note.status ===
@@ -258,6 +304,22 @@ export function NoteDetailWorkspace({
     queueAutosave(nextContent);
   }
 
+  function handleVersionSelect(
+    versionId: string,
+  ): void {
+    const isCurrentVersion =
+      versionId ===
+      workspaceDetail.currentVersion
+        .versionId;
+
+    if (isCurrentVersion) {
+      setHistoricalVersionId(null);
+      return;
+    }
+
+    setHistoricalVersionId(versionId);
+  }
+
   return (
     <>
       <NoteDetailHeader
@@ -294,11 +356,25 @@ export function NoteDetailWorkspace({
             />
           ) : null}
 
+          {historicalVersion ? (
+            <p
+              className="historical-version-notice"
+              role="status"
+            >
+              Viewing revision{" "}
+              {historicalVersion.revisionNumber}.
+              Historical versions are read-only.
+            </p>
+          ) : null}
+
           <SoapEditor
-            content={draftContent}
-            readOnly={!isEditable}
+            content={displayedContent}
+            readOnly={
+              !isEditable ||
+              isViewingHistoricalVersion
+            }
             dirtySections={
-              dirtySections
+              displayedDirtySections
             }
             onSectionChange={
               handleSectionChange
@@ -327,9 +403,16 @@ export function NoteDetailWorkspace({
               workspaceDetail.versions
             }
             currentVersionId={
-              workspaceDetail
-                .currentVersion
+              workspaceDetail.currentVersion
                 .versionId
+            }
+            selectedVersionId={
+              historicalVersionId ??
+              workspaceDetail.currentVersion
+                .versionId
+            }
+            onSelectVersion={
+              handleVersionSelect
             }
           />
         </aside>

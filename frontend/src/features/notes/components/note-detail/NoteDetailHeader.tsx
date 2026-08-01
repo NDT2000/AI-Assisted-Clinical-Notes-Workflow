@@ -1,5 +1,5 @@
-import type { Note, } from "../../../domain/noteAttributes";
-import type { PatientInformation, UserSummary, } from "../../../domain/noteDetail";
+import type { Note, } from "../../../../domain/noteAttributes";
+import type { PatientInformation, UserSummary, } from "../../../../domain/noteDetail";
 
 interface NoteDetailHeaderProps {
   note: Note;

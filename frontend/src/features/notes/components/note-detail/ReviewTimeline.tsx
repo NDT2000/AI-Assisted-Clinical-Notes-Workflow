@@ -1,4 +1,4 @@
-import type { ReviewTimelineEvent, } from "../../../domain/noteDetail";
+import type { ReviewTimelineEvent, } from "../../../../domain/noteDetail";
 
 interface ReviewTimelineProps {
   events: ReviewTimelineEvent[];

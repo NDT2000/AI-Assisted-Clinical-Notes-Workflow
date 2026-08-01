@@ -1,6 +1,5 @@
 import { Link, useParams, } from "react-router-dom";
 
-import type { UserRole, } from "../../../domain/noteAttributes";
 import { useNoteDetail, } from "../hooks/useNoteDetail";
 import { NoteDetailWorkspace } from "../components/note-detail/NoteDetailWorkspace";
 import type { SaveNoteVersionActor } from "../../../domain/noteSave";

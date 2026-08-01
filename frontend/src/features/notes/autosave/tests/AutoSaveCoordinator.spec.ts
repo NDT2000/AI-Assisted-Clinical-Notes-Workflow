@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, } from "vitest";
 
 import type { SoapContent, } from "../../../../domain/noteAttributes";
 import type { SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../../../../domain/noteSave";
-import { AutosaveCoordinator, } from "../AutoSaveCoordinator";
+import { AutosaveCoordinator, } from "../AutosaveCoordinator";
+
 
 interface Deferred<T> {
   promise: Promise<T>;

@@ -1,35 +1,33 @@
-import type { NoteVersionDetail, } from "../../../domain/noteDetail";
+import type { NoteVersionDetail, } from "../../../../domain/noteDetail";
 
 interface VersionHistorySidebarProps {
   versions: NoteVersionDetail[];
   currentVersionId: string;
+  selectedVersionId: string;
+  onSelectVersion: (
+    versionId: string,
+  ) => void;
 }
 
-function formatDateTime(
+function formatVersionDate(
   value: string,
 ): string {
-  return new Date(value).toLocaleString();
-}
-
-function formatRole(
-  role: NoteVersionDetail["authorRole"],
-): string {
-  return role
-    .toLowerCase()
-    .split("_")
-    .map(
-      (word) =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1),
-    )
-    .join(" ");
+  return new Intl.DateTimeFormat(
+    undefined,
+    {
+      dateStyle: "medium",
+      timeStyle: "short",
+    },
+  ).format(new Date(value));
 }
 
 export function VersionHistorySidebar({
   versions,
   currentVersionId,
+  selectedVersionId,
+  onSelectVersion,
 }: VersionHistorySidebarProps) {
-  const orderedVersions = [
+  const sortedVersions = [
     ...versions,
   ].sort(
     (firstVersion, secondVersion) =>
@@ -42,86 +40,70 @@ export function VersionHistorySidebar({
       className="note-detail-card"
       aria-labelledby="version-history-heading"
     >
-      <div className="version-history-heading">
-        <h2 id="version-history-heading">
-          Version history
-        </h2>
+      <h2 id="version-history-heading">
+        Version history
+      </h2>
 
-        <span className="version-history-count">
-          {versions.length}
-        </span>
-      </div>
-
-      {orderedVersions.length === 0 ? (
-        <p className="version-history-empty">
-          No versions are available.
-        </p>
+      {sortedVersions.length === 0 ? (
+        <p>No versions available.</p>
       ) : (
         <ol className="version-history-list">
-          {orderedVersions.map(
+          {sortedVersions.map(
             (version) => {
               const isCurrent =
                 version.versionId ===
                 currentVersionId;
 
+              const isSelected =
+                version.versionId ===
+                selectedVersionId;
+
               return (
                 <li
-                  className={
-                    isCurrent
-                      ? "version-history-item version-history-item-current"
-                      : "version-history-item"
-                  }
                   key={version.versionId}
+                  className="version-history-item"
                 >
-                  <div className="version-history-item-heading">
-                    <strong>
+                  <button
+                    type="button"
+                    className={
+                      isSelected
+                        ? "version-history-button version-history-button--selected"
+                        : "version-history-button"
+                    }
+                    aria-pressed={
+                      isSelected
+                    }
+                    onClick={() => {
+                      onSelectVersion(
+                        version.versionId,
+                      );
+                    }}
+                  >
+                    <span>
                       Revision{" "}
                       {
                         version.revisionNumber
                       }
-                    </strong>
+                    </span>
 
-                    {isCurrent && (
-                      <span className="version-current-badge">
-                        Current
+                    {isCurrent ? (
+                      <span>
+                        Current version
                       </span>
-                    )}
-                  </div>
+                    ) : null}
 
-                  <dl className="version-history-details">
-                    <div>
-                      <dt>Author</dt>
-                      <dd>
-                        {
-                          version.authorDisplayName
-                        }
-                      </dd>
-                    </div>
+                    <span>
+                      {
+                        version.authorDisplayName
+                      }
+                    </span>
 
-                    <div>
-                      <dt>Role</dt>
-                      <dd>
-                        {formatRole(
-                          version.authorRole,
-                        )}
-                      </dd>
-                    </div>
-
-                    <div>
-                      <dt>Created</dt>
-                      <dd>
-                        <time
-                          dateTime={
-                            version.createdAt
-                          }
-                        >
-                          {formatDateTime(
-                            version.createdAt,
-                          )}
-                        </time>
-                      </dd>
-                    </div>
-                  </dl>
+                    <span>
+                      {formatVersionDate(
+                        version.createdAt,
+                      )}
+                    </span>
+                  </button>
                 </li>
               );
             },

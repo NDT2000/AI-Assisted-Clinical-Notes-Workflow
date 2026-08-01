@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState, } from "react";
 
 import type { SoapContent, } from "../../../domain/noteAttributes";
 import type { SaveNoteVersionActor, } from "../../../domain/noteSave";
-import { AutosaveCoordinator, } from "../autosave/AutoSaveCoordinator";
-import type { AutosaveSnapshot, AutosaveSuccess, } from "../autosave/AutoSaveCoordinator";
+import { AutosaveCoordinator, } from "../autosave/AutosaveCoordinator";
+import type { AutosaveSnapshot, AutosaveSuccess, } from "../autosave/AutosaveCoordinator";
 import { classifySaveNoteVersionError, saveNoteVersion, } from "../api/saveNoteVersion";
 
 interface UseNoteAutosaveOptions {
