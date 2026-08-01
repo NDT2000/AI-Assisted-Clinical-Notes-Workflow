@@ -1165,6 +1165,248 @@ describe("NoteDetailWorkspace", () => {
     },
   );
 
+  it(
+    "compares two saved versions without replacing the current draft",
+    async () => {
+      const user = userEvent.setup();
+      const originalDetail =
+        createNoteDetail();
+
+      const historicalVersion:
+        NoteVersionDetail = {
+        ...originalDetail.currentVersion,
+
+        versionId: "version-1",
+        revisionNumber: 1,
+        parentVersionId: null,
+
+        content: {
+          ...originalDetail.currentVersion
+            .content,
+
+          plan: "Review in 7 days.",
+        },
+
+        createdAt:
+          "2026-07-30T10:00:00.000Z",
+      };
+
+      const currentVersion:
+        NoteVersionDetail = {
+        ...originalDetail.currentVersion,
+
+        versionId: "version-2",
+        revisionNumber: 2,
+
+        parentVersionId:
+          historicalVersion.versionId,
+
+        content: {
+          ...originalDetail.currentVersion
+            .content,
+
+          plan: "Review in 14 days.",
+        },
+
+        createdAt:
+          "2026-07-31T10:00:00.000Z",
+      };
+
+      const detail: NoteDetail = {
+        ...originalDetail,
+
+        note: {
+          ...originalDetail.note,
+
+          currentVersionId:
+            currentVersion.versionId,
+
+          updatedAt:
+            currentVersion.createdAt,
+        },
+
+        currentVersion,
+
+        versions: [
+          historicalVersion,
+          currentVersion,
+        ],
+      };
+
+      render(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      const subjectiveInput =
+        screen.getByRole("textbox", {
+          name: "Subjective",
+        });
+
+      await user.clear(
+        subjectiveInput,
+      );
+
+      await user.type(
+        subjectiveInput,
+        "Unsaved draft before comparison.",
+      );
+
+      expect(
+        subjectiveInput,
+      ).toHaveValue(
+        "Unsaved draft before comparison.",
+      );
+
+      const versionHistory =
+        screen.getByRole("region", {
+          name: /version history/i,
+        });
+
+      await user.click(
+        within(versionHistory).getByRole(
+          "button",
+          {
+            name: "Compare versions",
+          },
+        ),
+      );
+
+      expect(
+        within(versionHistory).getByRole(
+          "combobox",
+          {
+            name: "From version",
+          },
+        ),
+      ).toHaveValue(
+        historicalVersion.versionId,
+      );
+
+      expect(
+        within(versionHistory).getByRole(
+          "combobox",
+          {
+            name: "To version",
+          },
+        ),
+      ).toHaveValue(
+        currentVersion.versionId,
+      );
+
+      await user.click(
+        within(versionHistory).getByRole(
+          "button",
+          {
+            name: "Show comparison",
+          },
+        ),
+      );
+
+      const comparisonHeading =
+        screen.getByRole("heading", {
+          name:
+            "Comparing revision 1 to revision 2",
+        });
+
+      expect(
+        comparisonHeading,
+      ).toBeInTheDocument();
+
+      expect(
+        screen.queryByRole("textbox", {
+          name: "Subjective",
+        }),
+      ).not.toBeInTheDocument();
+
+      const planHeading =
+        screen.getByRole("heading", {
+          name: "Plan",
+        });
+
+      const planDiffSection =
+        planHeading.closest("article");
+
+      if (!planDiffSection) {
+        throw new Error(
+          "Expected the Plan diff section.",
+        );
+      }
+
+      expect(
+        within(
+          planDiffSection,
+        ).getByLabelText("Removed: 7"),
+      ).toBeInTheDocument();
+
+      expect(
+        within(
+          planDiffSection,
+        ).getByLabelText("Added: 14"),
+      ).toBeInTheDocument();
+
+      const returnToQueueButton =
+        screen.getByRole("button", {
+          name: "Return to Queue",
+        });
+
+      expect(
+        returnToQueueButton,
+      ).toBeDisabled();
+
+      expect(
+        returnToQueueButton,
+      ).toHaveAccessibleDescription(
+        "Exit version comparison before running an action.",
+      );
+
+      const comparisonSection =
+        comparisonHeading.closest(
+          "section",
+        );
+
+      if (!comparisonSection) {
+        throw new Error(
+          "Expected the version comparison section.",
+        );
+      }
+
+      await user.click(
+        within(
+          comparisonSection,
+        ).getByRole("button", {
+          name: "Exit comparison",
+        }),
+      );
+
+      expect(
+        screen.queryByRole("heading", {
+          name:
+            "Comparing revision 1 to revision 2",
+        }),
+      ).not.toBeInTheDocument();
+
+      const restoredSubjectiveInput =
+        screen.getByRole("textbox", {
+          name: "Subjective",
+        });
+
+      expect(
+        restoredSubjectiveInput,
+      ).toHaveValue(
+        "Unsaved draft before comparison.",
+      );
+
+      expect(
+        restoredSubjectiveInput,
+      ).not.toHaveAttribute(
+        "readonly",
+      );
+    },
+  );
+
   it("initially renders all SOAP sections as clean", () => {
     render(
       <NoteDetailWorkspace
