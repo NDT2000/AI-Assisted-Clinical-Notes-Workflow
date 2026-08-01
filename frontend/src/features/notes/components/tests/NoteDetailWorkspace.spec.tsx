@@ -1,8 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, within, } from "@testing-library/react";
 import  userEvent from "@testing-library/user-event";
 import { beforeEach, afterEach, describe, expect, it, vi, } from "vitest";
-import type { TransitionNoteResponse, } from "../../../../domain/noteTransition";
-import type { NoteTransitionState, } from "../../hooks/useNoteTransition";
+import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteResponse, } from "../../../../domain/noteTransition";
+import type { NoteTransitionFailure, NoteTransitionState, } from "../../hooks/useNoteTransition";
 
 const autosaveMocks = vi.hoisted(() => ({
   updateDraft: vi.fn(),
@@ -30,9 +30,21 @@ const transitionMocks = vi.hoisted(() => ({
     currentVersion: null,
   } as NoteTransitionState,
 
+  onOptimisticApply: undefined as
+    | ((
+        command: TransitionNoteCommand,
+      ) => void)
+    | undefined,
+
   onSuccess: undefined as
     | ((
         response: TransitionNoteResponse,
+      ) => void)
+    | undefined,
+
+  onFailure: undefined as
+    | ((
+        failure: NoteTransitionFailure,
       ) => void)
     | undefined,
 }));
@@ -66,18 +78,31 @@ vi.mock(
   () => ({
     useNoteTransition: vi.fn(
       (options: {
+        onOptimisticApply?: (
+          command: TransitionNoteCommand,
+        ) => void;
         onSuccess: (
           response: TransitionNoteResponse,
         ) => void;
+        onFailure?: (
+          failure: NoteTransitionFailure,
+        ) => void;
       }) => {
+        transitionMocks.onOptimisticApply =
+          options.onOptimisticApply;
+
         transitionMocks.onSuccess =
           options.onSuccess;
+
+        transitionMocks.onFailure =
+          options.onFailure;
 
         return {
           state: transitionMocks.state,
           execute:
             transitionMocks.execute,
-          reset: transitionMocks.reset,
+          reset:
+            transitionMocks.reset,
         };
       },
     ),
@@ -86,10 +111,9 @@ vi.mock(
 
 import type { NoteDetail, NoteVersionDetail, } from "../../../../domain/noteDetail";
 import { NoteDetailWorkspace } from "../note-detail/NoteDetailWorkspace";
-import type { SaveNoteVersionActor } from "../../../../domain/noteSave";
 import type {AutosaveSuccess, AutosaveSnapshot} from "../../autosave/AutosaveCoordinator";
 
-const actor: SaveNoteVersionActor = {
+const actor: TransitionNoteActor = {
   id: "reviewer-1",
   displayName: "Test Reviewer",
   role: "REVIEWER",
@@ -222,13 +246,16 @@ describe("NoteDetailWorkspace", () => {
   beforeEach(() => {
     autosaveMocks.updateDraft.mockReset();
     autosaveMocks.retry.mockReset();
+
     autosaveMocks.snapshot = {
       status: "idle",
       hasPendingChanges: false,
       error: null,
     };
+
     autosaveMocks.onSaveSuccess =
       undefined;
+
     transitionMocks.execute.mockReset();
     transitionMocks.reset.mockReset();
 
@@ -239,8 +266,244 @@ describe("NoteDetailWorkspace", () => {
       currentVersion: null,
     };
 
-    transitionMocks.onSuccess = undefined;
+    transitionMocks.onOptimisticApply =
+      undefined;
+
+    transitionMocks.onSuccess =
+      undefined;
+
+    transitionMocks.onFailure =
+      undefined;
+
+    transitionMocks.execute.mockImplementation(
+      async (
+        command: TransitionNoteCommand,
+      ) => {
+        transitionMocks.onOptimisticApply?.(
+          command,
+        );
+
+        return null;
+      },
+    );
   });
+
+  it(
+    "applies Start Review immediately and restores the previous state after failure",
+    async () => {
+      const user = userEvent.setup();
+
+      render(
+        <NoteDetailWorkspace
+          detail={createNoteDetail(
+            "READY_FOR_REVIEW",
+          )}
+          actor={actor}
+        />,
+      );
+
+      await user.click(
+        screen.getByRole("button", {
+          name: "Start Review",
+        }),
+      );
+
+      expect(
+        screen.getByText("In Review", {
+          selector:
+            ".note-status-badge",
+        }),
+      ).toBeInTheDocument();
+
+      const timeline =
+        screen.getByRole("region", {
+          name: /review timeline/i,
+        });
+
+      expect(
+        within(timeline).getByText("1", {
+          selector:
+            ".review-timeline-count",
+        }),
+      ).toBeInTheDocument();
+
+      expect(
+        transitionMocks.execute,
+      ).toHaveBeenCalledWith({
+        baseVersionId: "version-1",
+        trigger: "START_REVIEW",
+      });
+
+      act(() => {
+        transitionMocks.onFailure?.({
+          code: "internal_error",
+          message:
+            "The transition request failed.",
+          currentVersion: null,
+        });
+      });
+
+      expect(
+        screen.getByText(
+          "Ready For Review",
+          {
+            selector:
+              ".note-status-badge",
+          },
+        ),
+      ).toBeInTheDocument();
+
+      expect(
+        within(timeline).getByText("0", {
+          selector:
+            ".review-timeline-count",
+        }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it(
+    "replaces the optimistic timeline event with the server event after success",
+    async () => {
+      const user = userEvent.setup();
+      const detail = createNoteDetail(
+        "READY_FOR_REVIEW",
+      );
+
+      render(
+        <NoteDetailWorkspace
+          detail={detail}
+          actor={actor}
+        />,
+      );
+
+      await user.click(
+        screen.getByRole("button", {
+          name: "Start Review",
+        }),
+      );
+
+      const timeline =
+        screen.getByRole("region", {
+          name: /review timeline/i,
+        });
+
+      expect(
+        within(timeline).getByText("1", {
+          selector:
+            ".review-timeline-count",
+        }),
+      ).toBeInTheDocument();
+
+      const response:
+        TransitionNoteResponse = {
+        clientMutationId:
+          "transition-mutation-1",
+
+        note: {
+          ...detail.note,
+          status: "IN_REVIEW",
+          updatedAt:
+            "2026-08-01T16:00:00.000Z",
+        },
+
+        currentVersion:
+          detail.currentVersion,
+
+        timelineEvent: {
+          eventId:
+            "server-transition-event-1",
+          noteId: detail.note.id,
+          versionId:
+            detail.currentVersion
+              .versionId,
+          fromStatus:
+            "READY_FOR_REVIEW",
+          toStatus: "IN_REVIEW",
+          actorId: actor.id,
+          actorRole: actor.role,
+          actorDisplayName:
+            actor.displayName,
+          occurredAt:
+            "2026-08-01T16:00:00.000Z",
+        },
+      };
+
+      act(() => {
+        transitionMocks.onSuccess?.(
+          response,
+        );
+      });
+
+      expect(
+        screen.getByText("In Review", {
+          selector:
+            ".note-status-badge",
+        }),
+      ).toBeInTheDocument();
+
+      expect(
+        within(timeline).getByText("1", {
+          selector:
+            ".review-timeline-count",
+        }),
+      ).toBeInTheDocument();
+
+      expect(
+        within(timeline).getByText(
+          actor.displayName,
+          {
+            exact: false,
+          },
+        ),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it(
+    "shows the current action as pending and prevents another click",
+    async () => {
+      const user = userEvent.setup();
+
+      transitionMocks.state = {
+        status: "pending",
+        trigger: "START_REVIEW",
+        message: null,
+        currentVersion: null,
+      };
+
+      render(
+        <NoteDetailWorkspace
+          detail={createNoteDetail(
+            "READY_FOR_REVIEW",
+          )}
+          actor={actor}
+        />,
+      );
+
+      const startReviewButton =
+        screen.getByRole("button", {
+          name: /start review/i,
+        });
+
+      expect(
+        startReviewButton,
+      ).toBeDisabled();
+
+      expect(
+        startReviewButton,
+      ).toHaveAttribute(
+        "aria-busy",
+        "true",
+      );
+
+      await user.click(startReviewButton);
+
+      expect(
+        transitionMocks.execute,
+      ).not.toHaveBeenCalled();
+    },
+  );
 
   it(
     "submits rejection with its reason and current saved version",
