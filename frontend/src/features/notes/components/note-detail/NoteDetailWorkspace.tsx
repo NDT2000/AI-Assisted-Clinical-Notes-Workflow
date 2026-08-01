@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useRef, useState, } from "react";
 
 import type { SoapContent, } from "../../../../domain/noteAttributes";
-import type { NoteDetail, } from "../../../../domain/noteDetail";
-import type { TransitionNoteActor, TransitionNoteResponse, UserNoteActionTrigger, } from "../../../../domain/noteTransition";
+import { canTransition } from "../../../../domain/noteGuards";
+import type { NoteDetail, ReviewTimelineEvent } from "../../../../domain/noteDetail";
+import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteResponse, 
+  UserNoteActionTrigger, } from "../../../../domain/noteTransition";
 import type { AutosaveSnapshot, AutosaveSuccess, } from "../../autosave/AutosaveCoordinator";
 import { useNoteAutosave, } from "../../hooks/useNoteAutosave";
 import { useNoteTransition, } from "../../hooks/useNoteTransition";
@@ -203,6 +205,12 @@ export function NoteDetailWorkspace({
       initialDraftContent,
     );
 
+  const optimisticSnapshotRef =
+    useRef<NoteDetail | null>(null);
+
+  const optimisticTimelineEventIdRef =
+    useRef<string | null>(null);
+
   const dirtySections = useMemo(
     () =>
       getDirtySections(
@@ -226,10 +234,6 @@ export function NoteDetailWorkspace({
     isViewingHistoricalVersion
       ? CLEAN_SECTIONS
       : dirtySections;
-
-  const isEditable =
-    workspaceDetail.note.status ===
-    "IN_REVIEW";
 
   const handleSaveSuccess = useCallback(
     ({
@@ -275,32 +279,156 @@ export function NoteDetailWorkspace({
     [],
   );
 
+  const handleOptimisticApply =
+    useCallback(
+      (
+        command: TransitionNoteCommand,
+      ): void => {
+        const occurredAt =
+          new Date().toISOString();
+
+        setWorkspaceDetail(
+          (currentDetail) => {
+            const transitionResult =
+              canTransition({
+                note: currentDetail.note,
+                version:
+                  currentDetail.currentVersion,
+                actor,
+                action: command.trigger,
+                now: occurredAt,
+                ...(command.rejectionReason !==
+                undefined
+                  ? {
+                      rejectionReason:
+                        command.rejectionReason,
+                    }
+                  : {}),
+              });
+
+            if (!transitionResult.allowed) {
+              return currentDetail;
+            }
+
+            optimisticSnapshotRef.current =
+              currentDetail;
+
+            const optimisticEventId = [
+              "optimistic-transition",
+              Date.now(),
+              Math.random()
+                .toString(36)
+                .slice(2),
+            ].join("-");
+
+            optimisticTimelineEventIdRef.current =
+              optimisticEventId;
+
+            const optimisticTimelineEvent:
+              ReviewTimelineEvent = {
+              eventId: optimisticEventId,
+              noteId:
+                currentDetail.note.id,
+              versionId:
+                currentDetail.currentVersion
+                  .versionId,
+              fromStatus:
+                currentDetail.note.status,
+              toStatus:
+                transitionResult.nextStatus,
+              actorId: actor.id,
+              actorRole: actor.role,
+              actorDisplayName:
+                actor.displayName,
+              occurredAt,
+              ...(command.trigger ===
+                "REJECT" &&
+              command.rejectionReason?.trim()
+                ? {
+                    reason:
+                      command.rejectionReason.trim(),
+                  }
+                : {}),
+            };
+
+            return {
+              ...currentDetail,
+              note: {
+                ...currentDetail.note,
+                status:
+                  transitionResult.nextStatus,
+                updatedAt: occurredAt,
+                ...(transitionResult.nextStatus ===
+                "APPROVED"
+                  ? {
+                      approvedAt:
+                        occurredAt,
+                    }
+                  : {}),
+              },
+              timeline: [
+                ...currentDetail.timeline,
+                optimisticTimelineEvent,
+              ],
+            };
+          },
+        );
+      },
+      [actor],
+    );
+
   const handleTransitionSuccess =
     useCallback(
       (
         response: TransitionNoteResponse,
       ): void => {
+        const optimisticEventId =
+          optimisticTimelineEventIdRef.current;
+
         setWorkspaceDetail(
           (currentDetail) => ({
             ...currentDetail,
-
             note: response.note,
-
             currentVersion:
               response.currentVersion,
-
             timeline: [
-              ...currentDetail.timeline,
+              ...currentDetail.timeline.filter(
+                (event) =>
+                  event.eventId !==
+                  optimisticEventId,
+              ),
               response.timelineEvent,
             ],
           }),
         );
+
+        optimisticSnapshotRef.current =
+          null;
+
+        optimisticTimelineEventIdRef.current =
+          null;
 
         setRejectionReason("");
       },
       [],
     );
 
+  const handleTransitionFailure =
+    useCallback((): void => {
+      const snapshot =
+        optimisticSnapshotRef.current;
+
+      if (snapshot) {
+        setWorkspaceDetail(snapshot);
+      }
+
+      optimisticSnapshotRef.current =
+        null;
+
+      optimisticTimelineEventIdRef.current =
+        null;
+    }, []);
+  
   const {
     snapshot: autosaveSnapshot,
     updateDraft: queueAutosave,
@@ -326,9 +454,16 @@ export function NoteDetailWorkspace({
   } = useNoteTransition({
     noteId: workspaceDetail.note.id,
     actor,
-    onSuccess:
-      handleTransitionSuccess,
+    onOptimisticApply: handleOptimisticApply,
+    onSuccess: handleTransitionSuccess,
+    onFailure: handleTransitionFailure,
   });
+
+  const isEditable =
+    workspaceDetail.note.status ===
+      "IN_REVIEW" &&
+    transitionState.status !==
+      "pending";
 
   const hasDirtySections =
     Object.values(
@@ -447,13 +582,21 @@ export function NoteDetailWorkspace({
       return {};
     }, [transitionState]);
 
+  const actionSourceDetail =
+    transitionState.status ===
+      "pending" &&
+    optimisticSnapshotRef.current !==
+      null
+      ? optimisticSnapshotRef.current
+      : workspaceDetail;
+    
   const availableActions = useMemo(
     () =>
       deriveAvailableNoteActions({
-        note: workspaceDetail.note,
+        note: actionSourceDetail.note,
 
         version:
-          workspaceDetail.currentVersion,
+          actionSourceDetail.currentVersion,
 
         actor,
 
@@ -472,8 +615,8 @@ export function NoteDetailWorkspace({
       actor,
       rejectionReason,
       workspaceBlockReason,
-      workspaceDetail.currentVersion,
-      workspaceDetail.note,
+      actionSourceDetail.currentVersion,
+      actionSourceDetail.note,
     ],
   );
 

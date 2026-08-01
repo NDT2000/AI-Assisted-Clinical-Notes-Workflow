@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, } from "react";
 
-import type { NoteVersionDetail } from "../../../domain/noteDetail";
-import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteRequestBody, TransitionNoteResponse, UserNoteActionTrigger, } from "../../../domain/noteTransition";
-import { transitionNote, TransitionNoteRequestError, } from "../api/transitionNote";
+import type { NoteVersionDetail, } from "../../../domain/noteDetail";
+import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteErrorCode, TransitionNoteRequestBody, 
+  TransitionNoteResponse, UserNoteActionTrigger, } from "../../../domain/noteTransition";
+import { transitionNote, TransitionNoteRequestError } from "../api/transitionNote";
 
 export type NoteTransitionState =
   | {
@@ -38,18 +39,32 @@ export type NoteTransitionState =
         | null;
     };
 
+export interface NoteTransitionFailure {
+  code: TransitionNoteErrorCode | "unknown";
+  message: string;
+  currentVersion:
+    | NoteVersionDetail
+    | null;
+}
+
 interface UseNoteTransitionOptions {
   noteId: string;
   actor: TransitionNoteActor;
+  onOptimisticApply?: (
+    command: TransitionNoteCommand,
+  ) => void;
   onSuccess: (
     response: TransitionNoteResponse,
+  ) => void;
+  onFailure?: (
+    failure: NoteTransitionFailure,
   ) => void;
 }
 
 interface UseNoteTransitionResult {
   state: NoteTransitionState;
   execute: (
-    request: TransitionNoteCommand,
+    command: TransitionNoteCommand,
   ) => Promise<
     TransitionNoteResponse | null
   >;
@@ -63,10 +78,29 @@ const INITIAL_STATE: NoteTransitionState = {
   currentVersion: null,
 };
 
+function createClientMutationId(): string {
+  if (
+    typeof globalThis.crypto
+      ?.randomUUID === "function"
+  ) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return [
+    "transition",
+    Date.now(),
+    Math.random()
+      .toString(36)
+      .slice(2),
+  ].join("-");
+}
+
 export function useNoteTransition({
   noteId,
   actor,
+  onOptimisticApply,
   onSuccess,
+  onFailure,
 }: UseNoteTransitionOptions): UseNoteTransitionResult {
   const [state, setState] =
     useState<NoteTransitionState>(
@@ -79,12 +113,27 @@ export function useNoteTransition({
   const latestRequestTokenRef =
     useRef(0);
 
+  const onOptimisticApplyRef =
+    useRef(onOptimisticApply);
+
   const onSuccessRef =
     useRef(onSuccess);
+
+  const onFailureRef =
+    useRef(onFailure);
+
+  useEffect(() => {
+    onOptimisticApplyRef.current =
+      onOptimisticApply;
+  }, [onOptimisticApply]);
 
   useEffect(() => {
     onSuccessRef.current = onSuccess;
   }, [onSuccess]);
+
+  useEffect(() => {
+    onFailureRef.current = onFailure;
+  }, [onFailure]);
 
   useEffect(() => {
     return () => {
@@ -97,7 +146,8 @@ export function useNoteTransition({
   const execute = useCallback(
     async (
       command: TransitionNoteCommand,
-    ): Promise<TransitionNoteResponse | null
+    ): Promise<
+      TransitionNoteResponse | null
     > => {
       if (activeRequestRef.current) {
         return null;
@@ -106,7 +156,7 @@ export function useNoteTransition({
       const request: TransitionNoteRequestBody = {
         ...command,
         clientMutationId:
-          crypto.randomUUID(),
+          createClientMutationId(),
       };
 
       const controller =
@@ -120,6 +170,10 @@ export function useNoteTransition({
 
       activeRequestRef.current =
         controller;
+
+      onOptimisticApplyRef.current?.(
+        command,
+      );
 
       setState({
         status: "pending",
@@ -166,8 +220,17 @@ export function useNoteTransition({
 
         if (
           error instanceof
-            TransitionNoteRequestError
+          TransitionNoteRequestError
         ) {
+          const failure: NoteTransitionFailure =
+            {
+              code: error.code,
+              message: error.message,
+              currentVersion:
+                error.currentVersion ??
+                null,
+            };
+
           if (
             error.code ===
             "version_conflict"
@@ -180,27 +243,40 @@ export function useNoteTransition({
                 error.currentVersion ??
                 null,
             });
-
-            return null;
+          } else {
+            setState({
+              status: "failed",
+              trigger: request.trigger,
+              message: error.message,
+              currentVersion: null,
+            });
           }
 
-          setState({
-            status: "failed",
-            trigger: request.trigger,
-            message: error.message,
-            currentVersion: null,
-          });
+          onFailureRef.current?.(
+            failure,
+          );
 
           return null;
         }
 
+        const failure: NoteTransitionFailure =
+          {
+            code: "unknown",
+            message:
+              "Unable to update the note status.",
+            currentVersion: null,
+          };
+
         setState({
           status: "failed",
           trigger: request.trigger,
-          message:
-            "Unable to update the note status.",
+          message: failure.message,
           currentVersion: null,
         });
+
+        onFailureRef.current?.(
+          failure,
+        );
 
         return null;
       } finally {
@@ -213,10 +289,10 @@ export function useNoteTransition({
       }
     },
     [
-      actor.id,
       actor.displayName,
-      actor.role,
+      actor.id,
       actor.mfaVerified,
+      actor.role,
       noteId,
     ],
   );
