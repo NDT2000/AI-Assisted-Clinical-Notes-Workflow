@@ -1,8 +1,23 @@
-import { act, renderHook, } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi, } from "vitest";
+import {
+  act,
+  renderHook,
+} from "@testing-library/react";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
-import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteResponse, } from "../../../domain/noteTransition";
-import { useNoteTransition, } from "./useNoteTransition";
+import type {
+  TransitionNoteActor,
+  TransitionNoteCommand,
+  TransitionNoteResponse,
+} from "../../../domain/noteTransition";
+import {
+  useNoteTransition,
+} from "./useNoteTransition";
 
 const apiMocks = vi.hoisted(() => ({
   transitionNote: vi.fn(),
@@ -92,12 +107,14 @@ const response: TransitionNoteResponse = {
     noteId: "note-1",
     revisionNumber: 1,
     parentVersionId: null,
+
     content: {
       subjective: "Subjective",
       objective: "Objective",
       assessment: "Assessment",
       plan: "Plan",
     },
+
     authorId: "clinician-1",
     authorRole: "CLINICIAN",
     authorDisplayName:
@@ -195,6 +212,21 @@ describe("useNoteTransition", () => {
         onOptimisticApply,
       ).toHaveBeenCalledTimes(1);
 
+      expect(
+        apiMocks.transitionNote,
+      ).toHaveBeenCalledWith(
+        "note-1",
+        actor,
+        expect.objectContaining({
+          baseVersionId:
+            "version-1",
+          trigger: "START_REVIEW",
+          clientMutationId:
+            expect.any(String),
+        }),
+        expect.any(AbortSignal),
+      );
+
       await act(async () => {
         deferred.resolve(response);
         await firstRequest;
@@ -204,11 +236,13 @@ describe("useNoteTransition", () => {
         result.current.state.status,
       ).toBe("succeeded");
 
-      expect(onSuccess).toHaveBeenCalledWith(
-        response,
-      );
+      expect(
+        onSuccess,
+      ).toHaveBeenCalledWith(response);
 
-      expect(onFailure).not.toHaveBeenCalled();
+      expect(
+        onFailure,
+      ).not.toHaveBeenCalled();
     },
   );
 });
