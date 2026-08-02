@@ -1,0 +1,45 @@
+.workflow-guidance {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border, #d9e1ea);
+  border-left-width: 4px;
+  border-radius: 0.7rem;
+  background: var(--bg, #ffffff);
+}
+
+.workflow-guidance h2,
+.workflow-guidance p {
+  margin: 0;
+}
+
+.workflow-guidance h2 {
+  font-size: 0.95rem;
+}
+
+.workflow-guidance p {
+  margin-top: 0.3rem;
+  color: var(--text, #526173);
+  line-height: 1.45;
+}
+
+.workflow-guidance--information {
+  border-left-color:
+    var(--accent, #245ea8);
+  background:
+    var(--accent-bg, #eef5fd);
+}
+
+.workflow-guidance--warning {
+  border-left-color: #b7791f;
+  background: #fff9e8;
+}
+
+.workflow-guidance--success {
+  border-left-color: #2f855a;
+  background: #eef8f1;
+}
+
+@media (forced-colors: active) {
+  .workflow-guidance {
+    border-color: CanvasText;
+  }
+}

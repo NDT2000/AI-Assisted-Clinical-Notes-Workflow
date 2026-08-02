@@ -1,11 +1,10 @@
-import {
-  useEffect,
-  useRef,
-} from "react";
-
+import type {
+  UserRole,
+} from "../../../../domain/noteAttributes";
 import type {
   NoteVersionDetail,
 } from "../../../../domain/noteDetail";
+import "../note-detail/css/VersionHistorySidebar.css"
 
 export type VersionComparisonStatus =
   | "closed"
@@ -16,34 +15,25 @@ interface VersionHistorySidebarProps {
   versions: NoteVersionDetail[];
   currentVersionId: string;
   selectedVersionId: string;
-
   comparisonStatus:
     VersionComparisonStatus;
-
   compareFromVersionId:
     | string
     | null;
-
   compareToVersionId:
     | string
     | null;
-
   onSelectVersion: (
     versionId: string,
   ) => void;
-
   onStartComparison: () => void;
-
   onCompareFromVersionChange: (
     versionId: string,
   ) => void;
-
   onCompareToVersionChange: (
     versionId: string,
   ) => void;
-
   onShowComparison: () => void;
-
   onExitComparison: () => void;
 }
 
@@ -63,6 +53,21 @@ function formatVersionDate(
       timeStyle: "short",
     },
   ).format(date);
+}
+
+function formatRole(
+  role: UserRole,
+): string {
+  switch (role) {
+    case "CLINICIAN":
+      return "Clinician";
+    case "REVIEWER":
+      return "Reviewer";
+    case "ADMIN":
+      return "Administrator";
+    case "READONLY_AUDITOR":
+      return "Read-only auditor";
+  }
 }
 
 function getVersionOptionLabel(
@@ -92,21 +97,6 @@ export function VersionHistorySidebar({
   onShowComparison,
   onExitComparison,
 }: VersionHistorySidebarProps) {
-  const compareButtonRef =
-    useRef<HTMLButtonElement | null>(
-      null,
-    );
-
-  const fromSelectRef =
-    useRef<HTMLSelectElement | null>(
-      null,
-    );
-
-  const previousComparisonStatusRef =
-    useRef<VersionComparisonStatus>(
-      comparisonStatus,
-    );
-
   const sortedVersions = [
     ...versions,
   ].sort(
@@ -115,23 +105,29 @@ export function VersionHistorySidebar({
       firstVersion.revisionNumber,
   );
 
+  const versionsById =
+    new Map(
+      sortedVersions.map(
+        (version) => [
+          version.versionId,
+          version,
+        ],
+      ),
+    );
+
   const canStartComparison =
     sortedVersions.length >= 2;
 
   const fromVersionExists =
     compareFromVersionId !== null &&
-    sortedVersions.some(
-      version =>
-        version.versionId ===
-        compareFromVersionId,
+    versionsById.has(
+      compareFromVersionId,
     );
 
   const toVersionExists =
     compareToVersionId !== null &&
-    sortedVersions.some(
-      version =>
-        version.versionId ===
-        compareToVersionId,
+    versionsById.has(
+      compareToVersionId,
     );
 
   const selectedSameVersion =
@@ -147,44 +143,48 @@ export function VersionHistorySidebar({
   const comparisonOpen =
     comparisonStatus !== "closed";
 
-  useEffect(() => {
-    const previousStatus =
-      previousComparisonStatusRef.current;
-
-    if (
-      previousStatus === "closed" &&
-      comparisonStatus === "selecting"
-    ) {
-      fromSelectRef.current?.focus();
-    }
-
-    if (
-      previousStatus !== "closed" &&
-      comparisonStatus === "closed"
-    ) {
-      compareButtonRef.current?.focus();
-    }
-
-    previousComparisonStatusRef.current =
-      comparisonStatus;
-  }, [comparisonStatus]);
-
-  const comparisonMessageId =
-    "version-comparison-message";
+  const selectedVersion =
+    versionsById.get(
+      selectedVersionId,
+    );
 
   return (
     <section
-      className="note-detail-card"
+      className="note-detail-card version-history"
       aria-labelledby="version-history-heading"
     >
-      <h2 id="version-history-heading">
-        Version history
-      </h2>
+      <div className="version-history__heading">
+        <div>
+          <p className="version-history__eyebrow">
+            Saved note revisions
+          </p>
+
+          <h2 id="version-history-heading">
+            Version history
+          </h2>
+
+          <p>
+            {sortedVersions.length} saved{" "}
+            {sortedVersions.length === 1
+              ? "version"
+              : "versions"}
+          </p>
+        </div>
+
+        {selectedVersion !==
+          undefined && (
+          <span className="version-history__selected-summary">
+            Viewing revision{" "}
+            {
+              selectedVersion.revisionNumber
+            }
+          </span>
+        )}
+      </div>
 
       {!comparisonOpen ? (
-        <>
+        <div className="version-history__compare-start">
           <button
-            ref={compareButtonRef}
             type="button"
             disabled={
               !canStartComparison
@@ -192,7 +192,7 @@ export function VersionHistorySidebar({
             aria-describedby={
               canStartComparison
                 ? undefined
-                : comparisonMessageId
+                : "version-comparison-unavailable"
             }
             onClick={
               onStartComparison
@@ -201,122 +201,121 @@ export function VersionHistorySidebar({
             Compare versions
           </button>
 
-          {!canStartComparison ? (
+          {!canStartComparison && (
             <p
-              id={comparisonMessageId}
+              id="version-comparison-unavailable"
               className="version-comparison-message"
             >
               At least two saved versions
               are required for comparison.
             </p>
-          ) : null}
-        </>
+          )}
+        </div>
       ) : (
-        <fieldset
-          className="version-comparison-controls"
-          aria-describedby={
-            comparisonStatus ===
-            "active"
-              ? comparisonMessageId
-              : undefined
-          }
-        >
+        <fieldset className="version-comparison-controls">
           <legend>
             Compare saved versions
           </legend>
 
-          <label>
-            From version
+          <p>
+            Choose an earlier and later
+            revision. Comparison is
+            read-only.
+          </p>
 
-            <select
-              ref={fromSelectRef}
-              value={
-                compareFromVersionId ??
-                ""
-              }
-              disabled={
-                comparisonStatus ===
-                "active"
-              }
-              onChange={event => {
-                onCompareFromVersionChange(
-                  event.target.value,
-                );
-              }}
-            >
-              <option
-                value=""
-                disabled
+          <div className="version-comparison-controls__fields">
+            <label>
+              From version
+
+              <select
+                value={
+                  compareFromVersionId ??
+                  ""
+                }
+                disabled={
+                  comparisonStatus ===
+                  "active"
+                }
+                onChange={(event) =>
+                  onCompareFromVersionChange(
+                    event.target.value,
+                  )
+                }
               >
-                Select a version
-              </option>
+                <option
+                  value=""
+                  disabled
+                >
+                  Select a version
+                </option>
 
-              {sortedVersions.map(
-                version => (
-                  <option
-                    key={
-                      version.versionId
-                    }
-                    value={
-                      version.versionId
-                    }
-                  >
-                    {getVersionOptionLabel(
-                      version,
-                      currentVersionId,
-                    )}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
+                {sortedVersions.map(
+                  (version) => (
+                    <option
+                      key={
+                        version.versionId
+                      }
+                      value={
+                        version.versionId
+                      }
+                    >
+                      {getVersionOptionLabel(
+                        version,
+                        currentVersionId,
+                      )}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
 
-          <label>
-            To version
+            <label>
+              To version
 
-            <select
-              value={
-                compareToVersionId ??
-                ""
-              }
-              disabled={
-                comparisonStatus ===
-                "active"
-              }
-              onChange={event => {
-                onCompareToVersionChange(
-                  event.target.value,
-                );
-              }}
-            >
-              <option
-                value=""
-                disabled
+              <select
+                value={
+                  compareToVersionId ??
+                  ""
+                }
+                disabled={
+                  comparisonStatus ===
+                  "active"
+                }
+                onChange={(event) =>
+                  onCompareToVersionChange(
+                    event.target.value,
+                  )
+                }
               >
-                Select a version
-              </option>
+                <option
+                  value=""
+                  disabled
+                >
+                  Select a version
+                </option>
 
-              {sortedVersions.map(
-                version => (
-                  <option
-                    key={
-                      version.versionId
-                    }
-                    value={
-                      version.versionId
-                    }
-                  >
-                    {getVersionOptionLabel(
-                      version,
-                      currentVersionId,
-                    )}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
+                {sortedVersions.map(
+                  (version) => (
+                    <option
+                      key={
+                        version.versionId
+                      }
+                      value={
+                        version.versionId
+                      }
+                    >
+                      {getVersionOptionLabel(
+                        version,
+                        currentVersionId,
+                      )}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+          </div>
 
-          {selectedSameVersion ? (
+          {selectedSameVersion && (
             <p
               className="version-comparison-message"
               role="alert"
@@ -324,52 +323,50 @@ export function VersionHistorySidebar({
               Choose two different
               versions.
             </p>
-          ) : null}
-
-          {comparisonStatus ===
-          "selecting" ? (
-            <button
-              type="button"
-              disabled={
-                !canShowComparison
-              }
-              onClick={
-                onShowComparison
-              }
-            >
-              Show comparison
-            </button>
-          ) : (
-            <p
-              id={comparisonMessageId}
-              role="status"
-              aria-live="polite"
-            >
-              Version comparison is
-              currently open.
-            </p>
           )}
 
-          <button
-            type="button"
-            onClick={
-              onExitComparison
-            }
-          >
-            Exit comparison
-          </button>
+          <div className="version-comparison-controls__actions">
+            {comparisonStatus ===
+            "selecting" ? (
+              <button
+                type="button"
+                disabled={
+                  !canShowComparison
+                }
+                onClick={
+                  onShowComparison
+                }
+              >
+                Show comparison
+              </button>
+            ) : (
+              <p role="status">
+                Version comparison is
+                currently open.
+              </p>
+            )}
+
+            <button
+              type="button"
+              className="version-history__secondary-button"
+              onClick={
+                onExitComparison
+              }
+            >
+              Exit comparison
+            </button>
+          </div>
         </fieldset>
       )}
 
       {sortedVersions.length === 0 ? (
-        <p>No versions available.</p>
+        <p className="version-history__empty">
+          No versions available.
+        </p>
       ) : (
-        <ol
-          className="version-history-list"
-          aria-label="Saved note versions"
-        >
+        <ol className="version-history-list">
           {sortedVersions.map(
-            version => {
+            (version) => {
               const isCurrent =
                 version.versionId ===
                 currentVersionId;
@@ -377,6 +374,22 @@ export function VersionHistorySidebar({
               const isSelected =
                 version.versionId ===
                 selectedVersionId;
+
+              const isCompareFrom =
+                version.versionId ===
+                compareFromVersionId;
+
+              const isCompareTo =
+                version.versionId ===
+                compareToVersionId;
+
+              const parentVersion =
+                version.parentVersionId ===
+                null
+                  ? undefined
+                  : versionsById.get(
+                      version.parentVersionId,
+                    );
 
               return (
                 <li
@@ -398,39 +411,80 @@ export function VersionHistorySidebar({
                     aria-pressed={
                       isSelected
                     }
-                    aria-current={
-                      isCurrent
-                        ? "true"
-                        : undefined
-                    }
-                    onClick={() => {
+                    onClick={() =>
                       onSelectVersion(
                         version.versionId,
-                      );
-                    }}
+                      )
+                    }
                   >
-                    <span>
-                      Revision{" "}
-                      {
-                        version.revisionNumber
-                      }
-                    </span>
+                    <span className="version-history-button__marker" />
 
-                    {isCurrent ? (
-                      <span>
-                        Current version
+                    <span className="version-history-button__content">
+                      <span className="version-history-button__top-line">
+                        <strong>
+                          Revision{" "}
+                          {
+                            version.revisionNumber
+                          }
+                        </strong>
+
+                        <span className="version-history-button__badges">
+                          {isCurrent && (
+                            <span className="version-history-badge version-history-badge--current">
+                              Current version
+                            </span>
+                          )}
+
+                          {isSelected && (
+                            <span className="version-history-badge version-history-badge--selected">
+                              Selected
+                            </span>
+                          )}
+
+                          {comparisonOpen &&
+                            isCompareFrom && (
+                              <span className="version-history-badge">
+                                From
+                              </span>
+                            )}
+
+                          {comparisonOpen &&
+                            isCompareTo && (
+                              <span className="version-history-badge">
+                                To
+                              </span>
+                            )}
+                        </span>
                       </span>
-                    ) : null}
 
-                    <span>
-                      {version.authorDisplayName ??
-                        version.authorId}
-                    </span>
+                      <span className="version-history-button__author">
+                        {version.authorDisplayName ??
+                          version.authorId}
+                        {" · "}
+                        {formatRole(
+                          version.authorRole,
+                        )}
+                      </span>
 
-                    <span>
-                      {formatVersionDate(
-                        version.createdAt,
-                      )}
+                      <time
+                        dateTime={
+                          version.createdAt
+                        }
+                      >
+                        {formatVersionDate(
+                          version.createdAt,
+                        )}
+                      </time>
+
+                      <span className="version-history-button__parent">
+                        {parentVersion ===
+                        undefined
+                          ? version.parentVersionId ===
+                            null
+                            ? "Root version"
+                            : "Parent version unavailable"
+                          : `Based on revision ${parentVersion.revisionNumber}`}
+                      </span>
                     </span>
                   </button>
                 </li>
@@ -439,6 +493,22 @@ export function VersionHistorySidebar({
           )}
         </ol>
       )}
+
+      {selectedVersion !==
+        undefined &&
+        selectedVersion.versionId !==
+          currentVersionId &&
+        !comparisonOpen && (
+          <p
+            className="version-history__historical-notice"
+            role="status"
+          >
+            You are viewing a historical
+            version. It is read-only and
+            does not replace the current
+            draft.
+          </p>
+        )}
     </section>
   );
 }

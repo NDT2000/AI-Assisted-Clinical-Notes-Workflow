@@ -8,12 +8,9 @@ export type SoapSectionKey =
 interface SoapEditorProps {
   content: SoapContent;
   readOnly: boolean;
-  readOnlyReason?: string;
-
   dirtySections?: Partial<
     Record<SoapSectionKey, boolean>
   >;
-
   onSectionChange?: (
     section: SoapSectionKey,
     value: string,
@@ -23,6 +20,7 @@ interface SoapEditorProps {
 interface SoapSectionDefinition {
   key: SoapSectionKey;
   label: string;
+  shortLabel: string;
   description: string;
 }
 
@@ -31,24 +29,28 @@ const SOAP_SECTIONS:
     {
       key: "subjective",
       label: "Subjective",
+      shortLabel: "S",
       description:
         "Symptoms, concerns and information reported by the patient.",
     },
     {
       key: "objective",
       label: "Objective",
+      shortLabel: "O",
       description:
         "Observed findings, measurements and examination results.",
     },
     {
       key: "assessment",
       label: "Assessment",
+      shortLabel: "A",
       description:
         "Clinical interpretation and working assessment.",
     },
     {
       key: "plan",
       label: "Plan",
+      shortLabel: "P",
       description:
         "Treatment, follow-up and recommended next steps.",
     },
@@ -57,25 +59,26 @@ const SOAP_SECTIONS:
 export function SoapEditor({
   content,
   readOnly,
-  readOnlyReason,
   dirtySections = {},
   onSectionChange,
 }: SoapEditorProps) {
-  const readOnlyReasonId =
-    readOnly && readOnlyReason
-      ? "soap-editor-readonly-reason"
-      : undefined;
+  const dirtySectionCount =
+    SOAP_SECTIONS.filter(
+      ({ key }) =>
+        dirtySections[key] === true,
+    ).length;
 
   return (
     <section
-      className="note-detail-card"
+      className="note-detail-card soap-editor"
       aria-labelledby="soap-editor-heading"
-      aria-describedby={
-        readOnlyReasonId
-      }
     >
       <div className="soap-editor-heading">
         <div>
+          <p className="soap-editor-eyebrow">
+            Clinical documentation
+          </p>
+
           <h2 id="soap-editor-heading">
             SOAP note
           </h2>
@@ -86,30 +89,41 @@ export function SoapEditor({
           </p>
         </div>
 
-        {readOnly && (
-          <span
-            className="soap-readonly-badge"
-            role="status"
-          >
-            Read only
-          </span>
-        )}
+        <div className="soap-editor-state">
+          {readOnly ? (
+            <span className="soap-readonly-badge">
+              Read only
+            </span>
+          ) : dirtySectionCount > 0 ? (
+            <span className="soap-dirty-summary">
+              {dirtySectionCount}{" "}
+              {dirtySectionCount === 1
+                ? "section"
+                : "sections"}{" "}
+              changed
+            </span>
+          ) : (
+            <span className="soap-editable-badge">
+              Editable
+            </span>
+          )}
+        </div>
       </div>
 
-      {readOnlyReasonId ? (
-        <p
-          id={readOnlyReasonId}
-          className="soap-readonly-reason"
-        >
-          {readOnlyReason}
+      {readOnly && (
+        <p className="soap-readonly-message">
+          This version can be reviewed,
+          but its clinical content cannot
+          be changed.
         </p>
-      ) : null}
+      )}
 
       <div className="soap-section-list">
         {SOAP_SECTIONS.map(
           ({
             key,
             label,
+            shortLabel,
             description,
           }) => {
             const isDirty =
@@ -118,44 +132,50 @@ export function SoapEditor({
             const descriptionId =
               `soap-${key}-description`;
 
-            const dirtyStatusId =
-              isDirty
-                ? `soap-${key}-dirty`
-                : undefined;
-
-            const describedBy = [
-              descriptionId,
-              dirtyStatusId,
-              readOnlyReasonId,
-            ]
-              .filter(Boolean)
-              .join(" ");
+            const statusId =
+              `soap-${key}-status`;
 
             return (
-              <div
+              <article
                 className="soap-section"
+                data-dirty={
+                  isDirty
+                    ? "true"
+                    : "false"
+                }
+                data-readonly={
+                  readOnly
+                    ? "true"
+                    : "false"
+                }
                 key={key}
               >
                 <div className="soap-section-header">
-                  <div>
-                    <label
-                      htmlFor={`soap-${key}`}
+                  <div className="soap-section-title">
+                    <span
+                      className="soap-section-letter"
+                      aria-hidden="true"
                     >
-                      {label}
-                    </label>
+                      {shortLabel}
+                    </span>
 
-                    <p
-                      id={descriptionId}
-                    >
-                      {description}
-                    </p>
+                    <div>
+                      <label
+                        htmlFor={`soap-${key}`}
+                      >
+                        {label}
+                      </label>
+
+                      <p id={descriptionId}>
+                        {description}
+                      </p>
+                    </div>
                   </div>
 
                   {isDirty && (
                     <span
-                      id={dirtyStatusId}
+                      id={statusId}
                       className="soap-dirty-indicator"
-                      role="status"
                     >
                       Unsaved changes
                     </span>
@@ -166,15 +186,20 @@ export function SoapEditor({
                   id={`soap-${key}`}
                   value={content[key]}
                   readOnly={readOnly}
-                  aria-readonly={readOnly}
-                  aria-describedby={
-                    describedBy
-                  }
-                  rows={6}
-                  onChange={event => {
+                  rows={7}
+                  aria-describedby={[
+                    descriptionId,
+                    isDirty
+                      ? statusId
+                      : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onChange={(event) => {
                     if (
                       readOnly ||
-                      !onSectionChange
+                      onSectionChange ===
+                        undefined
                     ) {
                       return;
                     }
@@ -185,7 +210,7 @@ export function SoapEditor({
                     );
                   }}
                 />
-              </div>
+              </article>
             );
           },
         )}

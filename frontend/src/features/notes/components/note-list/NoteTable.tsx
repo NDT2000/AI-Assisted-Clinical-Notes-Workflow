@@ -34,7 +34,6 @@ interface NotesTableProps {
 }
 
 const ROW_HEIGHT_PX = 56;
-const CONTAINER_HEIGHT_PX = 600;
 const LOAD_MORE_THRESHOLD = 10;
 
 const TABLE_GRID_TEMPLATE = `
@@ -223,8 +222,7 @@ export function NotesTable({
 
           <p>
             Creation and update times
-            are shown separately so date
-            filters can be verified.
+            are shown separately.
           </p>
         </div>
 
@@ -325,6 +323,7 @@ export function NotesTable({
                     note.assignedReviewer
                       ?.displayName ??
                     "Unassigned";
+
 
                   const createdAtLabel =
                     formatDateTime(
@@ -428,6 +427,7 @@ export function NotesTable({
                       >
                         {reviewerName}
                       </div>
+
 
                       <div
                         className="notes-table-cell notes-table-revision"

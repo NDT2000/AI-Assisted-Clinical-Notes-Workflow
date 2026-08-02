@@ -1,6 +1,7 @@
 import type {
   PresenceUser,
 } from "../../../../domain/noteDetail";
+import "./css/PresencePanel.css";
 
 interface PresencePanelProps {
   presence: PresenceUser[];
@@ -26,61 +27,114 @@ function formatLastSeen(
   ).toLocaleString();
 }
 
-function formatPresenceCount(
-  count: number,
+function getInitials(
+  displayName: string,
 ): string {
-  return count === 1
-    ? "1 active user"
-    : `${count} active users`;
+  const parts =
+    displayName
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "?";
+  }
+
+  if (parts.length === 1) {
+    return parts[0]
+      .slice(0, 1)
+      .toUpperCase();
+  }
+
+  return (
+    parts[0].slice(0, 1) +
+    parts[
+      parts.length - 1
+    ].slice(0, 1)
+  ).toUpperCase();
 }
 
 export function PresencePanel({
   presence,
 }: PresencePanelProps) {
+  const editorCount =
+    presence.filter(
+      (entry) =>
+        entry.activity ===
+        "EDITING",
+    ).length;
+
   return (
     <section
-      className="note-detail-card"
+      className="note-detail-card presence-panel"
       aria-labelledby="presence-heading"
-      aria-live="polite"
-      aria-relevant="all"
     >
       <div className="presence-heading">
-        <h2 id="presence-heading">
-          Presence
-        </h2>
+        <div>
+          <p className="presence-eyebrow">
+            Live collaboration
+          </p>
+
+          <h2 id="presence-heading">
+            Presence
+          </h2>
+
+          <p>
+            Users currently connected to
+            this note.
+          </p>
+        </div>
 
         <span
           className="presence-count"
-          aria-label={formatPresenceCount(
-            presence.length,
-          )}
+          aria-label={`${presence.length} active users`}
         >
           {presence.length}
         </span>
       </div>
 
+      {editorCount > 0 && (
+        <p
+          className="presence-editing-notice"
+          role="status"
+          aria-live="polite"
+        >
+          {editorCount === 1
+            ? "Another user is editing this note."
+            : `${editorCount} other users are editing this note.`}
+        </p>
+      )}
+
       {presence.length === 0 ? (
-        <p className="presence-empty">
+        <p
+          className="presence-empty"
+          role="status"
+          aria-live="polite"
+        >
           No other users are currently active
           on this note.
         </p>
       ) : (
         <ul
           className="presence-list"
-          aria-label="Users currently active on this note"
+          aria-live="polite"
+          aria-relevant="all"
         >
-          {presence.map(entry => (
+          {presence.map((entry) => (
             <li
               className="presence-item"
+              data-activity={
+                entry.activity
+              }
               key={entry.user.id}
             >
               <div
                 className="presence-avatar"
                 aria-hidden="true"
               >
-                {entry.user.displayName
-                  .charAt(0)
-                  .toUpperCase()}
+                {getInitials(
+                  entry.user.displayName,
+                )}
               </div>
 
               <div className="presence-user-details">
@@ -94,8 +148,11 @@ export function PresencePanel({
 
                 <time
                   dateTime={entry.lastSeenAt}
+                  title={formatLastSeen(
+                    entry.lastSeenAt,
+                  )}
                 >
-                  Last active:{" "}
+                  Last active{" "}
                   {formatLastSeen(
                     entry.lastSeenAt,
                   )}
@@ -104,14 +161,17 @@ export function PresencePanel({
 
               <span
                 className={
-                  entry.activity === "EDITING"
+                  entry.activity ===
+                  "EDITING"
                     ? "presence-activity presence-activity-editing"
                     : "presence-activity"
                 }
-                aria-label={`${entry.user.displayName} is ${formatActivity(
-                  entry.activity,
-                ).toLowerCase()}`}
               >
+                <span
+                  className="presence-activity-dot"
+                  aria-hidden="true"
+                />
+
                 {formatActivity(
                   entry.activity,
                 )}
