@@ -125,7 +125,6 @@ State is kept close to the layer that owns it.
 - **Persistent client state:** offline cache, queued saves, replay state, real-time cursor, and parked telemetry batches.
 - **Derived state:** edit permission, available workflow actions, dirty status, and disabled reasons.
 
-URL state is not duplicated in a global store because the URL is already the source of truth for shareable list state.
 
 ## Note Lifecycle and State Machine
 
