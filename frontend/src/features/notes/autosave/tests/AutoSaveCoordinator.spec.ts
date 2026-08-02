@@ -109,6 +109,141 @@ describe("AutosaveCoordinator", () => {
     vi.useRealTimers();
   });
 
+  it("treats an IndexedDB queued save separately from a server success", async () => {
+    const onSaveSuccess = vi.fn();
+
+    let mutationNumber = 0;
+
+    const save = vi.fn(
+      async (
+        _request:
+          SaveNoteVersionRequestBody,
+      ) => ({
+        kind: "queued" as const,
+      }),
+    );
+
+    coordinator =
+      new AutosaveCoordinator({
+        initialBaseVersionId:
+          "version-1",
+
+        initialContent:
+          createInitialContent(),
+
+        save,
+
+        debounceMs: 500,
+
+        createClientMutationId: () => {
+          mutationNumber += 1;
+
+          return `mutation-${mutationNumber}`;
+        },
+
+        onSaveSuccess,
+      });
+
+    const firstQueuedContent =
+      createEditedContent({
+        subjective:
+          "First offline edit",
+      });
+
+    coordinator.updateDraft(
+      firstQueuedContent,
+    );
+
+    await vi.advanceTimersByTimeAsync(
+      500,
+    );
+
+    await flushPromises();
+
+    expect(save).toHaveBeenCalledTimes(1);
+
+    expect(
+      coordinator.getSnapshot(),
+    ).toEqual({
+      status: "queued",
+      hasPendingChanges: true,
+      error: null,
+    });
+
+    expect(
+      onSaveSuccess,
+    ).not.toHaveBeenCalled();
+
+    const firstRequest =
+      save.mock.calls[0]?.[0];
+
+    expect(firstRequest).toEqual({
+      baseVersionId: "version-1",
+      clientMutationId: "mutation-1",
+      content: firstQueuedContent,
+    });
+
+    coordinator.updateDraft(
+      firstQueuedContent,
+    );
+
+    await vi.advanceTimersByTimeAsync(
+      500,
+    );
+
+    expect(save).toHaveBeenCalledTimes(1);
+
+    expect(
+      coordinator.getSnapshot(),
+    ).toEqual({
+      status: "queued",
+      hasPendingChanges: true,
+      error: null,
+    });
+
+    const latestQueuedContent =
+      createEditedContent({
+        subjective:
+          "Latest offline edit",
+
+        plan:
+          "Latest offline plan",
+      });
+
+    coordinator.updateDraft(
+      latestQueuedContent,
+    );
+
+    await vi.advanceTimersByTimeAsync(
+      500,
+    );
+
+    await flushPromises();
+
+    expect(save).toHaveBeenCalledTimes(2);
+
+    const secondRequest =
+      save.mock.calls[1]?.[0];
+
+    expect(secondRequest).toEqual({
+      baseVersionId: "version-1",
+      clientMutationId: "mutation-2",
+      content: latestQueuedContent,
+    });
+
+    expect(
+      coordinator.getSnapshot(),
+    ).toEqual({
+      status: "queued",
+      hasPendingChanges: true,
+      error: null,
+    });
+
+    expect(
+      onSaveSuccess,
+    ).not.toHaveBeenCalled();
+  });
+
   it("debounces changes and saves only the latest draft", async () => {
     const onSaveSuccess = vi.fn();
 

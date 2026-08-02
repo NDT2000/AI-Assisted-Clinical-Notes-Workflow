@@ -5,6 +5,7 @@ export type AutosaveStatus =
   | "idle"
   | "changes-pending"
   | "saving"
+  | "queued"
   | "save-failed"
   | "conflict";
 
@@ -23,13 +24,26 @@ export interface AutosaveSuccess {
   savedContent: SoapContent;
 }
 
+export type AutosaveSaveResult =
+  | {
+      kind: "saved";
+      response: SaveNoteVersionResponse;
+    }
+  | {
+      kind: "queued";
+    };
+
+type AutosaveSaveOperationResult =
+  | SaveNoteVersionResponse
+  | AutosaveSaveResult;
+
 export interface AutosaveCoordinatorOptions {
   initialBaseVersionId: string;
   initialContent: SoapContent;
 
   save: (
     request: SaveNoteVersionRequestBody,
-  ) => Promise<SaveNoteVersionResponse>;
+  ) => Promise<AutosaveSaveOperationResult>;
 
   debounceMs?: number;
 
@@ -96,6 +110,19 @@ function createDefaultMutationId(): string {
   ].join("-");
 }
 
+function normalizeSaveResult(
+  result: AutosaveSaveOperationResult,
+): AutosaveSaveResult {
+  if ("kind" in result) {
+    return result;
+  }
+
+  return {
+    kind: "saved",
+    response: result,
+  };
+}
+
 export class AutosaveCoordinator {
   private readonly save: AutosaveCoordinatorOptions["save"];
 
@@ -138,6 +165,8 @@ export class AutosaveCoordinator {
   private status: AutosaveStatus = "idle";
 
   private error: unknown | null = null;
+
+  private hasDurableQueuedSave = false;
 
   private disposed = false;
 
@@ -192,7 +221,13 @@ export class AutosaveCoordinator {
       this.clearDebounceTimer();
       this.queuedContent = null;
       this.error = null;
-      this.setStatus("idle");
+
+      this.setStatus(
+        this.hasDurableQueuedSave
+          ? "queued"
+          : "idle",
+      );
+
       return;
     }
 
@@ -297,7 +332,8 @@ export class AutosaveCoordinator {
         this.queuedContent !== null ||
         this.inFlightAttempt !== null ||
         this.failedAttempt !== null ||
-        this.conflictAttempt !== null,
+        this.conflictAttempt !== null ||
+        this.hasDurableQueuedSave,
       error: this.error,
     };
   }
@@ -366,10 +402,20 @@ export class AutosaveCoordinator {
     this.setStatus("saving");
 
     void this.save(attempt.request)
-      .then((response) => {
+      .then((operationResult) => {
+        const result =
+          normalizeSaveResult(
+            operationResult,
+          );
+
+        if (result.kind === "queued") {
+          this.handleSaveQueued(attempt);
+          return;
+        }
+
         this.handleSaveSuccess(
           attempt,
-          response,
+          result.response,
         );
       })
       .catch((error: unknown) => {
@@ -378,6 +424,43 @@ export class AutosaveCoordinator {
           error,
         );
       });
+  }
+
+  private handleSaveQueued(
+    attempt: SaveAttempt,
+  ): void {
+    if (
+      this.disposed ||
+      this.inFlightAttempt !== attempt
+    ) {
+      return;
+    }
+
+    this.inFlightAttempt = null;
+    this.error = null;
+
+    this.lastSavedContent = cloneContent(
+      attempt.request.content,
+    );
+
+    this.hasDurableQueuedSave = true;
+
+    if (
+      this.queuedContent &&
+      hasSameContent(
+        this.queuedContent,
+        this.lastSavedContent,
+      )
+    ) {
+      this.queuedContent = null;
+    }
+
+    if (this.queuedContent) {
+      this.startQueuedSave();
+      return;
+    }
+
+    this.setStatus("queued");
   }
 
   private handleSaveSuccess(
@@ -393,6 +476,7 @@ export class AutosaveCoordinator {
 
     this.inFlightAttempt = null;
     this.error = null;
+    this.hasDurableQueuedSave = false;
 
     this.baseVersionId =
       response.savedVersion.versionId;

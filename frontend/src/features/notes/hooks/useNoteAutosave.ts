@@ -5,7 +5,8 @@ import type { SaveNoteVersionActor, } from "../../../domain/noteSave";
 import { AutosaveCoordinator, } from "../autosave/AutosaveCoordinator";
 import type { AutosaveSnapshot, AutosaveSuccess, } from "../autosave/AutosaveCoordinator";
 import { getNoteAutosaveConflict, type NoteAutosaveConflict } from "../autosave/noteAutosaveConflict";
-import { classifySaveNoteVersionError, saveNoteVersion, } from "../api/saveNoteVersion";
+import { classifySaveNoteVersionError, } from "../api/saveNoteVersion";
+import { saveNoteVersionWithOfflineQueue } from "../offline/saveNoteVersionWithOfflineQueue";
 
 interface UseNoteAutosaveOptions {
   noteId: string;
@@ -148,7 +149,7 @@ export function useNoteAutosave({
             controller;
 
           try {
-            return await saveNoteVersion(
+            return await saveNoteVersionWithOfflineQueue(
               initialization.noteId,
               actorRef.current,
               request,

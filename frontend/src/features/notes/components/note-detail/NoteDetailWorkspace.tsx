@@ -75,69 +75,82 @@ const CLEAN_SECTIONS: DirtySections = {
   plan: false,
 };
 
+function getAutosaveStatusMessage(
+  snapshot: AutosaveSnapshot,
+): string {
+  switch (snapshot.status) {
+    case "idle":
+      return "All changes saved";
+
+    case "changes-pending":
+      return "Unsaved changes";
+
+    case "saving":
+      return "Saving changes";
+
+    case "queued":
+      return "Offline — changes queued";
+
+    case "save-failed":
+      return "Save failed";
+
+    case "conflict":
+      return "Conflict requires attention";
+  }
+}
+
 function AutosaveStatus({
   snapshot,
   onRetry,
 }: AutosaveStatusProps) {
-  switch (snapshot.status) {
-    case "changes-pending":
-      return (
-        <p
-          className="note-autosave-status"
-          role="status"
-        >
-          Changes pending
-        </p>
-      );
+  const className = [
+    "note-autosave-status",
+    `note-autosave-status--${snapshot.status}`,
+  ].join(" ");
 
-    case "saving":
-      return (
-        <p
-          className="note-autosave-status"
-          role="status"
-        >
-          Saving…
-        </p>
-      );
+  if (snapshot.status === "save-failed") {
+    return (
+      <div
+        className={className}
+        role="alert"
+        aria-label="Autosave status"
+      >
+        <span>Save failed.</span>
 
-    case "save-failed":
-      return (
-        <div
-          className="note-autosave-status"
-          role="alert"
+        <button
+          type="button"
+          onClick={onRetry}
         >
-          <span>Save failed.</span>
-
-          <button
-            type="button"
-            onClick={onRetry}
-          >
-            Try again
-          </button>
-        </div>
-      );
-
-    case "conflict":
-      return (
-        <p
-          className="note-autosave-status"
-          role="alert"
-        >
-          Conflict requires attention. This
-          note was updated elsewhere.
-        </p>
-      );
-
-    case "idle":
-      return (
-        <p
-          className="note-autosave-status"
-          role="status"
-        >
-          Saved
-        </p>
-      );
+          Try again
+        </button>
+      </div>
+    );
   }
+
+  if (snapshot.status === "conflict") {
+    return (
+      <p
+        className={className}
+        role="alert"
+        aria-label="Autosave status"
+      >
+        Conflict requires attention. This
+        note was updated elsewhere.
+      </p>
+    );
+  }
+
+  return (
+    <p
+      className={className}
+      role="status"
+      aria-label="Autosave status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      {getAutosaveStatusMessage(snapshot)}
+    </p>
+  );
 }
 
 export function NoteDetailWorkspace({
@@ -625,6 +638,13 @@ const isComparingVersions =
         "saving"
       ) {
         return "Wait for the current save to finish.";
+      }
+
+      if (
+        autosaveSnapshot.status ===
+        "queued"
+      ) {
+        return "Wait for queued changes to reconnect and save.";
       }
 
       if (

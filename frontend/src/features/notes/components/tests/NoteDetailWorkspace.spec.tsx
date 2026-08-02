@@ -1,16 +1,49 @@
-import { act, cleanup, fireEvent, render, screen, within, } from "@testing-library/react";
-import  userEvent from "@testing-library/user-event";
-import { beforeEach, afterEach, describe, expect, it, vi, } from "vitest";
-import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteResponse, } from "../../../../domain/noteTransition";
-import type { NoteTransitionFailure, NoteTransitionState, } from "../../hooks/useNoteTransition";
-import type { NoteAutosaveConflict, } from "../../autosave/noteAutosaveConflict";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+import type {
+  NoteDetail,
+  NoteVersionDetail,
+} from "../../../../domain/noteDetail";
+import type {
+  TransitionNoteActor,
+  TransitionNoteCommand,
+  TransitionNoteResponse,
+} from "../../../../domain/noteTransition";
+import type {
+  AutosaveSnapshot,
+  AutosaveSuccess,
+} from "../../autosave/AutosaveCoordinator";
+import type {
+  NoteAutosaveConflict,
+} from "../../autosave/noteAutosaveConflict";
+import type {
+  NoteTransitionFailure,
+  NoteTransitionState,
+} from "../../hooks/useNoteTransition";
 
 const autosaveMocks = vi.hoisted(() => ({
   updateDraft: vi.fn(),
   retry: vi.fn(),
   resolveConflict: vi.fn(),
 
-  conflict : null as NoteAutosaveConflict | null,
+  conflict:
+    null as NoteAutosaveConflict | null,
 
   snapshot: {
     status: "idle",
@@ -66,14 +99,16 @@ vi.mock(
           options.onSaveSuccess;
 
         return {
-          snapshot: 
+          snapshot:
             autosaveMocks.snapshot,
           conflict:
             autosaveMocks.conflict,
           updateDraft:
             autosaveMocks.updateDraft,
-          retry: autosaveMocks.retry,
-          resolveConflict: autosaveMocks.resolveConflict,
+          retry:
+            autosaveMocks.retry,
+          resolveConflict:
+            autosaveMocks.resolveConflict,
         };
       },
     ),
@@ -116,9 +151,9 @@ vi.mock(
   }),
 );
 
-import type { NoteDetail, NoteVersionDetail, } from "../../../../domain/noteDetail";
-import { NoteDetailWorkspace } from "../note-detail/NoteDetailWorkspace";
-import type {AutosaveSuccess, AutosaveSnapshot} from "../../autosave/AutosaveCoordinator";
+import {
+  NoteDetailWorkspace,
+} from "../note-detail/NoteDetailWorkspace";
 
 const actor: TransitionNoteActor = {
   id: "reviewer-1",
@@ -585,6 +620,59 @@ describe("NoteDetailWorkspace", () => {
         returnToQueueButton,
       ).toHaveAccessibleDescription(
         "Wait for the current save to finish.",
+      );
+
+      expect(
+        screen.getByRole("button", {
+          name: "Approve",
+        }),
+      ).toBeDisabled();
+
+      expect(
+        screen.getByRole("button", {
+          name: "Reject",
+        }),
+      ).toBeDisabled();
+    },
+  );
+
+  it(
+    "shows queued offline changes and blocks workflow actions",
+    () => {
+      autosaveMocks.snapshot = {
+        status: "queued",
+        hasPendingChanges: true,
+        error: null,
+      };
+
+      render(
+        <NoteDetailWorkspace
+          detail={createNoteDetail()}
+          actor={actor}
+        />,
+      );
+
+      expect(
+        screen.getByRole("status", {
+          name: "Autosave status",
+        }),
+      ).toHaveTextContent(
+        "Offline — changes queued",
+      );
+
+      const returnToQueueButton =
+        screen.getByRole("button", {
+          name: "Return to Queue",
+        });
+
+      expect(
+        returnToQueueButton,
+      ).toBeDisabled();
+
+      expect(
+        returnToQueueButton,
+      ).toHaveAccessibleDescription(
+        "Wait for queued changes to reconnect and save.",
       );
 
       expect(
@@ -1416,6 +1504,14 @@ describe("NoteDetailWorkspace", () => {
     );
 
     expect(
+      screen.getByRole("status", {
+        name: "Autosave status",
+      }),
+    ).toHaveTextContent(
+      "All changes saved",
+    );
+
+    expect(
       screen.queryByText(
         "Unsaved changes",
       ),
@@ -1457,10 +1553,6 @@ describe("NoteDetailWorkspace", () => {
     expect(
       plan.field,
     ).not.toHaveAttribute("readonly");
-
-    /*
-     * Change only Subjective.
-     */
     fireEvent.change(
       subjective.field,
       {

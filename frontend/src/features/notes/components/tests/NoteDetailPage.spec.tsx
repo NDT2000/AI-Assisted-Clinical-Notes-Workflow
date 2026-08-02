@@ -348,6 +348,14 @@ describe("NoteDetailPage", () => {
       screen.getAllByText("In Review"),
     ).toHaveLength(2);
 
+    expect(
+      screen.getByRole("status", {
+        name: "Autosave status",
+      }),
+    ).toHaveTextContent(
+      "All changes saved",
+    );
+
     const patientSessionSection = screen
       .getByRole("heading", {
         name: "Patient and session",
@@ -471,12 +479,6 @@ describe("NoteDetailPage", () => {
     expect(
       timelineSection,
     ).not.toBeNull();
-
-    /*
-     * Ready For Review is the destination
-     * of the first event and the source
-     * of the second event.
-     */
     expect(
       within(
         timelineSection!,
