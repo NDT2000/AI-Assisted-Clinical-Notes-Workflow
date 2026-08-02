@@ -1,4 +1,6 @@
-import type { PresenceUser, } from "../../../../domain/noteDetail";
+import type {
+  PresenceUser,
+} from "../../../../domain/noteDetail";
 
 interface PresencePanelProps {
   presence: PresenceUser[];
@@ -19,7 +21,17 @@ function formatActivity(
 function formatLastSeen(
   value: string,
 ): string {
-  return new Date(value).toLocaleString();
+  return new Date(
+    value,
+  ).toLocaleString();
+}
+
+function formatPresenceCount(
+  count: number,
+): string {
+  return count === 1
+    ? "1 active user"
+    : `${count} active users`;
 }
 
 export function PresencePanel({
@@ -29,13 +41,20 @@ export function PresencePanel({
     <section
       className="note-detail-card"
       aria-labelledby="presence-heading"
+      aria-live="polite"
+      aria-relevant="all"
     >
       <div className="presence-heading">
         <h2 id="presence-heading">
           Presence
         </h2>
 
-        <span className="presence-count">
+        <span
+          className="presence-count"
+          aria-label={formatPresenceCount(
+            presence.length,
+          )}
+        >
           {presence.length}
         </span>
       </div>
@@ -46,13 +65,19 @@ export function PresencePanel({
           on this note.
         </p>
       ) : (
-        <ul className="presence-list">
-          {presence.map((entry) => (
+        <ul
+          className="presence-list"
+          aria-label="Users currently active on this note"
+        >
+          {presence.map(entry => (
             <li
               className="presence-item"
               key={entry.user.id}
             >
-              <div className="presence-avatar">
+              <div
+                className="presence-avatar"
+                aria-hidden="true"
+              >
                 {entry.user.displayName
                   .charAt(0)
                   .toUpperCase()}
@@ -83,6 +108,9 @@ export function PresencePanel({
                     ? "presence-activity presence-activity-editing"
                     : "presence-activity"
                 }
+                aria-label={`${entry.user.displayName} is ${formatActivity(
+                  entry.activity,
+                ).toLowerCase()}`}
               >
                 {formatActivity(
                   entry.activity,

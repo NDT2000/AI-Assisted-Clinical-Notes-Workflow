@@ -1,6 +1,14 @@
-import { useId, useMemo, useState, } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import type { SoapContent, } from "../../../../domain/noteAttributes";
+import type {
+  SoapContent,
+} from "../../../../domain/noteAttributes";
 
 import {
   SOAP_CONFLICT_SECTION_KEYS,
@@ -68,6 +76,11 @@ export function VersionConflictResolver({
 }: VersionConflictResolverProps) {
   const formId = useId();
 
+  const headingRef =
+    useRef<HTMLHeadingElement | null>(
+      null,
+    );
+
   const [
     resolutions,
     setResolutions,
@@ -101,19 +114,23 @@ export function VersionConflictResolver({
 
   const unresolvedCount =
     SOAP_CONFLICT_SECTION_KEYS.filter(
-      (section) =>
+      section =>
         comparison[section].status ===
           "conflict" &&
         resolutions[section] ===
           undefined,
     ).length;
 
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
+
   function updateResolution(
     section: SoapConflictSectionKey,
     resolution: SoapConflictResolution,
   ): void {
     setResolutions(
-      (currentResolutions) => ({
+      currentResolutions => ({
         ...currentResolutions,
         [section]: resolution,
       }),
@@ -137,7 +154,8 @@ export function VersionConflictResolver({
   }
 
   function handleSubmit(
-    event: React.FormEvent<HTMLFormElement>,
+    event:
+      React.FormEvent<HTMLFormElement>,
   ): void {
     event.preventDefault();
 
@@ -148,12 +166,21 @@ export function VersionConflictResolver({
     onResolve(resolvedContent);
   }
 
+  const summaryId =
+    `${formId}-summary`;
+
   return (
     <section
       className="version-conflict-resolver"
       aria-labelledby={`${formId}-title`}
+      aria-describedby={summaryId}
+      role="region"
     >
-      <h2 id={`${formId}-title`}>
+      <h2
+        id={`${formId}-title`}
+        ref={headingRef}
+        tabIndex={-1}
+      >
         Resolve version conflict
       </h2>
 
@@ -165,9 +192,11 @@ export function VersionConflictResolver({
       </p>
 
       <p
+        id={summaryId}
         className="version-conflict-summary"
         role="status"
         aria-live="polite"
+        aria-atomic="true"
       >
         {unresolvedCount === 0
           ? "All conflicting sections have been resolved."
@@ -180,7 +209,7 @@ export function VersionConflictResolver({
 
       <form onSubmit={handleSubmit}>
         {SOAP_CONFLICT_SECTION_KEYS.map(
-          (section) => {
+          section => {
             const sectionComparison =
               comparison[section];
 
@@ -316,7 +345,8 @@ export function VersionConflictResolver({
                             resolution.value
                           }
                           aria-label={`Merged ${label}`}
-                          onChange={(event) => {
+                          rows={5}
+                          onChange={event => {
                             updateResolution(
                               section,
                               {
@@ -343,6 +373,7 @@ export function VersionConflictResolver({
           disabled={
             resolvedContent === null
           }
+          aria-describedby={summaryId}
         >
           Save resolved version
         </button>

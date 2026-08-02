@@ -1,3 +1,8 @@
+import {
+  useEffect,
+  useRef,
+} from "react";
+
 import type {
   NoteVersionDetail,
 } from "../../../../domain/noteDetail";
@@ -87,6 +92,21 @@ export function VersionHistorySidebar({
   onShowComparison,
   onExitComparison,
 }: VersionHistorySidebarProps) {
+  const compareButtonRef =
+    useRef<HTMLButtonElement | null>(
+      null,
+    );
+
+  const fromSelectRef =
+    useRef<HTMLSelectElement | null>(
+      null,
+    );
+
+  const previousComparisonStatusRef =
+    useRef<VersionComparisonStatus>(
+      comparisonStatus,
+    );
+
   const sortedVersions = [
     ...versions,
   ].sort(
@@ -101,7 +121,7 @@ export function VersionHistorySidebar({
   const fromVersionExists =
     compareFromVersionId !== null &&
     sortedVersions.some(
-      (version) =>
+      version =>
         version.versionId ===
         compareFromVersionId,
     );
@@ -109,7 +129,7 @@ export function VersionHistorySidebar({
   const toVersionExists =
     compareToVersionId !== null &&
     sortedVersions.some(
-      (version) =>
+      version =>
         version.versionId ===
         compareToVersionId,
     );
@@ -127,6 +147,31 @@ export function VersionHistorySidebar({
   const comparisonOpen =
     comparisonStatus !== "closed";
 
+  useEffect(() => {
+    const previousStatus =
+      previousComparisonStatusRef.current;
+
+    if (
+      previousStatus === "closed" &&
+      comparisonStatus === "selecting"
+    ) {
+      fromSelectRef.current?.focus();
+    }
+
+    if (
+      previousStatus !== "closed" &&
+      comparisonStatus === "closed"
+    ) {
+      compareButtonRef.current?.focus();
+    }
+
+    previousComparisonStatusRef.current =
+      comparisonStatus;
+  }, [comparisonStatus]);
+
+  const comparisonMessageId =
+    "version-comparison-message";
+
   return (
     <section
       className="note-detail-card"
@@ -139,6 +184,7 @@ export function VersionHistorySidebar({
       {!comparisonOpen ? (
         <>
           <button
+            ref={compareButtonRef}
             type="button"
             disabled={
               !canStartComparison
@@ -146,7 +192,7 @@ export function VersionHistorySidebar({
             aria-describedby={
               canStartComparison
                 ? undefined
-                : "version-comparison-unavailable"
+                : comparisonMessageId
             }
             onClick={
               onStartComparison
@@ -157,7 +203,7 @@ export function VersionHistorySidebar({
 
           {!canStartComparison ? (
             <p
-              id="version-comparison-unavailable"
+              id={comparisonMessageId}
               className="version-comparison-message"
             >
               At least two saved versions
@@ -166,7 +212,15 @@ export function VersionHistorySidebar({
           ) : null}
         </>
       ) : (
-        <fieldset className="version-comparison-controls">
+        <fieldset
+          className="version-comparison-controls"
+          aria-describedby={
+            comparisonStatus ===
+            "active"
+              ? comparisonMessageId
+              : undefined
+          }
+        >
           <legend>
             Compare saved versions
           </legend>
@@ -175,6 +229,7 @@ export function VersionHistorySidebar({
             From version
 
             <select
+              ref={fromSelectRef}
               value={
                 compareFromVersionId ??
                 ""
@@ -183,7 +238,7 @@ export function VersionHistorySidebar({
                 comparisonStatus ===
                 "active"
               }
-              onChange={(event) => {
+              onChange={event => {
                 onCompareFromVersionChange(
                   event.target.value,
                 );
@@ -197,7 +252,7 @@ export function VersionHistorySidebar({
               </option>
 
               {sortedVersions.map(
-                (version) => (
+                version => (
                   <option
                     key={
                       version.versionId
@@ -228,7 +283,7 @@ export function VersionHistorySidebar({
                 comparisonStatus ===
                 "active"
               }
-              onChange={(event) => {
+              onChange={event => {
                 onCompareToVersionChange(
                   event.target.value,
                 );
@@ -242,7 +297,7 @@ export function VersionHistorySidebar({
               </option>
 
               {sortedVersions.map(
-                (version) => (
+                version => (
                   <option
                     key={
                       version.versionId
@@ -285,7 +340,11 @@ export function VersionHistorySidebar({
               Show comparison
             </button>
           ) : (
-            <p role="status">
+            <p
+              id={comparisonMessageId}
+              role="status"
+              aria-live="polite"
+            >
               Version comparison is
               currently open.
             </p>
@@ -305,9 +364,12 @@ export function VersionHistorySidebar({
       {sortedVersions.length === 0 ? (
         <p>No versions available.</p>
       ) : (
-        <ol className="version-history-list">
+        <ol
+          className="version-history-list"
+          aria-label="Saved note versions"
+        >
           {sortedVersions.map(
-            (version) => {
+            version => {
               const isCurrent =
                 version.versionId ===
                 currentVersionId;
@@ -335,6 +397,11 @@ export function VersionHistorySidebar({
                     }
                     aria-pressed={
                       isSelected
+                    }
+                    aria-current={
+                      isCurrent
+                        ? "true"
+                        : undefined
                     }
                     onClick={() => {
                       onSelectVersion(

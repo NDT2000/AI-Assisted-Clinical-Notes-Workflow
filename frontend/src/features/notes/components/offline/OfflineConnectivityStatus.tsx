@@ -1,4 +1,6 @@
-import { Link } from "react-router-dom";
+import {
+  Link,
+} from "react-router-dom";
 
 import {
   type OfflineSaveReplaySnapshot,
@@ -28,13 +30,15 @@ function formatQueuedChanges(
 }
 
 export function getConnectivityPresentation(
-  snapshot: OfflineSaveReplaySnapshot,
+  snapshot:
+    OfflineSaveReplaySnapshot,
 ): ConnectivityPresentation {
   if (!snapshot.isHydrated) {
     if (snapshot.pendingCount > 0) {
       return {
         message:
-          snapshot.status === "offline"
+          snapshot.status ===
+          "offline"
             ? "Offline — changes queued"
             : "Changes queued — checking sync status",
         showConflictLink: false,
@@ -43,7 +47,8 @@ export function getConnectivityPresentation(
 
     return {
       message:
-        snapshot.status === "offline"
+        snapshot.status ===
+        "offline"
           ? "Offline — checking queued changes"
           : "Checking saved changes",
       showConflictLink: false,
@@ -73,7 +78,9 @@ export function getConnectivityPresentation(
     };
   }
 
-  if (snapshot.status === "retrying") {
+  if (
+    snapshot.status === "retrying"
+  ) {
     return {
       message:
         "Reconnecting — retrying queued changes",
@@ -81,7 +88,9 @@ export function getConnectivityPresentation(
     };
   }
 
-  if (snapshot.status === "replaying") {
+  if (
+    snapshot.status === "replaying"
+  ) {
     return {
       message:
         snapshot.pendingCount > 0
@@ -93,7 +102,9 @@ export function getConnectivityPresentation(
     };
   }
 
-  if (snapshot.status === "offline") {
+  if (
+    snapshot.status === "offline"
+  ) {
     return {
       message:
         snapshot.pendingCount > 0
@@ -137,7 +148,9 @@ export function OfflineConnectivityStatus({
   store,
 }: OfflineConnectivityStatusProps) {
   const snapshot =
-    useOfflineSaveReplaySnapshot(store);
+    useOfflineSaveReplaySnapshot(
+      store,
+    );
 
   const presentation =
     getConnectivityPresentation(
@@ -145,17 +158,34 @@ export function OfflineConnectivityStatus({
     );
 
   const blockedNoteId =
-    snapshot.blockedConflict?.noteId ??
-    null;
+    snapshot.blockedConflict
+      ?.noteId ?? null;
+
+  const requiresAttention =
+    snapshot.status ===
+      "blocked-conflict" ||
+    snapshot.status ===
+      "paused-error";
 
   return (
     <div
       className="offline-connectivity-status"
-      data-sync-status={snapshot.status}
-      role="status"
+      data-sync-status={
+        snapshot.status
+      }
+      role={
+        requiresAttention
+          ? "alert"
+          : "status"
+      }
       aria-label="Connectivity status"
-      aria-live="polite"
+      aria-live={
+        requiresAttention
+          ? "assertive"
+          : "polite"
+      }
       aria-atomic="true"
+      aria-relevant="text"
     >
       <span>
         {presentation.message}

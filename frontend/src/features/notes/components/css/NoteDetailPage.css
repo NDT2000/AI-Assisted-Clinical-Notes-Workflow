@@ -728,3 +728,76 @@
 .note-autosave-status--conflict {
   font-weight: 600;
 }
+
+/* Accessibility focus and status support */
+.note-detail-page a:focus-visible,
+.note-detail-page button:focus-visible,
+.note-detail-page input:focus-visible,
+.note-detail-page select:focus-visible,
+.note-detail-page textarea:focus-visible,
+.version-conflict-resolver button:focus-visible,
+.version-conflict-resolver input:focus-visible,
+.version-conflict-resolver textarea:focus-visible,
+.version-diff-viewer button:focus-visible,
+.version-history-button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.soap-readonly-reason,
+.note-editing-permission {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--accent-border);
+  background: var(--code-bg);
+}
+
+.version-conflict-resolver h2:focus,
+.version-diff-viewer h2:focus {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.version-conflict-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.version-conflict-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.version-conflict-options label:has(textarea) {
+  flex-direction: column;
+}
+
+.version-conflict-options textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.version-history-button[aria-current="true"] {
+  border-color: var(--accent-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note-detail-page *,
+  .version-conflict-resolver *,
+  .version-diff-viewer * {
+    scroll-behavior: auto;
+  }
+}
+
+@media (forced-colors: active) {
+  .soap-readonly-badge,
+  .soap-dirty-indicator,
+  .presence-count,
+  .presence-activity,
+  .note-status-badge {
+    border: 1px solid CanvasText;
+  }
+}

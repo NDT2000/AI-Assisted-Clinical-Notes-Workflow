@@ -7,7 +7,9 @@ import {
 import {
   useVirtualizer,
 } from "@tanstack/react-virtual";
-import { Link } from "react-router-dom";
+import {
+  Link,
+} from "react-router-dom";
 
 import type {
   NoteSummary,
@@ -44,14 +46,17 @@ const TABLE_GRID_TEMPLATE = `
 
 const TABLE_MIN_WIDTH_PX = 980;
 
-const CELL_STYLE: CSSProperties = {
-  minWidth: 0,
-  padding: "0 8px",
-  boxSizing: "border-box",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
+const CELL_STYLE:
+  CSSProperties = {
+    minWidth: 0,
+    padding: "0 8px",
+    boxSizing:
+      "border-box",
+    overflow: "hidden",
+    textOverflow:
+      "ellipsis",
+    whiteSpace: "nowrap",
+  };
 
 const HEADER_CELL_STYLE:
   CSSProperties = {
@@ -79,6 +84,11 @@ export function NotesTable({
 }: NotesTableProps) {
   const scrollContainerRef =
     useRef<HTMLDivElement | null>(
+      null,
+    );
+
+  const selectAllRef =
+    useRef<HTMLInputElement | null>(
       null,
     );
 
@@ -123,11 +133,33 @@ export function NotesTable({
       visibleNoteIds,
     );
 
-  const allVisibleSelected =
+  const allLoadedSelected =
     notes.length > 0 &&
     notes.every(note =>
-      selectedIds.has(note.id),
+      selectedIds.has(
+        note.id,
+      ),
     );
+
+  const someLoadedSelected =
+    notes.some(note =>
+      selectedIds.has(
+        note.id,
+      ),
+    );
+
+  useEffect(() => {
+    if (
+      selectAllRef.current
+    ) {
+      selectAllRef.current.indeterminate =
+        someLoadedSelected &&
+        !allLoadedSelected;
+    }
+  }, [
+    allLoadedSelected,
+    someLoadedSelected,
+  ]);
 
   useEffect(() => {
     const lastVirtualRow =
@@ -136,7 +168,8 @@ export function NotesTable({
       ];
 
     if (
-      lastVirtualRow === undefined
+      lastVirtualRow ===
+      undefined
     ) {
       return;
     }
@@ -163,7 +196,22 @@ export function NotesTable({
   ]);
 
   return (
-    <div>
+    <section
+      aria-labelledby="notes-table-heading"
+      aria-describedby="notes-table-instructions"
+    >
+      <h2 id="notes-table-heading">
+        Notes results
+      </h2>
+
+      <p id="notes-table-instructions">
+        The results are virtualized. Use
+        Tab to move between selection
+        controls and note links. Scroll
+        the results region to load and
+        display additional rows.
+      </p>
+
       <div
         style={{
           overflowX: "auto",
@@ -173,8 +221,10 @@ export function NotesTable({
           role="table"
           aria-label="Notes"
           aria-rowcount={
-            displayedNotes.length
+            displayedNotes.length +
+            1
           }
+          aria-colcount={7}
           style={{
             minWidth:
               TABLE_MIN_WIDTH_PX,
@@ -182,25 +232,32 @@ export function NotesTable({
         >
           <div
             role="row"
+            aria-rowindex={1}
             style={{
               display: "grid",
               gridTemplateColumns:
                 TABLE_GRID_TEMPLATE,
               columnGap: 12,
-              alignItems: "center",
+              alignItems:
+                "center",
               minHeight:
                 ROW_HEIGHT_PX,
             }}
           >
             <div
               role="columnheader"
-              style={CELL_STYLE}
+              aria-colindex={1}
+              aria-label="Selection"
+              style={
+                CELL_STYLE
+              }
             >
               <input
+                ref={selectAllRef}
                 type="checkbox"
                 aria-label="Select all loaded notes"
                 checked={
-                  allVisibleSelected
+                  allLoadedSelected
                 }
                 onChange={
                   onToggleAllVisible
@@ -208,36 +265,51 @@ export function NotesTable({
               />
             </div>
 
-            {COLUMNS.map(column => (
-              <div
-                key={column}
-                role="columnheader"
-                style={
-                  HEADER_CELL_STYLE
-                }
-              >
-                {column}
-              </div>
-            ))}
+            {COLUMNS.map(
+              (
+                column,
+                index,
+              ) => (
+                <div
+                  key={column}
+                  role="columnheader"
+                  aria-colindex={
+                    index + 2
+                  }
+                  style={
+                    HEADER_CELL_STYLE
+                  }
+                >
+                  {column}
+                </div>
+              ),
+            )}
           </div>
 
           <div
             ref={
               scrollContainerRef
             }
+            role="region"
+            aria-label="Scrollable notes results"
+            tabIndex={0}
             style={{
               height:
                 CONTAINER_HEIGHT_PX,
-              overflowY: "auto",
-              position: "relative",
+              overflowY:
+                "auto",
+              position:
+                "relative",
             }}
           >
             <div
+              role="rowgroup"
               style={{
                 height:
                   rowVirtualizer
                     .getTotalSize(),
-                position: "relative",
+                position:
+                  "relative",
                 width: "100%",
               }}
             >
@@ -245,11 +317,13 @@ export function NotesTable({
                 virtualRow => {
                   const note =
                     displayedNotes[
-                      virtualRow.index
+                      virtualRow
+                        .index
                     ];
 
                   if (
-                    note === undefined
+                    note ===
+                    undefined
                   ) {
                     return null;
                   }
@@ -269,11 +343,13 @@ export function NotesTable({
                       key={note.id}
                       role="row"
                       aria-rowindex={
-                        virtualRow.index +
-                        1
+                        virtualRow
+                          .index +
+                        2
                       }
                       data-index={
-                        virtualRow.index
+                        virtualRow
+                          .index
                       }
                       style={{
                         position:
@@ -282,10 +358,12 @@ export function NotesTable({
                         left: 0,
                         width: "100%",
                         height:
-                          virtualRow.size,
+                          virtualRow
+                            .size,
                         transform:
                           `translateY(${virtualRow.start}px)`,
-                        display: "grid",
+                        display:
+                          "grid",
                         gridTemplateColumns:
                           TABLE_GRID_TEMPLATE,
                         columnGap: 12,
@@ -295,6 +373,7 @@ export function NotesTable({
                     >
                       <div
                         role="cell"
+                        aria-colindex={1}
                         style={
                           CELL_STYLE
                         }
@@ -315,6 +394,7 @@ export function NotesTable({
 
                       <div
                         role="cell"
+                        aria-colindex={2}
                         style={
                           CELL_STYLE
                         }
@@ -331,6 +411,7 @@ export function NotesTable({
 
                       <div
                         role="cell"
+                        aria-colindex={3}
                         style={
                           CELL_STYLE
                         }
@@ -343,6 +424,7 @@ export function NotesTable({
 
                       <div
                         role="cell"
+                        aria-colindex={4}
                         style={
                           CELL_STYLE
                         }
@@ -355,6 +437,7 @@ export function NotesTable({
 
                       <div
                         role="cell"
+                        aria-colindex={5}
                         style={
                           CELL_STYLE
                         }
@@ -371,6 +454,7 @@ export function NotesTable({
 
                       <div
                         role="cell"
+                        aria-colindex={6}
                         style={
                           CELL_STYLE
                         }
@@ -385,12 +469,14 @@ export function NotesTable({
 
                       <div
                         role="cell"
+                        aria-colindex={7}
                         style={
                           CELL_STYLE
                         }
                       >
                         <Link
                           to={`/notes/${note.id}`}
+                          aria-label={`Open note for ${note.patient.displayName}`}
                         >
                           Open
                         </Link>
@@ -405,10 +491,14 @@ export function NotesTable({
       </div>
 
       {isLoadingMore && (
-        <p>
+        <p
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           Loading more notes…
         </p>
       )}
-    </div>
+    </section>
   );
 }

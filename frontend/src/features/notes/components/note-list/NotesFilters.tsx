@@ -1,10 +1,30 @@
-import { type ChangeEvent, useEffect, useRef, useState, } from "react";
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
-import { NOTE_STATUS, type NoteStatus, } from "../../../../domain/noteAttributes";
-import type { NoteListFilters, NoteSortField, SortDirection, } from "../../utils/noteListSearchParams";
-import { getPatientById, getPatients, type PatientOption, } from "../../api/getPatients";
+import {
+  NOTE_STATUS,
+  type NoteStatus,
+} from "../../../../domain/noteAttributes";
+import {
+  getPatientById,
+  getPatients,
+  type PatientOption,
+} from "../../api/getPatients";
+import type {
+  NoteListFilters,
+  NoteSortField,
+  SortDirection,
+} from "../../utils/noteListSearchParams";
 
-import { REVIEWERS } from "../../../../mock-data/generateNoteSummary";
+import {
+  REVIEWERS,
+} from "../../../../mock-data/generateNoteSummary";
 
 interface NotesFiltersProps {
   filters: NoteListFilters;
@@ -79,14 +99,21 @@ export function NotesFilters({
   onQueryChange,
 }: NotesFiltersProps) {
   function handleStatusChange(
-    event: ChangeEvent<HTMLSelectElement>,
+    event:
+      ChangeEvent<HTMLSelectElement>,
   ) {
-    const selectedStatuses = Array.from(
-      event.target.selectedOptions,
-      (option) => option.value as NoteStatus,
-    );
+    const selectedStatuses =
+      Array.from(
+        event.target
+          .selectedOptions,
+        option =>
+          option.value as
+            NoteStatus,
+      );
 
-    onStatusesChange(selectedStatuses);
+    onStatusesChange(
+      selectedStatuses,
+    );
   }
 
   const isPatientFilterEnabled =
@@ -96,21 +123,28 @@ export function NotesFilters({
     filters.createdTo !== "";
 
   return (
-    <section 
+    <section
       className="notes-filters"
-      aria-label="Note filters">
+      aria-label="Note filters"
+    >
       <div>
         <label htmlFor="status-filter">
           Status
         </label>
 
+        <p id="status-filter-help">
+          Hold Control or Command to select
+          more than one status.
+        </p>
+
         <select
           id="status-filter"
           multiple
           value={filters.statuses}
+          aria-describedby="status-filter-help"
           onChange={handleStatusChange}
         >
-          {NOTE_STATUS.map((status) => (
+          {NOTE_STATUS.map(status => (
             <option
               key={status}
               value={status}
@@ -129,7 +163,7 @@ export function NotesFilters({
         <select
           id="reviewer-filter"
           value={filters.reviewerId}
-          onChange={(event) =>
+          onChange={event =>
             onReviewerChange(
               event.target.value,
             )
@@ -139,22 +173,30 @@ export function NotesFilters({
             All reviewers
           </option>
 
-          {REVIEWERS.map((reviewer) => (
-            <option
-              key={reviewer.id}
-              value={reviewer.id}
-            >
-              {reviewer.displayName}
-            </option>
-          ))}
+          {REVIEWERS.map(
+            reviewer => (
+              <option
+                key={reviewer.id}
+                value={reviewer.id}
+              >
+                {
+                  reviewer.displayName
+                }
+              </option>
+            ),
+          )}
         </select>
       </div>
 
       <PatientFilter
         patientId={filters.patientId}
         filters={filters}
-        isEnabled={isPatientFilterEnabled}
-        onPatientChange={onPatientChange}
+        isEnabled={
+          isPatientFilterEnabled
+        }
+        onPatientChange={
+          onPatientChange
+        }
       />
 
       <div>
@@ -166,7 +208,7 @@ export function NotesFilters({
           id="created-from-filter"
           type="date"
           value={filters.createdFrom}
-          onChange={(event) =>
+          onChange={event =>
             onCreatedFromChange(
               event.target.value,
             )
@@ -183,7 +225,7 @@ export function NotesFilters({
           id="created-to-filter"
           type="date"
           value={filters.createdTo}
-          onChange={(event) =>
+          onChange={event =>
             onCreatedToChange(
               event.target.value,
             )
@@ -193,7 +235,9 @@ export function NotesFilters({
 
       <SearchBox
         query={filters.query}
-        onQueryChange={onQueryChange}
+        onQueryChange={
+          onQueryChange
+        }
       />
 
       <div>
@@ -204,14 +248,15 @@ export function NotesFilters({
         <select
           id="sort-field"
           value={filters.sortField}
-          onChange={(event) =>
+          onChange={event =>
             onSortFieldChange(
               event.target
-                .value as NoteSortField,
+                .value as
+                NoteSortField,
             )
           }
         >
-          {SORT_FIELDS.map((field) => (
+          {SORT_FIELDS.map(field => (
             <option
               key={field.value}
               value={field.value}
@@ -229,11 +274,14 @@ export function NotesFilters({
 
         <select
           id="sort-direction"
-          value={filters.sortDirection}
-          onChange={(event) =>
+          value={
+            filters.sortDirection
+          }
+          onChange={event =>
             onSortDirectionChange(
               event.target
-                .value as SortDirection,
+                .value as
+                SortDirection,
             )
           }
         >
@@ -255,38 +303,57 @@ function SearchBox({
   onQueryChange,
 }: {
   query: string;
-  onQueryChange: (query: string) => void;
+  onQueryChange: (
+    query: string,
+  ) => void;
 }) {
-  const [localValue, setLocalValue] = useState(query);
+  const [
+    localValue,
+    setLocalValue,
+  ] = useState(query);
 
-  const debounceTimerRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  const debounceTimerRef =
+    useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
 
   useEffect(() => {
     setLocalValue(query);
   }, [query]);
 
   function handleChange(
-    event: ChangeEvent<HTMLInputElement>,
+    event:
+      ChangeEvent<HTMLInputElement>,
   ) {
-    const nextValue = event.target.value;
+    const nextValue =
+      event.target.value;
 
     setLocalValue(nextValue);
 
-    if (debounceTimerRef.current !== null) {
-      clearTimeout(debounceTimerRef.current);
+    if (
+      debounceTimerRef.current !==
+      null
+    ) {
+      clearTimeout(
+        debounceTimerRef.current,
+      );
     }
 
-    debounceTimerRef.current = setTimeout(() => {
-      onQueryChange(nextValue);
-    }, DEBOUNCE_MS);
+    debounceTimerRef.current =
+      setTimeout(() => {
+        onQueryChange(nextValue);
+      }, DEBOUNCE_MS);
   }
 
   useEffect(() => {
     return () => {
-      if (debounceTimerRef.current !== null) {
-        clearTimeout(debounceTimerRef.current);
+      if (
+        debounceTimerRef.current !==
+        null
+      ) {
+        clearTimeout(
+          debounceTimerRef.current,
+        );
       }
     };
   }, []);
@@ -303,6 +370,7 @@ function SearchBox({
         value={localValue}
         onChange={handleChange}
         placeholder="Search…"
+        autoComplete="off"
       />
     </div>
   );
@@ -322,30 +390,59 @@ function PatientFilter({
     patientDisplayName: string,
   ) => void;
 }) {
-  const [inputValue, setInputValue] =
-    useState("");
+  const componentId =
+    useId();
 
-  const [results, setResults] =
-    useState<PatientOption[]>([]);
+  const inputId =
+    `${componentId}-patient-filter`;
 
-  const [isOpen, setIsOpen] =
-    useState(false);
+  const listboxId =
+    `${componentId}-patient-results`;
 
-  const [isLoading, setIsLoading] =
-    useState(false);
+  const helpId =
+    `${componentId}-patient-help`;
 
-  const debounceTimerRef = useRef<
-    ReturnType<typeof setTimeout> | null
-  >(null);
+  const statusId =
+    `${componentId}-patient-status`;
+
+  const [
+    inputValue,
+    setInputValue,
+  ] = useState("");
+
+  const [
+    results,
+    setResults,
+  ] =
+    useState<PatientOption[]>(
+      [],
+    );
+
+  const [
+    isOpen,
+    setIsOpen,
+  ] = useState(false);
+
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(false);
+
+  const [
+    activeIndex,
+    setActiveIndex,
+  ] = useState(-1);
+
+  const debounceTimerRef =
+    useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
 
   const lookupAbortControllerRef =
-    useRef<AbortController | null>(null);
+    useRef<AbortController | null>(
+      null,
+    );
 
-  /*
-   * Keep the latest callback available to effects without
-   * forcing those effects to rerun whenever the parent
-   * component creates a new callback reference.
-   */
   const onPatientChangeRef =
     useRef(onPatientChange);
 
@@ -354,15 +451,6 @@ function PatientFilter({
       onPatientChange;
   }, [onPatientChange]);
 
-  /*
-   * The URL stores the stable patient ID rather than the
-   * patient's display name.
-   *
-   * Resolve the display name when:
-   * - the page is refreshed;
-   * - a copied URL is opened;
-   * - browser Back or Forward restores an older patient ID.
-   */
   useEffect(() => {
     if (patientId === "") {
       setInputValue("");
@@ -372,7 +460,8 @@ function PatientFilter({
     const controller =
       new AbortController();
 
-    async function restorePatientName() {
+    async function restorePatientName():
+      Promise<void> {
       try {
         const patient =
           await getPatientById(
@@ -381,10 +470,6 @@ function PatientFilter({
           );
 
         if (patient === null) {
-          /*
-           * The URL contains a patient ID that does not
-           * exist in the current mock dataset.
-           */
           onPatientChangeRef.current(
             "",
             "",
@@ -398,16 +483,13 @@ function PatientFilter({
         );
       } catch (error) {
         if (
-          error instanceof DOMException &&
-          error.name === "AbortError"
+          error instanceof
+            DOMException &&
+          error.name ===
+            "AbortError"
         ) {
           return;
         }
-
-        /*
-         * Do not remove a potentially valid patient ID
-         * because of a temporary network failure.
-         */
       }
     }
 
@@ -418,77 +500,37 @@ function PatientFilter({
     };
   }, [patientId]);
 
-  /*
-   * Patient is a dependent filter.
-   *
-   * When the final contextual filter is removed:
-   * - cancel pending searches;
-   * - clear typeahead state;
-   * - remove the patient filter from the URL.
-   */
   useEffect(() => {
     if (isEnabled) {
       return;
     }
 
-    if (
-      debounceTimerRef.current !== null
-    ) {
-      clearTimeout(
-        debounceTimerRef.current,
-      );
-
-      debounceTimerRef.current = null;
-    }
-
-    if (
-      lookupAbortControllerRef.current !==
-      null
-    ) {
-      lookupAbortControllerRef.current.abort();
-
-      lookupAbortControllerRef.current =
-        null;
-    }
+    cancelPendingLookup();
 
     setInputValue("");
     setResults([]);
     setIsOpen(false);
     setIsLoading(false);
+    setActiveIndex(-1);
 
     if (patientId !== "") {
-      onPatientChangeRef.current("", "");
-    }
-  }, [isEnabled, patientId]);
-
-  /*
-   * Existing patient suggestions may no longer be valid
-   * after status, reviewer or date filters change.
-   */
-  useEffect(() => {
-    if (
-      debounceTimerRef.current !== null
-    ) {
-      clearTimeout(
-        debounceTimerRef.current,
+      onPatientChangeRef.current(
+        "",
+        "",
       );
-
-      debounceTimerRef.current = null;
     }
+  }, [
+    isEnabled,
+    patientId,
+  ]);
 
-    if (
-      lookupAbortControllerRef.current !==
-      null
-    ) {
-      lookupAbortControllerRef.current.abort();
-
-      lookupAbortControllerRef.current =
-        null;
-    }
+  useEffect(() => {
+    cancelPendingLookup();
 
     setResults([]);
     setIsOpen(false);
     setIsLoading(false);
+    setActiveIndex(-1);
   }, [
     filters.statuses,
     filters.reviewerId,
@@ -496,9 +538,34 @@ function PatientFilter({
     filters.createdTo,
   ]);
 
+  function cancelPendingLookup():
+    void {
+    if (
+      debounceTimerRef.current !==
+      null
+    ) {
+      clearTimeout(
+        debounceTimerRef.current,
+      );
+
+      debounceTimerRef.current =
+        null;
+    }
+
+    if (
+      lookupAbortControllerRef.current !==
+      null
+    ) {
+      lookupAbortControllerRef.current.abort();
+
+      lookupAbortControllerRef.current =
+        null;
+    }
+  }
+
   async function runLookup(
     query: string,
-  ) {
+  ): Promise<void> {
     if (!isEnabled) {
       return;
     }
@@ -526,22 +593,32 @@ function PatientFilter({
           controller.signal,
         );
 
-      if (controller.signal.aborted) {
+      if (
+        controller.signal.aborted
+      ) {
         return;
       }
 
       setResults(patients);
       setIsOpen(true);
+      setActiveIndex(
+        patients.length > 0
+          ? 0
+          : -1,
+      );
     } catch (error) {
       if (
-        error instanceof DOMException &&
-        error.name === "AbortError"
+        error instanceof
+          DOMException &&
+        error.name ===
+          "AbortError"
       ) {
         return;
       }
 
       setResults([]);
       setIsOpen(true);
+      setActiveIndex(-1);
     } finally {
       if (
         lookupAbortControllerRef.current ===
@@ -556,8 +633,9 @@ function PatientFilter({
   }
 
   function handleInputChange(
-    event: ChangeEvent<HTMLInputElement>,
-  ) {
+    event:
+      ChangeEvent<HTMLInputElement>,
+  ): void {
     if (!isEnabled) {
       return;
     }
@@ -566,30 +644,8 @@ function PatientFilter({
       event.target.value;
 
     setInputValue(nextValue);
-
-    if (
-      debounceTimerRef.current !== null
-    ) {
-      clearTimeout(
-        debounceTimerRef.current,
-      );
-
-      debounceTimerRef.current = null;
-    }
-
-    /*
-     * Cancel the previous request immediately rather than
-     * waiting for the next debounced request to begin.
-     */
-    if (
-      lookupAbortControllerRef.current !==
-      null
-    ) {
-      lookupAbortControllerRef.current.abort();
-
-      lookupAbortControllerRef.current =
-        null;
-    }
+    cancelPendingLookup();
+    setActiveIndex(-1);
 
     const trimmedValue =
       nextValue.trim();
@@ -613,32 +669,16 @@ function PatientFilter({
         debounceTimerRef.current =
           null;
 
-        void runLookup(trimmedValue);
+        void runLookup(
+          trimmedValue,
+        );
       }, DEBOUNCE_MS);
   }
 
   function handleSelect(
     patient: PatientOption,
-  ) {
-    if (
-      debounceTimerRef.current !== null
-    ) {
-      clearTimeout(
-        debounceTimerRef.current,
-      );
-
-      debounceTimerRef.current = null;
-    }
-
-    if (
-      lookupAbortControllerRef.current !==
-      null
-    ) {
-      lookupAbortControllerRef.current.abort();
-
-      lookupAbortControllerRef.current =
-        null;
-    }
+  ): void {
+    cancelPendingLookup();
 
     setInputValue(
       patient.displayName,
@@ -647,6 +687,7 @@ function PatientFilter({
     setResults([]);
     setIsOpen(false);
     setIsLoading(false);
+    setActiveIndex(-1);
 
     onPatientChange(
       patient.id,
@@ -654,68 +695,152 @@ function PatientFilter({
     );
   }
 
-  function handleClear() {
-    if (
-      debounceTimerRef.current !== null
-    ) {
-      clearTimeout(
-        debounceTimerRef.current,
-      );
-
-      debounceTimerRef.current = null;
-    }
-
-    if (
-      lookupAbortControllerRef.current !==
-      null
-    ) {
-      lookupAbortControllerRef.current.abort();
-
-      lookupAbortControllerRef.current =
-        null;
-    }
+  function handleClear(): void {
+    cancelPendingLookup();
 
     setInputValue("");
     setResults([]);
     setIsOpen(false);
     setIsLoading(false);
+    setActiveIndex(-1);
 
     onPatientChange("", "");
   }
 
-  /*
-   * Cancel timers and requests when the component unmounts.
-   */
-  useEffect(() => {
-    return () => {
-      if (
-        debounceTimerRef.current !== null
-      ) {
-        clearTimeout(
-          debounceTimerRef.current,
+  function handleKeyDown(
+    event:
+      KeyboardEvent<HTMLInputElement>,
+  ): void {
+    if (!isEnabled) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      if (isOpen) {
+        event.preventDefault();
+        setIsOpen(false);
+        setActiveIndex(-1);
+      }
+
+      return;
+    }
+
+    if (
+      event.key === "ArrowDown"
+    ) {
+      event.preventDefault();
+
+      if (!isOpen) {
+        setIsOpen(true);
+      }
+
+      if (results.length > 0) {
+        setActiveIndex(
+          currentIndex =>
+            currentIndex < 0
+              ? 0
+              : (
+                  currentIndex + 1
+                ) %
+                results.length,
         );
       }
 
-      if (
-        lookupAbortControllerRef.current !==
-        null
-      ) {
-        lookupAbortControllerRef.current.abort();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+
+      if (!isOpen) {
+        setIsOpen(true);
       }
+
+      if (results.length > 0) {
+        setActiveIndex(
+          currentIndex =>
+            currentIndex <= 0
+              ? results.length - 1
+              : currentIndex - 1,
+        );
+      }
+
+      return;
+    }
+
+    if (
+      event.key === "Enter" &&
+      isOpen &&
+      activeIndex >= 0
+    ) {
+      const activePatient =
+        results[activeIndex];
+
+      if (activePatient) {
+        event.preventDefault();
+        handleSelect(
+          activePatient,
+        );
+      }
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      cancelPendingLookup();
     };
   }, []);
 
+  const activeOptionId =
+    activeIndex >= 0 &&
+    results[activeIndex]
+      ? `${componentId}-patient-option-${activeIndex}`
+      : undefined;
+
+  let statusMessage =
+    "";
+
+  if (
+    isEnabled &&
+    isOpen &&
+    isLoading
+  ) {
+    statusMessage =
+      "Searching patients.";
+  } else if (
+    isEnabled &&
+    isOpen &&
+    !isLoading &&
+    inputValue.trim() !== ""
+  ) {
+    statusMessage =
+      results.length === 0
+        ? "No matching patients."
+        : `${results.length} ${
+            results.length === 1
+              ? "patient"
+              : "patients"
+          } available. Use the Up and Down arrow keys to review the results.`;
+  }
+
   return (
     <div>
-      <label htmlFor="patient-filter">
+      <label htmlFor={inputId}>
         Patient
       </label>
 
+      <p id={helpId}>
+        {isEnabled
+          ? "Type a patient name. Use the Up and Down arrow keys to move through suggestions and Enter to select."
+          : "Select a status, reviewer or date filter before searching for a patient."}
+      </p>
+
       <input
-        id="patient-filter"
+        id={inputId}
         type="text"
         value={inputValue}
         onChange={handleInputChange}
+        onKeyDown={handleKeyDown}
         onFocus={() => {
           if (
             isEnabled &&
@@ -735,7 +860,12 @@ function PatientFilter({
         aria-expanded={
           isEnabled && isOpen
         }
-        aria-controls="patient-filter-results"
+        aria-controls={listboxId}
+        aria-activedescendant={
+          activeOptionId
+        }
+        aria-describedby={`${helpId} ${statusId}`}
+        aria-busy={isLoading}
         autoComplete="off"
       />
 
@@ -744,54 +874,69 @@ function PatientFilter({
           type="button"
           onClick={handleClear}
           disabled={!isEnabled}
+          aria-label="Clear patient filter"
         >
           Clear
         </button>
       )}
 
-      {isEnabled &&
-        isOpen &&
-        isLoading && (
-          <p role="status">
-            Searching patients…
-          </p>
-        )}
+      <p
+        id={statusId}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {statusMessage}
+      </p>
 
       {isEnabled &&
         isOpen &&
         !isLoading &&
         results.length > 0 && (
           <ul
-            id="patient-filter-results"
+            id={listboxId}
             role="listbox"
+            aria-label="Patient suggestions"
           >
-            {results.map((patient) => (
-              <li
-                key={patient.id}
-                role="option"
-                aria-selected={
-                  patient.id === patientId
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSelect(patient)
-                  }
+            {results.map(
+              (
+                patient,
+                index,
+              ) => (
+                <li
+                  key={patient.id}
+                  role="none"
                 >
-                  {patient.displayName}
-                </button>
-              </li>
-            ))}
+                  <button
+                    id={`${componentId}-patient-option-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={
+                      index ===
+                      activeIndex
+                    }
+                    onMouseDown={event => {
+                      event.preventDefault();
+                    }}
+                    onMouseEnter={() => {
+                      setActiveIndex(
+                        index,
+                      );
+                    }}
+                    onClick={() =>
+                      handleSelect(
+                        patient,
+                      )
+                    }
+                  >
+                    {
+                      patient.displayName
+                    }
+                  </button>
+                </li>
+              ),
+            )}
           </ul>
-        )}
-
-      {isEnabled &&
-        isOpen &&
-        !isLoading &&
-        inputValue.trim() !== "" &&
-        results.length === 0 && (
-          <p>No matching patients.</p>
         )}
     </div>
   );

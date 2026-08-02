@@ -1,4 +1,7 @@
-import type { AvailableNoteAction, UserActionTrigger, } from "./noteActionBarModel";
+import type {
+  AvailableNoteAction,
+  UserActionTrigger,
+} from "./noteActionBarModel";
 
 interface NoteActionBarProps {
   actions: AvailableNoteAction[];
@@ -16,7 +19,8 @@ const EXECUTION_STATE_TEXT = {
   PENDING: "Action in progress.",
   OPTIMISTICALLY_APPLIED:
     "The action has been applied while the request completes.",
-  SUCCEEDED: "Action completed successfully.",
+  SUCCEEDED:
+    "Action completed successfully.",
   FAILED_AND_ROLLED_BACK:
     "The action failed. The note remains unchanged.",
 } satisfies Record<
@@ -31,19 +35,22 @@ export function NoteActionBar({
   onAction,
 }: NoteActionBarProps) {
   const rejectAction = actions.find(
-    (action) =>
+    action =>
       action.trigger === "REJECT",
   );
 
-  const hasPendingAction = actions.some(
-    (action) =>
-      action.executionState === "PENDING",
-  );
+  const hasPendingAction =
+    actions.some(
+      action =>
+        action.executionState ===
+        "PENDING",
+    );
 
   return (
     <section
       className="note-detail-card note-action-bar"
       aria-labelledby="note-actions-heading"
+      aria-busy={hasPendingAction}
     >
       <div className="note-action-bar-heading">
         <div>
@@ -64,12 +71,18 @@ export function NoteActionBar({
             Rejection reason
           </label>
 
+          <p id="note-rejection-reason-help">
+            Required before the Reject action
+            can be submitted.
+          </p>
+
           <textarea
             id="note-rejection-reason"
             value={rejectionReason}
             rows={3}
             disabled={hasPendingAction}
-            onChange={(event) =>
+            aria-describedby="note-rejection-reason-help"
+            onChange={event =>
               onRejectionReasonChange(
                 event.target.value,
               )
@@ -84,8 +97,12 @@ export function NoteActionBar({
           current note status.
         </p>
       ) : (
-        <div className="note-action-list">
-          {actions.map((action) => {
+        <div
+          className="note-action-list"
+          aria-live="polite"
+          aria-relevant="text"
+        >
+          {actions.map(action => {
             const disabledReasonId =
               `note-action-${action.trigger}-disabled`;
 
@@ -144,9 +161,7 @@ export function NoteActionBar({
                       id={disabledReasonId}
                       className="note-action-disabled-reason"
                     >
-                      {
-                        action.disabledReason
-                      }
+                      {action.disabledReason}
                     </p>
                   )}
 
@@ -158,8 +173,9 @@ export function NoteActionBar({
                       action.executionState ===
                       "FAILED_AND_ROLLED_BACK"
                         ? "alert"
-                        : undefined
+                        : "status"
                     }
+                    aria-atomic="true"
                   >
                     {executionText}
                   </p>

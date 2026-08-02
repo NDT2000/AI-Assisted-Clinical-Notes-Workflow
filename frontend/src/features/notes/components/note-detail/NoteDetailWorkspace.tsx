@@ -1458,6 +1458,12 @@ export function NoteDetailWorkspace({
                 !isEditable ||
                 isViewingHistoricalVersion
               }
+              readOnlyReason={
+                isViewingHistoricalVersion
+                  ? `Revision ${historicalVersion?.revisionNumber ?? ""} is historical and cannot be edited.`
+                  : editorReadOnlyReason ??
+                    undefined
+              }
               dirtySections={
                 displayedDirtySections
               }

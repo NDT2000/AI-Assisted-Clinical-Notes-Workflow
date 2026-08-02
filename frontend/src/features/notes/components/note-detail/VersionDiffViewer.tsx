@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useRef, } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 
-import type { NoteVersionDetail, } from "../../../../domain/noteDetail";
+import type {
+  NoteVersionDetail,
+} from "../../../../domain/noteDetail";
 
 import {
   SOAP_VERSION_DIFF_SECTION_KEYS,
@@ -49,14 +55,15 @@ function isUnchanged(
   return (
     segments.length === 0 ||
     segments.every(
-      (segment) =>
+      segment =>
         segment.type === "unchanged",
     )
   );
 }
 
 interface DiffSectionContentProps {
-  segments: readonly WordDiffSegment[];
+  segments:
+    readonly WordDiffSegment[];
 }
 
 function DiffSectionContent({
@@ -65,7 +72,7 @@ function DiffSectionContent({
   if (isUnchanged(segments)) {
     const unchangedContent =
       segments
-        .map((segment) => segment.value)
+        .map(segment => segment.value)
         .join("");
 
     return (
@@ -77,15 +84,10 @@ function DiffSectionContent({
           No changes.
         </p>
 
-        {unchangedContent ? (
-          <p className="version-diff-content">
-            {unchangedContent}
-          </p>
-        ) : (
-          <p className="version-diff-content">
-            No content.
-          </p>
-        )}
+        <p className="version-diff-content">
+          {unchangedContent ||
+            "No content."}
+        </p>
       </>
     );
   }
@@ -93,8 +95,10 @@ function DiffSectionContent({
   return (
     <>
       <p className="version-diff-legend">
-        Removed text is struck through.
-        Added text is underlined.
+        Removed text is struck through
+        and announced as removed. Added
+        text is underlined and announced
+        as added.
       </p>
 
       <p className="version-diff-content">
@@ -214,12 +218,35 @@ export function VersionDiffViewer({
 
   useEffect(() => {
     headingRef.current?.focus();
-  }, []);
+
+    function handleKeyDown(
+      event: KeyboardEvent,
+    ): void {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    }
+
+    window.addEventListener(
+      "keydown",
+      handleKeyDown,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown,
+      );
+    };
+  }, [onClose]);
 
   return (
     <section
       className="version-diff-viewer"
       aria-labelledby="version-diff-heading"
+      aria-describedby="version-diff-description"
+      role="region"
     >
       <header className="version-diff-header">
         <div>
@@ -234,10 +261,10 @@ export function VersionDiffViewer({
             {toVersion.revisionNumber}
           </h2>
 
-          <p>
-            This is a read-only
-            comparison of two saved note
-            versions.
+          <p id="version-diff-description">
+            This is a read-only comparison
+            of two saved note versions.
+            Press Escape to exit.
           </p>
         </div>
 
@@ -263,7 +290,7 @@ export function VersionDiffViewer({
 
       <div className="version-diff-sections">
         {SOAP_VERSION_DIFF_SECTION_KEYS.map(
-          (section) => (
+          section => (
             <article
               key={section}
               className="version-diff-section"

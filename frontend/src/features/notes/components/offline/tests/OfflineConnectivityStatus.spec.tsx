@@ -242,12 +242,18 @@ describe(
 
         renderStatus(store);
 
-        expect(
-          screen.getByRole("status", {
+        const alert =
+          screen.getByRole("alert", {
             name: "Connectivity status",
-          }),
-        ).toHaveTextContent(
-          "Conflict requires attention",
+          });
+
+        expect(alert).toHaveTextContent(
+          "Conflict requires attention — queued changes are paused",
+        );
+
+        expect(alert).toHaveAttribute(
+          "aria-live",
+          "assertive",
         );
 
         expect(
