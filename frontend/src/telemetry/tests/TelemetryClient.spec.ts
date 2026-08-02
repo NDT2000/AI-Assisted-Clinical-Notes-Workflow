@@ -582,7 +582,9 @@ describe(
         );
 
         const sleep = vi.fn(
-          async () =>
+          async (
+            _delayMs: number,
+          ) =>
             undefined,
         );
 
