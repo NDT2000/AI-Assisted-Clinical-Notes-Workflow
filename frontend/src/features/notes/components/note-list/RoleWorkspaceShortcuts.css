@@ -1,0 +1,117 @@
+.role-workspace {
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid #d9e1ea;
+  border-radius: 0.875rem;
+  background: #f8fafc;
+}
+
+.role-workspace__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.role-workspace__heading h2,
+.role-workspace__heading p {
+  margin: 0;
+}
+
+.role-workspace__heading h2 {
+  margin-top: 0.25rem;
+  font-size: 1.125rem;
+}
+
+.role-workspace__heading h2 + p {
+  margin-top: 0.375rem;
+  color: #526173;
+}
+
+.role-workspace__eyebrow {
+  color: #526173;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.role-workspace__clear {
+  flex: 0 0 auto;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid #9aa8b7;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+
+.role-workspace__clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.role-workspace__views {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.role-workspace__view {
+  min-height: 6rem;
+  padding: 0.875rem;
+  border: 1px solid #c7d1dc;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.role-workspace__view strong,
+.role-workspace__view span {
+  display: block;
+}
+
+.role-workspace__view span {
+  margin-top: 0.375rem;
+  color: #526173;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.role-workspace__view:hover {
+  border-color: #6f8297;
+  background: #f4f7fa;
+}
+
+.role-workspace__view[aria-pressed="true"] {
+  border-color: #245ea8;
+  background: #eaf2fc;
+}
+
+.role-workspace__view:focus-visible,
+.role-workspace__clear:focus-visible {
+  outline: 3px solid #245ea8;
+  outline-offset: 2px;
+}
+
+@media (max-width: 52rem) {
+  .role-workspace__views {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 38rem) {
+  .role-workspace__heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .role-workspace__clear {
+    width: 100%;
+  }
+}

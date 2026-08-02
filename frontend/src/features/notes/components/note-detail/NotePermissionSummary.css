@@ -1,0 +1,122 @@
+.note-permission-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border, #d9e1ea);
+  border-radius: 0.875rem;
+  background: var(--code-bg, #f8fafc);
+}
+
+.note-permission-summary__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.note-permission-summary__heading h2,
+.note-permission-summary__heading p {
+  margin: 0;
+}
+
+.note-permission-summary__heading h2 {
+  margin-top: 0.2rem;
+  font-size: 1.1rem;
+}
+
+.note-permission-summary__eyebrow {
+  color: var(--text, #526173);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.note-permission-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.note-permission-badge--editable {
+  border-color: #9dc9ad;
+  color: #1e6640;
+  background: #eef8f1;
+}
+
+.note-permission-badge--action {
+  border-color: var(--accent-border, #9bbce2);
+  color: var(--accent, #245ea8);
+  background: var(--accent-bg, #eaf2fc);
+}
+
+.note-permission-badge--readonly {
+  border-color: #b8bec7;
+  color: #4b5563;
+  background: #f1f3f5;
+}
+
+.note-permission-summary__details {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.note-permission-summary__details > div {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #d9e1ea);
+  border-radius: 0.625rem;
+  background: var(--bg, #ffffff);
+}
+
+.note-permission-summary__details dt {
+  color: var(--text, #526173);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.note-permission-summary__details dd {
+  margin: 0.25rem 0 0;
+  color: var(--text-h, #1d2733);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.note-permission-summary__reason {
+  margin: 0;
+  padding: 0.75rem 0.875rem;
+  border-left: 3px solid var(--accent-border, #9bbce2);
+  border-radius: 0.35rem;
+  color: var(--text-h, #1d2733);
+  background: var(--bg, #ffffff);
+}
+
+@media (max-width: 48rem) {
+  .note-permission-summary__details {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 36rem) {
+  .note-permission-summary__heading {
+    flex-direction: column;
+  }
+}
+
+@media (forced-colors: active) {
+  .note-permission-summary,
+  .note-permission-summary__details > div,
+  .note-permission-badge {
+    border-color: CanvasText;
+  }
+}

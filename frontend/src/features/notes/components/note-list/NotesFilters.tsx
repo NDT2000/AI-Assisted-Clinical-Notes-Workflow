@@ -12,6 +12,9 @@ import {
   type NoteStatus,
 } from "../../../../domain/noteAttributes";
 import {
+  REVIEWERS,
+} from "../../../../mock-data/generateNoteSummary";
+import {
   getPatientById,
   getPatients,
   type PatientOption,
@@ -21,43 +24,32 @@ import type {
   NoteSortField,
   SortDirection,
 } from "../../utils/noteListSearchParams";
-
-import {
-  REVIEWERS,
-} from "../../../../mock-data/generateNoteSummary";
+import "./NotesFilters.css";
 
 interface NotesFiltersProps {
   filters: NoteListFilters;
-
   onStatusesChange: (
     statuses: NoteStatus[],
   ) => void;
-
   onReviewerChange: (
     reviewerId: string,
   ) => void;
-
   onPatientChange: (
     patientId: string,
     patientDisplayName: string,
   ) => void;
-
   onCreatedFromChange: (
     createdFrom: string,
   ) => void;
-
   onCreatedToChange: (
     createdTo: string,
   ) => void;
-
   onSortFieldChange: (
     sortField: NoteSortField,
   ) => void;
-
   onSortDirectionChange: (
     sortDirection: SortDirection,
   ) => void;
-
   onQueryChange: (
     query: string,
   ) => void;
@@ -87,6 +79,20 @@ const SORT_FIELDS: {
 
 const DEBOUNCE_MS = 400;
 
+function formatStatus(
+  status: NoteStatus,
+): string {
+  return status
+    .toLowerCase()
+    .split("_")
+    .map(
+      (part) =>
+        part.charAt(0).toUpperCase() +
+        part.slice(1),
+    )
+    .join(" ");
+}
+
 export function NotesFilters({
   filters,
   onStatusesChange,
@@ -106,7 +112,7 @@ export function NotesFilters({
       Array.from(
         event.target
           .selectedOptions,
-        option =>
+        (option) =>
           option.value as
             NoteStatus,
       );
@@ -125,174 +131,202 @@ export function NotesFilters({
   return (
     <section
       className="notes-filters"
-      aria-label="Note filters"
+      aria-labelledby="notes-filters-heading"
     >
-      <div>
-        <label htmlFor="status-filter">
-          Status
-        </label>
+      <div className="notes-filters-heading">
+        <div>
+          <h2 id="notes-filters-heading">
+            Filter notes
+          </h2>
 
-        <p id="status-filter-help">
-          Hold Control or Command to select
-          more than one status.
-        </p>
+          <p>
+            Filters are saved in the URL
+            and can be shared or restored.
+          </p>
+        </div>
+      </div>
 
-        <select
-          id="status-filter"
-          multiple
-          value={filters.statuses}
-          aria-describedby="status-filter-help"
-          onChange={handleStatusChange}
-        >
-          {NOTE_STATUS.map(status => (
-            <option
-              key={status}
-              value={status}
-            >
-              {status}
+      <div className="notes-filters-grid">
+        <div className="notes-filter-field notes-filter-status">
+          <label htmlFor="status-filter">
+            Status
+          </label>
+
+          <select
+            id="status-filter"
+            multiple
+            value={filters.statuses}
+            onChange={
+              handleStatusChange
+            }
+          >
+            {NOTE_STATUS.map(
+              (status) => (
+                <option
+                  key={status}
+                  value={status}
+                >
+                  {formatStatus(status)}
+                </option>
+              ),
+            )}
+          </select>
+
+          <small>
+            Hold Ctrl or Command to
+            select multiple statuses.
+          </small>
+        </div>
+
+        <div className="notes-filter-field">
+          <label htmlFor="reviewer-filter">
+            Reviewer
+          </label>
+
+          <select
+            id="reviewer-filter"
+            value={
+              filters.reviewerId
+            }
+            onChange={(event) =>
+              onReviewerChange(
+                event.target.value,
+              )
+            }
+          >
+            <option value="">
+              All reviewers
             </option>
-          ))}
-        </select>
-      </div>
 
-      <div>
-        <label htmlFor="reviewer-filter">
-          Reviewer
-        </label>
+            {REVIEWERS.map(
+              (reviewer) => (
+                <option
+                  key={reviewer.id}
+                  value={reviewer.id}
+                >
+                  {
+                    reviewer.displayName
+                  }
+                </option>
+              ),
+            )}
+          </select>
+        </div>
 
-        <select
-          id="reviewer-filter"
-          value={filters.reviewerId}
-          onChange={event =>
-            onReviewerChange(
-              event.target.value,
-            )
+        <PatientFilter
+          patientId={
+            filters.patientId
           }
-        >
-          <option value="">
-            All reviewers
-          </option>
-
-          {REVIEWERS.map(
-            reviewer => (
-              <option
-                key={reviewer.id}
-                value={reviewer.id}
-              >
-                {
-                  reviewer.displayName
-                }
-              </option>
-            ),
-          )}
-        </select>
-      </div>
-
-      <PatientFilter
-        patientId={filters.patientId}
-        filters={filters}
-        isEnabled={
-          isPatientFilterEnabled
-        }
-        onPatientChange={
-          onPatientChange
-        }
-      />
-
-      <div>
-        <label htmlFor="created-from-filter">
-          Created from
-        </label>
-
-        <input
-          id="created-from-filter"
-          type="date"
-          value={filters.createdFrom}
-          onChange={event =>
-            onCreatedFromChange(
-              event.target.value,
-            )
+          filters={filters}
+          isEnabled={
+            isPatientFilterEnabled
+          }
+          onPatientChange={
+            onPatientChange
           }
         />
-      </div>
 
-      <div>
-        <label htmlFor="created-to-filter">
-          Created to
-        </label>
+        <div className="notes-filter-field">
+          <label htmlFor="created-from-filter">
+            Created from
+          </label>
 
-        <input
-          id="created-to-filter"
-          type="date"
-          value={filters.createdTo}
-          onChange={event =>
-            onCreatedToChange(
-              event.target.value,
-            )
+          <input
+            id="created-from-filter"
+            type="date"
+            value={
+              filters.createdFrom
+            }
+            onChange={(event) =>
+              onCreatedFromChange(
+                event.target.value,
+              )
+            }
+          />
+        </div>
+
+        <div className="notes-filter-field">
+          <label htmlFor="created-to-filter">
+            Created to
+          </label>
+
+          <input
+            id="created-to-filter"
+            type="date"
+            value={
+              filters.createdTo
+            }
+            onChange={(event) =>
+              onCreatedToChange(
+                event.target.value,
+              )
+            }
+          />
+        </div>
+
+        <SearchBox
+          query={filters.query}
+          onQueryChange={
+            onQueryChange
           }
         />
-      </div>
 
-      <SearchBox
-        query={filters.query}
-        onQueryChange={
-          onQueryChange
-        }
-      />
+        <div className="notes-filter-field">
+          <label htmlFor="sort-field">
+            Sort by
+          </label>
 
-      <div>
-        <label htmlFor="sort-field">
-          Sort by
-        </label>
+          <select
+            id="sort-field"
+            value={filters.sortField}
+            onChange={(event) =>
+              onSortFieldChange(
+                event.target
+                  .value as
+                  NoteSortField,
+              )
+            }
+          >
+            {SORT_FIELDS.map(
+              (field) => (
+                <option
+                  key={field.value}
+                  value={field.value}
+                >
+                  {field.label}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
 
-        <select
-          id="sort-field"
-          value={filters.sortField}
-          onChange={event =>
-            onSortFieldChange(
-              event.target
-                .value as
-                NoteSortField,
-            )
-          }
-        >
-          {SORT_FIELDS.map(field => (
-            <option
-              key={field.value}
-              value={field.value}
-            >
-              {field.label}
+        <div className="notes-filter-field">
+          <label htmlFor="sort-direction">
+            Direction
+          </label>
+
+          <select
+            id="sort-direction"
+            value={
+              filters.sortDirection
+            }
+            onChange={(event) =>
+              onSortDirectionChange(
+                event.target
+                  .value as
+                  SortDirection,
+              )
+            }
+          >
+            <option value="asc">
+              Ascending
             </option>
-          ))}
-        </select>
-      </div>
 
-      <div>
-        <label htmlFor="sort-direction">
-          Direction
-        </label>
-
-        <select
-          id="sort-direction"
-          value={
-            filters.sortDirection
-          }
-          onChange={event =>
-            onSortDirectionChange(
-              event.target
-                .value as
-                SortDirection,
-            )
-          }
-        >
-          <option value="asc">
-            Ascending
-          </option>
-
-          <option value="desc">
-            Descending
-          </option>
-        </select>
+            <option value="desc">
+              Descending
+            </option>
+          </select>
+        </div>
       </div>
     </section>
   );
@@ -313,9 +347,11 @@ function SearchBox({
   ] = useState(query);
 
   const debounceTimerRef =
-    useRef<ReturnType<
-      typeof setTimeout
-    > | null>(null);
+    useRef<
+      ReturnType<
+        typeof setTimeout
+      > | null
+    >(null);
 
   useEffect(() => {
     setLocalValue(query);
@@ -359,7 +395,7 @@ function SearchBox({
   }, []);
 
   return (
-    <div>
+    <div className="notes-filter-field notes-filter-search">
       <label htmlFor="search-filter">
         Search patient or note content
       </label>
@@ -369,8 +405,7 @@ function SearchBox({
         type="search"
         value={localValue}
         onChange={handleChange}
-        placeholder="Search…"
-        autoComplete="off"
+        placeholder="Search notes…"
       />
     </div>
   );
@@ -390,42 +425,41 @@ function PatientFilter({
     patientDisplayName: string,
   ) => void;
 }) {
-  const componentId =
-    useId();
-
-  const inputId =
-    `${componentId}-patient-filter`;
+  const generatedId = useId();
 
   const listboxId =
-    `${componentId}-patient-results`;
+    `patient-filter-results-${generatedId}`;
 
   const helpId =
-    `${componentId}-patient-help`;
+    `patient-filter-help-${generatedId}`;
 
   const statusId =
-    `${componentId}-patient-status`;
+    `patient-filter-status-${generatedId}`;
+
+  const containerRef =
+    useRef<HTMLDivElement | null>(
+      null,
+    );
 
   const [
     inputValue,
     setInputValue,
   ] = useState("");
 
-  const [
-    results,
-    setResults,
-  ] =
-    useState<PatientOption[]>(
-      [],
-    );
+  const [results, setResults] =
+    useState<PatientOption[]>([]);
 
-  const [
-    isOpen,
-    setIsOpen,
-  ] = useState(false);
+  const [isOpen, setIsOpen] =
+    useState(false);
 
   const [
     isLoading,
     setIsLoading,
+  ] = useState(false);
+
+  const [
+    hasLookupError,
+    setHasLookupError,
   ] = useState(false);
 
   const [
@@ -434,9 +468,11 @@ function PatientFilter({
   ] = useState(-1);
 
   const debounceTimerRef =
-    useRef<ReturnType<
-      typeof setTimeout
-    > | null>(null);
+    useRef<
+      ReturnType<
+        typeof setTimeout
+      > | null
+    >(null);
 
   const lookupAbortControllerRef =
     useRef<AbortController | null>(
@@ -460,8 +496,7 @@ function PatientFilter({
     const controller =
       new AbortController();
 
-    async function restorePatientName():
-      Promise<void> {
+    async function restorePatientName() {
       try {
         const patient =
           await getPatientById(
@@ -511,6 +546,7 @@ function PatientFilter({
     setResults([]);
     setIsOpen(false);
     setIsLoading(false);
+    setHasLookupError(false);
     setActiveIndex(-1);
 
     if (patientId !== "") {
@@ -519,10 +555,7 @@ function PatientFilter({
         "",
       );
     }
-  }, [
-    isEnabled,
-    patientId,
-  ]);
+  }, [isEnabled, patientId]);
 
   useEffect(() => {
     cancelPendingLookup();
@@ -530,6 +563,7 @@ function PatientFilter({
     setResults([]);
     setIsOpen(false);
     setIsLoading(false);
+    setHasLookupError(false);
     setActiveIndex(-1);
   }, [
     filters.statuses,
@@ -538,8 +572,7 @@ function PatientFilter({
     filters.createdTo,
   ]);
 
-  function cancelPendingLookup():
-    void {
+  function cancelPendingLookup() {
     if (
       debounceTimerRef.current !==
       null
@@ -565,7 +598,7 @@ function PatientFilter({
 
   async function runLookup(
     query: string,
-  ): Promise<void> {
+  ) {
     if (!isEnabled) {
       return;
     }
@@ -584,6 +617,7 @@ function PatientFilter({
       controller;
 
     setIsLoading(true);
+    setHasLookupError(false);
 
     try {
       const patients =
@@ -600,12 +634,8 @@ function PatientFilter({
       }
 
       setResults(patients);
+      setActiveIndex(-1);
       setIsOpen(true);
-      setActiveIndex(
-        patients.length > 0
-          ? 0
-          : -1,
-      );
     } catch (error) {
       if (
         error instanceof
@@ -617,8 +647,9 @@ function PatientFilter({
       }
 
       setResults([]);
-      setIsOpen(true);
       setActiveIndex(-1);
+      setHasLookupError(true);
+      setIsOpen(true);
     } finally {
       if (
         lookupAbortControllerRef.current ===
@@ -635,7 +666,7 @@ function PatientFilter({
   function handleInputChange(
     event:
       ChangeEvent<HTMLInputElement>,
-  ): void {
+  ) {
     if (!isEnabled) {
       return;
     }
@@ -644,8 +675,14 @@ function PatientFilter({
       event.target.value;
 
     setInputValue(nextValue);
-    cancelPendingLookup();
+    setHasLookupError(false);
     setActiveIndex(-1);
+
+    if (patientId !== "") {
+      onPatientChange("", "");
+    }
+
+    cancelPendingLookup();
 
     const trimmedValue =
       nextValue.trim();
@@ -654,15 +691,11 @@ function PatientFilter({
       setResults([]);
       setIsOpen(false);
       setIsLoading(false);
-
-      if (patientId !== "") {
-        onPatientChange("", "");
-      }
-
       return;
     }
 
     setIsOpen(true);
+    setIsLoading(true);
 
     debounceTimerRef.current =
       setTimeout(() => {
@@ -677,7 +710,7 @@ function PatientFilter({
 
   function handleSelect(
     patient: PatientOption,
-  ): void {
+  ) {
     cancelPendingLookup();
 
     setInputValue(
@@ -687,6 +720,7 @@ function PatientFilter({
     setResults([]);
     setIsOpen(false);
     setIsLoading(false);
+    setHasLookupError(false);
     setActiveIndex(-1);
 
     onPatientChange(
@@ -695,13 +729,14 @@ function PatientFilter({
     );
   }
 
-  function handleClear(): void {
+  function handleClear() {
     cancelPendingLookup();
 
     setInputValue("");
     setResults([]);
     setIsOpen(false);
     setIsLoading(false);
+    setHasLookupError(false);
     setActiveIndex(-1);
 
     onPatientChange("", "");
@@ -710,18 +745,18 @@ function PatientFilter({
   function handleKeyDown(
     event:
       KeyboardEvent<HTMLInputElement>,
-  ): void {
-    if (!isEnabled) {
+  ) {
+    if (
+      event.key === "Escape"
+    ) {
+      setIsOpen(false);
+      setActiveIndex(-1);
       return;
     }
 
-    if (event.key === "Escape") {
-      if (isOpen) {
-        event.preventDefault();
-        setIsOpen(false);
-        setActiveIndex(-1);
-      }
-
+    if (
+      results.length === 0
+    ) {
       return;
     }
 
@@ -730,57 +765,49 @@ function PatientFilter({
     ) {
       event.preventDefault();
 
-      if (!isOpen) {
-        setIsOpen(true);
-      }
+      setIsOpen(true);
 
-      if (results.length > 0) {
-        setActiveIndex(
-          currentIndex =>
-            currentIndex < 0
-              ? 0
-              : (
-                  currentIndex + 1
-                ) %
-                results.length,
-        );
-      }
+      setActiveIndex(
+        (currentIndex) =>
+          currentIndex >=
+          results.length - 1
+            ? 0
+            : currentIndex + 1,
+      );
 
       return;
     }
 
-    if (event.key === "ArrowUp") {
+    if (
+      event.key === "ArrowUp"
+    ) {
       event.preventDefault();
 
-      if (!isOpen) {
-        setIsOpen(true);
-      }
+      setIsOpen(true);
 
-      if (results.length > 0) {
-        setActiveIndex(
-          currentIndex =>
-            currentIndex <= 0
-              ? results.length - 1
-              : currentIndex - 1,
-        );
-      }
+      setActiveIndex(
+        (currentIndex) =>
+          currentIndex <= 0
+            ? results.length - 1
+            : currentIndex - 1,
+      );
 
       return;
     }
 
     if (
       event.key === "Enter" &&
-      isOpen &&
       activeIndex >= 0
     ) {
-      const activePatient =
+      event.preventDefault();
+
+      const patient =
         results[activeIndex];
 
-      if (activePatient) {
-        event.preventDefault();
-        handleSelect(
-          activePatient,
-        );
+      if (
+        patient !== undefined
+      ) {
+        handleSelect(patient);
       }
     }
   }
@@ -791,152 +818,243 @@ function PatientFilter({
     };
   }, []);
 
-  const activeOptionId =
-    activeIndex >= 0 &&
-    results[activeIndex]
-      ? `${componentId}-patient-option-${activeIndex}`
+  const activeOption =
+    activeIndex >= 0
+      ? results[activeIndex]
       : undefined;
 
-  let statusMessage =
-    "";
+  const activeOptionId =
+    activeOption === undefined
+      ? undefined
+      : `${listboxId}-option-${activeOption.id}`;
 
-  if (
-    isEnabled &&
-    isOpen &&
-    isLoading
-  ) {
+  let statusMessage =
+    "Type a patient name to search.";
+
+  if (!isEnabled) {
+    statusMessage =
+      "Select a status, reviewer, or created date first.";
+  } else if (isLoading) {
     statusMessage =
       "Searching patients.";
   } else if (
-    isEnabled &&
-    isOpen &&
-    !isLoading &&
-    inputValue.trim() !== ""
+    hasLookupError
   ) {
     statusMessage =
-      results.length === 0
-        ? "No matching patients."
-        : `${results.length} ${
-            results.length === 1
-              ? "patient"
-              : "patients"
-          } available. Use the Up and Down arrow keys to review the results.`;
+      "Unable to load patient suggestions.";
+  } else if (
+    isOpen &&
+    inputValue.trim() !== "" &&
+    results.length === 0
+  ) {
+    statusMessage =
+      "No matching patients.";
+  } else if (
+    isOpen &&
+    results.length > 0
+  ) {
+    statusMessage =
+      `${results.length} matching ` +
+      `${results.length === 1
+        ? "patient"
+        : "patients"} available.`;
   }
 
   return (
-    <div>
-      <label htmlFor={inputId}>
+    <div
+      ref={containerRef}
+      className="notes-filter-field patient-combobox"
+      onBlur={() => {
+        window.setTimeout(() => {
+          const activeElement =
+            document.activeElement;
+
+          if (
+            containerRef.current !==
+              null &&
+            activeElement !== null &&
+            !containerRef.current.contains(
+              activeElement,
+            )
+          ) {
+            setIsOpen(false);
+            setActiveIndex(-1);
+          }
+        }, 0);
+      }}
+    >
+      <label htmlFor="patient-filter">
         Patient
       </label>
 
-      <p id={helpId}>
-        {isEnabled
-          ? "Type a patient name. Use the Up and Down arrow keys to move through suggestions and Enter to select."
-          : "Select a status, reviewer or date filter before searching for a patient."}
-      </p>
-
-      <input
-        id={inputId}
-        type="text"
-        value={inputValue}
-        onChange={handleInputChange}
-        onKeyDown={handleKeyDown}
-        onFocus={() => {
-          if (
-            isEnabled &&
-            inputValue.trim() !== ""
-          ) {
-            setIsOpen(true);
+      <div className="patient-combobox-input-row">
+        <input
+          id="patient-filter"
+          type="text"
+          value={inputValue}
+          onChange={
+            handleInputChange
           }
-        }}
-        disabled={!isEnabled}
-        placeholder={
-          isEnabled
-            ? "Search patients…"
-            : "Select another filter first"
-        }
-        role="combobox"
-        aria-autocomplete="list"
-        aria-expanded={
-          isEnabled && isOpen
-        }
-        aria-controls={listboxId}
-        aria-activedescendant={
-          activeOptionId
-        }
-        aria-describedby={`${helpId} ${statusId}`}
-        aria-busy={isLoading}
-        autoComplete="off"
-      />
-
-      {patientId !== "" && (
-        <button
-          type="button"
-          onClick={handleClear}
+          onKeyDown={
+            handleKeyDown
+          }
+          onFocus={() => {
+            if (
+              isEnabled &&
+              inputValue.trim() !==
+                "" &&
+              (results.length > 0 ||
+                isLoading ||
+                hasLookupError)
+            ) {
+              setIsOpen(true);
+            }
+          }}
           disabled={!isEnabled}
-          aria-label="Clear patient filter"
-        >
-          Clear
-        </button>
-      )}
+          placeholder={
+            isEnabled
+              ? "Search patients…"
+              : "Select another filter first"
+          }
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={
+            isEnabled && isOpen
+          }
+          aria-controls={
+            listboxId
+          }
+          aria-activedescendant={
+            activeOptionId
+          }
+          aria-describedby={`${helpId} ${statusId}`}
+          autoComplete="off"
+        />
+
+        {patientId !== "" && (
+          <button
+            className="patient-combobox-clear"
+            type="button"
+            onClick={
+              handleClear
+            }
+            disabled={!isEnabled}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <small id={helpId}>
+        Use Arrow Up and Arrow Down
+        to review suggestions, Enter
+        to select, and Escape to close.
+      </small>
 
       <p
         id={statusId}
+        className="patient-combobox-status"
         role="status"
         aria-live="polite"
-        aria-atomic="true"
       >
         {statusMessage}
       </p>
 
       {isEnabled &&
-        isOpen &&
-        !isLoading &&
-        results.length > 0 && (
-          <ul
-            id={listboxId}
-            role="listbox"
-            aria-label="Patient suggestions"
+        isOpen && (
+          <div
+            className="patient-combobox-panel"
+            data-state={
+              isLoading
+                ? "loading"
+                : hasLookupError
+                  ? "error"
+                  : results.length > 0
+                    ? "results"
+                    : "empty"
+            }
           >
-            {results.map(
-              (
-                patient,
-                index,
-              ) => (
-                <li
-                  key={patient.id}
-                  role="none"
-                >
-                  <button
-                    id={`${componentId}-patient-option-${index}`}
-                    type="button"
-                    role="option"
-                    aria-selected={
-                      index ===
-                      activeIndex
-                    }
-                    onMouseDown={event => {
-                      event.preventDefault();
-                    }}
-                    onMouseEnter={() => {
-                      setActiveIndex(
-                        index,
-                      );
-                    }}
-                    onClick={() =>
-                      handleSelect(
-                        patient,
-                      )
-                    }
-                  >
-                    {
-                      patient.displayName
-                    }
-                  </button>
-                </li>
-              ),
+            {isLoading && (
+              <p>
+                Searching patients…
+              </p>
             )}
-          </ul>
+
+            {!isLoading &&
+              hasLookupError && (
+              <p>
+                Unable to load patient
+                suggestions.
+              </p>
+            )}
+
+            {!isLoading &&
+              !hasLookupError &&
+              results.length > 0 && (
+              <ul
+                id={listboxId}
+                role="listbox"
+                aria-label="Patient suggestions"
+              >
+                {results.map(
+                  (
+                    patient,
+                    index,
+                  ) => {
+                    const isActive =
+                      index ===
+                      activeIndex;
+
+                    return (
+                      <li
+                        key={
+                          patient.id
+                        }
+                        role="none"
+                      >
+                        <button
+                          id={`${listboxId}-option-${patient.id}`}
+                          type="button"
+                          role="option"
+                          aria-selected={
+                            isActive ||
+                            patient.id ===
+                              patientId
+                          }
+                          tabIndex={-1}
+                          onMouseDown={(
+                            event,
+                          ) =>
+                            event.preventDefault()
+                          }
+                          onClick={() =>
+                            handleSelect(
+                              patient,
+                            )
+                          }
+                        >
+                          {
+                            patient.displayName
+                          }
+                        </button>
+                      </li>
+                    );
+                  },
+                )}
+              </ul>
+            )}
+
+            {!isLoading &&
+              !hasLookupError &&
+              inputValue.trim() !==
+                "" &&
+              results.length ===
+                0 && (
+              <p>
+                No matching patients.
+              </p>
+            )}
+          </div>
         )}
     </div>
   );

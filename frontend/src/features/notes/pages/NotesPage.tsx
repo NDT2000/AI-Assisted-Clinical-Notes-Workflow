@@ -1,22 +1,55 @@
-import { useCallback, useEffect, useMemo, useRef, useState, } from "react";
-import { useSearchParams } from "react-router-dom";
-
-import type { NoteSortField, SortDirection, } from "../utils/noteListSearchParams";
-import { parseNoteListSearchParams, } from "../utils/noteListSearchParams";
-import type { NoteStatus } from "../../../domain/noteAttributes";
 import {
-  canAssignReviewer,
-  canManageReviewerAssignments,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  useSearchParams,
+} from "react-router-dom";
+
+import {
+  useCurrentActor,
+} from "../../../auth/CurrentActorContext";
+import type {
+  NoteStatus,
+} from "../../../domain/noteAttributes";
+import {
   canRequestRegeneration,
 } from "../../../domain/noteGuards";
-import { CURRENT_ACTOR } from "../../../auth/currentActor";
-import type { NoteSummary, } from "../../../domain/noteSummary";
-import { getNotes } from "../api/getNotes";
-import { postAssignReviewer, postRequestRegeneration, } from "../api/bulkActions";
-import { NotesFilters } from "../components/note-list/NotesFilters";
-import { NotesTable } from "../components/note-list/NoteTable";
-import { NotesTableSkeleton } from "../components/note-list/NotesTableSkeleton";
-import { REVIEWERS, } from "../../../mock-data/generateNoteSummary";
+import type {
+  NoteSummary,
+} from "../../../domain/noteSummary";
+import {
+  REVIEWERS,
+} from "../../../mock-data/generateNoteSummary";
+import {
+  getNotes,
+} from "../api/getNotes";
+import {
+  postAssignReviewer,
+  postRequestRegeneration,
+} from "../api/bulkActions";
+import {
+  NotesFilters,
+} from "../components/note-list/NotesFilters";
+import {
+  NotesTable,
+} from "../components/note-list/NoteTable";
+import {
+  NotesTableSkeleton,
+} from "../components/note-list/NotesTableSkeleton";
+import {
+  RoleWorkspaceShortcuts,
+} from "../components/note-list/RoleWorkspaceShortcuts";
+import type {
+  NoteSortField,
+  SortDirection,
+} from "../utils/noteListSearchParams";
+import {
+  parseNoteListSearchParams,
+} from "../utils/noteListSearchParams";
 
 type ReviewerOption = {
   id: string;
@@ -24,8 +57,13 @@ type ReviewerOption = {
 };
 
 export function NotesPage() {
-  const [searchParams, setSearchParams] =
-    useSearchParams();
+  const { actor } =
+    useCurrentActor();
+
+  const [
+    searchParams,
+    setSearchParams,
+  ] = useSearchParams();
 
   const [items, setItems] =
     useState<NoteSummary[]>([]);
@@ -42,8 +80,10 @@ export function NotesPage() {
   const [isLoading, setIsLoading] =
     useState(true);
 
-  const [isLoadingMore, setIsLoadingMore] =
-    useState(false);
+  const [
+    isLoadingMore,
+    setIsLoadingMore,
+  ] = useState(false);
 
   const [error, setError] =
     useState<string | null>(null);
@@ -53,8 +93,13 @@ export function NotesPage() {
     setLoadMoreError,
   ] = useState<string | null>(null);
 
-  const [selectedIds, setSelectedIds] =
-    useState<Set<string>>(new Set());
+  const [
+    selectedIds,
+    setSelectedIds,
+  ] =
+    useState<Set<string>>(
+      new Set(),
+    );
 
   const [
     bulkActionError,
@@ -79,10 +124,13 @@ export function NotesPage() {
     [searchParamsString],
   );
 
-  const requestTokenRef = useRef(0);
+  const requestTokenRef =
+    useRef(0);
 
   const abortControllerRef =
-    useRef<AbortController | null>(null);
+    useRef<AbortController | null>(
+      null,
+    );
 
   const loadMoreInFlightRef =
     useRef(false);
@@ -118,11 +166,12 @@ export function NotesPage() {
         setError(null);
         setLoadMoreError(null);
 
-        const response = await getNotes(
-          filters,
-          null,
-          signal,
-        );
+        const response =
+          await getNotes(
+            filters,
+            null,
+            signal,
+          );
 
         if (
           requestToken !==
@@ -138,7 +187,9 @@ export function NotesPage() {
         setHasMore(
           response.cursor.hasMore,
         );
-        setTotal(response.meta.total);
+        setTotal(
+          response.meta.total,
+        );
       } catch (caughtError) {
         if (
           caughtError instanceof
@@ -203,11 +254,12 @@ export function NotesPage() {
         setIsLoadingMore(true);
         setLoadMoreError(null);
 
-        const response = await getNotes(
-          filters,
-          nextCursor,
-          signal,
-        );
+        const response =
+          await getNotes(
+            filters,
+            nextCursor,
+            signal,
+          );
 
         if (
           requestToken !==
@@ -216,26 +268,30 @@ export function NotesPage() {
           return;
         }
 
-        setItems((previousItems) => {
-          const existingIds = new Set(
-            previousItems.map(
-              (item) => item.id,
-            ),
-          );
-
-          const newItems =
-            response.items.filter(
-              (item) =>
-                !existingIds.has(
-                  item.id,
+        setItems(
+          (previousItems) => {
+            const existingIds =
+              new Set(
+                previousItems.map(
+                  (item) =>
+                    item.id,
                 ),
-            );
+              );
 
-          return [
-            ...previousItems,
-            ...newItems,
-          ];
-        });
+            const newItems =
+              response.items.filter(
+                (item) =>
+                  !existingIds.has(
+                    item.id,
+                  ),
+              );
+
+            return [
+              ...previousItems,
+              ...newItems,
+            ];
+          },
+        );
 
         setNextCursor(
           response.cursor.next,
@@ -243,7 +299,9 @@ export function NotesPage() {
         setHasMore(
           response.cursor.hasMore,
         );
-        setTotal(response.meta.total);
+        setTotal(
+          response.meta.total,
+        );
       } catch (caughtError) {
         if (
           caughtError instanceof
@@ -282,17 +340,20 @@ export function NotesPage() {
   function toggleRow(
     noteId: string,
   ) {
-    setSelectedIds((previous) => {
-      const next = new Set(previous);
+    setSelectedIds(
+      (previous) => {
+        const next =
+          new Set(previous);
 
-      if (next.has(noteId)) {
-        next.delete(noteId);
-      } else {
-        next.add(noteId);
-      }
+        if (next.has(noteId)) {
+          next.delete(noteId);
+        } else {
+          next.add(noteId);
+        }
 
-      return next;
-    });
+        return next;
+      },
+    );
   }
 
   function toggleAllVisible() {
@@ -302,19 +363,24 @@ export function NotesPage() {
         selectedIds.has(item.id),
       );
 
-    setSelectedIds((previous) => {
-      const next = new Set(previous);
+    setSelectedIds(
+      (previous) => {
+        const next =
+          new Set(previous);
 
-      for (const item of items) {
-        if (allVisibleSelected) {
-          next.delete(item.id);
-        } else {
-          next.add(item.id);
+        for (const item of items) {
+          if (
+            allVisibleSelected
+          ) {
+            next.delete(item.id);
+          } else {
+            next.add(item.id);
+          }
         }
-      }
 
-      return next;
-    });
+        return next;
+      },
+    );
   }
 
   function clearSelection() {
@@ -326,64 +392,50 @@ export function NotesPage() {
       selectedIds.has(item.id),
     );
 
-  const assignReviewerRolePermission =
-    canManageReviewerAssignments(
-      CURRENT_ACTOR.role,
-    );
-
-  const eligibleForReviewerAssignment =
-    selectedNotes.filter(note =>
-      canAssignReviewer(
-        note.status,
-        CURRENT_ACTOR.role,
-      ).allowed,
-    );
-
-  const regenerationRolePermission =
-    canRequestRegeneration(
-      "FAILED",
-      CURRENT_ACTOR.role,
-    );
-
   const eligibleForRegeneration =
-  selectedNotes.filter((note) =>
-    canRequestRegeneration(
-      note.status,
-      CURRENT_ACTOR.role,
-    ).allowed,
-  );
+    selectedNotes.filter(
+      (note) =>
+        canRequestRegeneration(
+          note.status,
+          actor.role,
+        ).allowed,
+    );
 
   const ineligibleForRegenerationCount =
     selectedNotes.length -
     eligibleForRegeneration.length;
 
   async function handleBulkAssignReviewer(
-    reviewer: ReviewerOption | null,
+    reviewer:
+      ReviewerOption | null,
   ) {
     if (
       selectedNotes.length === 0 ||
-      isBulkActionInFlight ||
-      !assignReviewerRolePermission.allowed ||
-      eligibleForReviewerAssignment.length ===
-        0
+      isBulkActionInFlight
     ) {
       return;
     }
 
-    const previousItems = items;
+    const previousItems =
+      items;
 
-    const selectedIdSet = new Set(
-      eligibleForReviewerAssignment.map(
-        note => note.id,
-      ),
-    );
+    const selectedIdSet =
+      new Set(
+        selectedNotes.map(
+          (note) => note.id,
+        ),
+      );
 
     setBulkActionError(null);
-    setIsBulkActionInFlight(true);
+    setIsBulkActionInFlight(
+      true,
+    );
 
     setItems((currentItems) =>
       currentItems.map((item) =>
-        selectedIdSet.has(item.id) &&
+        selectedIdSet.has(
+          item.id,
+        ) &&
         item.status !== "LOCKED"
           ? {
               ...item,
@@ -397,50 +449,62 @@ export function NotesPage() {
     try {
       const response =
         await postAssignReviewer(
-          Array.from(selectedIdSet),
+          Array.from(
+            selectedIdSet,
+          ),
           reviewer,
-          CURRENT_ACTOR,
+          actor,
         );
 
       const updatedIdSet =
-        new Set(response.updated);
+        new Set(
+          response.updated,
+        );
 
       setItems((currentItems) =>
-        currentItems.map((item) => {
-          if (
-            !selectedIdSet.has(
-              item.id,
-            )
-          ) {
-            return item;
-          }
-
-          if (
-            updatedIdSet.has(item.id)
-          ) {
-            return item;
-          }
-
-          const original =
-            previousItems.find(
-              (previousItem) =>
-                previousItem.id ===
+        currentItems.map(
+          (item) => {
+            if (
+              !selectedIdSet.has(
                 item.id,
-            );
+              )
+            ) {
+              return item;
+            }
 
-          return original ?? item;
-        }),
+            if (
+              updatedIdSet.has(
+                item.id,
+              )
+            ) {
+              return item;
+            }
+
+            const original =
+              previousItems.find(
+                (
+                  previousItem,
+                ) =>
+                  previousItem.id ===
+                  item.id,
+              );
+
+            return (
+              original ?? item
+            );
+          },
+        ),
       );
-    } catch (error) {
+    } catch {
       setItems(previousItems);
 
       setBulkActionError(
-        error instanceof Error
-          ? `${error.message} Changes were rolled back.`
-          : "Unable to assign reviewer. Changes were rolled back.",
+        "Unable to assign reviewer. Changes were rolled back.",
       );
     } finally {
-      setIsBulkActionInFlight(false);
+      setIsBulkActionInFlight(
+        false,
+      );
     }
   }
 
@@ -448,29 +512,35 @@ export function NotesPage() {
     if (
       eligibleForRegeneration.length ===
         0 ||
-      isBulkActionInFlight ||
-      !regenerationRolePermission.allowed
+      isBulkActionInFlight
     ) {
       return;
     }
 
-    const previousItems = items;
+    const previousItems =
+      items;
 
-    const eligibleIdSet = new Set(
-      eligibleForRegeneration.map(
-        (note) => note.id,
-      ),
-    );
+    const eligibleIdSet =
+      new Set(
+        eligibleForRegeneration.map(
+          (note) => note.id,
+        ),
+      );
 
     setBulkActionError(null);
-    setIsBulkActionInFlight(true);
+    setIsBulkActionInFlight(
+      true,
+    );
 
     setItems((currentItems) =>
       currentItems.map((item) =>
-        eligibleIdSet.has(item.id)
+        eligibleIdSet.has(
+          item.id,
+        )
           ? {
               ...item,
-              status: "GENERATING",
+              status:
+                "GENERATING",
             }
           : item,
       ),
@@ -482,55 +552,68 @@ export function NotesPage() {
           Array.from(
             eligibleIdSet,
           ),
-          CURRENT_ACTOR,
+          actor,
         );
 
       const updatedIdSet =
-        new Set(response.updated);
+        new Set(
+          response.updated,
+        );
 
       setItems((currentItems) =>
-        currentItems.map((item) => {
-          if (
-            !eligibleIdSet.has(
-              item.id,
-            )
-          ) {
-            return item;
-          }
-
-          if (
-            updatedIdSet.has(item.id)
-          ) {
-            return item;
-          }
-
-          const original =
-            previousItems.find(
-              (previousItem) =>
-                previousItem.id ===
+        currentItems.map(
+          (item) => {
+            if (
+              !eligibleIdSet.has(
                 item.id,
-            );
+              )
+            ) {
+              return item;
+            }
 
-          return original ?? item;
-        }),
+            if (
+              updatedIdSet.has(
+                item.id,
+              )
+            ) {
+              return item;
+            }
+
+            const original =
+              previousItems.find(
+                (
+                  previousItem,
+                ) =>
+                  previousItem.id ===
+                  item.id,
+              );
+
+            return (
+              original ?? item
+            );
+          },
+        ),
       );
-    } catch (error) {
+    } catch {
       setItems(previousItems);
 
       setBulkActionError(
-        error instanceof Error
-          ? `${error.message} Changes were rolled back.`
-          : "Unable to request regeneration. Changes were rolled back.",
+        "Unable to request regeneration. Changes were rolled back.",
       );
     } finally {
-      setIsBulkActionInFlight(false);
+      setIsBulkActionInFlight(
+        false,
+      );
     }
   }
 
   useEffect(() => {
     setSelectedIds(new Set());
     setBulkActionError(null);
-  }, [searchParamsString]);
+  }, [
+    actor.id,
+    searchParamsString,
+  ]);
 
   useEffect(() => {
     setItems([]);
@@ -555,7 +638,8 @@ export function NotesPage() {
 
   function updateSearchParams(
     update: (
-      nextSearchParams: URLSearchParams,
+      nextSearchParams:
+        URLSearchParams,
     ) => void,
     options?: {
       replace?: boolean;
@@ -568,7 +652,9 @@ export function NotesPage() {
 
     update(nextSearchParams);
 
-    nextSearchParams.delete("cursor");
+    nextSearchParams.delete(
+      "cursor",
+    );
 
     setSearchParams(
       nextSearchParams,
@@ -587,13 +673,55 @@ export function NotesPage() {
     value: string,
   ) {
     if (value === "") {
-      nextSearchParams.delete(name);
+      nextSearchParams.delete(
+        name,
+      );
       return;
     }
 
     nextSearchParams.set(
       name,
       value,
+    );
+  }
+
+  function handleWorkspaceView(
+    statuses: NoteStatus[],
+    reviewerId: string,
+  ) {
+    updateSearchParams(
+      (nextSearchParams) => {
+        for (
+          const parameter of [
+            "status",
+            "reviewer",
+            "patient",
+            "createdFrom",
+            "createdTo",
+            "q",
+          ]
+        ) {
+          nextSearchParams.delete(
+            parameter,
+          );
+        }
+
+        if (
+          statuses.length > 0
+        ) {
+          nextSearchParams.set(
+            "status",
+            statuses.join(","),
+          );
+        }
+
+        if (reviewerId !== "") {
+          nextSearchParams.set(
+            "reviewer",
+            reviewerId,
+          );
+        }
+      },
     );
   }
 
@@ -644,14 +772,17 @@ export function NotesPage() {
     useCallback(
       (
         patientId: string,
-        _patientDisplayName: string,
+        _patientDisplayName:
+          string,
       ) => {
         const nextSearchParams =
           new URLSearchParams(
             searchParams,
           );
 
-        if (patientId === "") {
+        if (
+          patientId === ""
+        ) {
           nextSearchParams.delete(
             "patient",
           );
@@ -743,7 +874,8 @@ export function NotesPage() {
   }
 
   function handleSortDirectionChange(
-    sortDirection: SortDirection,
+    sortDirection:
+      SortDirection,
   ) {
     updateSearchParams(
       (nextSearchParams) => {
@@ -754,6 +886,21 @@ export function NotesPage() {
       },
     );
   }
+
+  const workspaceSection = (
+    <RoleWorkspaceShortcuts
+      actor={actor}
+      activeStatuses={
+        filters.statuses
+      }
+      activeReviewerId={
+        filters.reviewerId
+      }
+      onApplyView={
+        handleWorkspaceView
+      }
+    />
+  );
 
   const filtersSection = (
     <NotesFilters
@@ -790,6 +937,8 @@ export function NotesPage() {
       <main>
         <h1>Notes</h1>
 
+        {workspaceSection}
+
         {filtersSection}
 
         <NotesTableSkeleton />
@@ -804,6 +953,8 @@ export function NotesPage() {
     return (
       <main>
         <h1>Notes</h1>
+
+        {workspaceSection}
 
         {filtersSection}
 
@@ -828,6 +979,8 @@ export function NotesPage() {
       <main>
         <h1>Notes</h1>
 
+        {workspaceSection}
+
         {filtersSection}
 
         <p>
@@ -842,6 +995,8 @@ export function NotesPage() {
   return (
     <main>
       <h1>Notes</h1>
+
+      {workspaceSection}
 
       {filtersSection}
 
@@ -864,15 +1019,6 @@ export function NotesPage() {
           isBusy={
             isBulkActionInFlight
           }
-          assignReviewerRolePermission={
-            assignReviewerRolePermission
-          }
-          eligibleForReviewerAssignmentCount={
-            eligibleForReviewerAssignment.length
-          }
-          regenerationRolePermission={
-            regenerationRolePermission
-          }
           error={bulkActionError}
           onAssignReviewer={
             handleBulkAssignReviewer
@@ -887,7 +1033,7 @@ export function NotesPage() {
       )}
 
       <NotesTable
-        key={searchParamsString}
+        key={`${actor.id}:${searchParamsString}`}
         notes={items}
         hasMore={hasMore}
         isLoadingMore={
@@ -927,9 +1073,6 @@ function BulkActionBar({
   eligibleForRegenerationCount,
   ineligibleForRegenerationCount,
   isBusy,
-  assignReviewerRolePermission,
-  eligibleForReviewerAssignmentCount,
-  regenerationRolePermission,
   error,
   onAssignReviewer,
   onRegenerate,
@@ -941,16 +1084,6 @@ function BulkActionBar({
   ineligibleForRegenerationCount:
     number;
   isBusy: boolean;
-  assignReviewerRolePermission:
-    ReturnType<
-      typeof canManageReviewerAssignments
-    >;
-  eligibleForReviewerAssignmentCount:
-    number;
-  regenerationRolePermission:
-    ReturnType<
-      typeof canRequestRegeneration
-    >;
   error: string | null;
   onAssignReviewer: (
     reviewer:
@@ -964,22 +1097,6 @@ function BulkActionBar({
     selectedReviewerId,
     setSelectedReviewerId,
   ] = useState("");
-
-  const assignPermissionReason =
-    !assignReviewerRolePermission.allowed
-      ? assignReviewerRolePermission.reason
-      : eligibleForReviewerAssignmentCount ===
-        0
-      ? "Reviewer assignment is available only for notes that are ready for review or amended."
-      : null;
-
-  const regenerationDisabledReason =
-    !regenerationRolePermission.allowed
-      ? regenerationRolePermission.reason
-      : eligibleForRegenerationCount ===
-        0
-      ? "Only FAILED notes are eligible for regeneration."
-      : null;
 
   function handleAssignClick() {
     const reviewer =
@@ -1003,23 +1120,15 @@ function BulkActionBar({
 
       <select
         aria-label="Reviewer to assign"
-        value={selectedReviewerId}
+        value={
+          selectedReviewerId
+        }
         onChange={(event) =>
           setSelectedReviewerId(
             event.target.value,
           )
         }
-        disabled={
-          isBusy ||
-          assignPermissionReason !==
-          null
-        }
-        aria-describedby={
-          assignPermissionReason !==
-          null
-            ? "bulk-assign-permission-reason"
-            : undefined
-        }
+        disabled={isBusy}
       >
         <option value="">
           Choose reviewer…
@@ -1041,44 +1150,29 @@ function BulkActionBar({
 
       <button
         type="button"
-        onClick={handleAssignClick}
+        onClick={
+          handleAssignClick
+        }
         disabled={
           isBusy ||
-          selectedReviewerId === "" ||
-          assignPermissionReason !==
-          null
-        }
-        aria-describedby={
-          assignPermissionReason !==
-          null
-            ? "bulk-assign-permission-reason"
-            : undefined
+          selectedReviewerId === ""
         }
       >
         Assign reviewer
       </button>
-
-      {assignPermissionReason !==
-      null ? (
-        <p
-          id="bulk-assign-permission-reason"
-        >
-          {assignPermissionReason}
-        </p>
-      ) : null}
 
       <button
         type="button"
         onClick={onRegenerate}
         disabled={
           isBusy ||
-          regenerationDisabledReason !==
-            null
+          eligibleForRegenerationCount ===
+            0
         }
-        aria-describedby={
-          regenerationDisabledReason !==
-          null
-            ? "bulk-regeneration-permission-reason"
+        title={
+          eligibleForRegenerationCount ===
+          0
+            ? "Only FAILED notes are eligible for regeneration."
             : undefined
         }
       >
@@ -1088,15 +1182,6 @@ function BulkActionBar({
         }
         )
       </button>
-
-      {regenerationDisabledReason !==
-      null ? (
-        <p
-          id="bulk-regeneration-permission-reason"
-        >
-          {regenerationDisabledReason}
-        </p>
-      ) : null}
 
       {ineligibleForRegenerationCount >
         0 && (
@@ -1109,7 +1194,8 @@ function BulkActionBar({
           1
             ? ""
             : "s"}{" "}
-          not eligible for regeneration.
+          not eligible for
+          regeneration (not FAILED).
         </p>
       )}
 

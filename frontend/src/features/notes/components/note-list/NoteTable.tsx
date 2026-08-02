@@ -2,7 +2,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  type CSSProperties,
 } from "react";
 import {
   useVirtualizer,
@@ -12,11 +11,15 @@ import {
 } from "react-router-dom";
 
 import type {
+  NoteStatus,
+} from "../../../../domain/noteAttributes";
+import type {
   NoteSummary,
 } from "../../../../domain/noteSummary";
 import {
   useVisibleNotesRealtime,
 } from "../../realtime/useVisibleNotesRealtime";
+import "./NoteTable.css";
 
 interface NotesTableProps {
   notes: NoteSummary[];
@@ -30,48 +33,62 @@ interface NotesTableProps {
   onToggleAllVisible: () => void;
 }
 
-const ROW_HEIGHT_PX = 44;
+const ROW_HEIGHT_PX = 56;
 const CONTAINER_HEIGHT_PX = 600;
 const LOAD_MORE_THRESHOLD = 10;
 
 const TABLE_GRID_TEMPLATE = `
-  32px
-  minmax(150px, 1.2fr)
-  minmax(160px, 1.2fr)
-  minmax(190px, 1.35fr)
-  minmax(80px, 0.55fr)
-  minmax(210px, 1.45fr)
-  minmax(80px, 0.55fr)
+  42px
+  minmax(150px, 1.1fr)
+  minmax(150px, 1fr)
+  minmax(170px, 1.15fr)
+  minmax(72px, 0.45fr)
+  minmax(180px, 1.15fr)
+  minmax(180px, 1.15fr)
+  minmax(88px, 0.55fr)
 `;
 
-const TABLE_MIN_WIDTH_PX = 980;
-
-const CELL_STYLE:
-  CSSProperties = {
-    minWidth: 0,
-    padding: "0 8px",
-    boxSizing:
-      "border-box",
-    overflow: "hidden",
-    textOverflow:
-      "ellipsis",
-    whiteSpace: "nowrap",
-  };
-
-const HEADER_CELL_STYLE:
-  CSSProperties = {
-    ...CELL_STYLE,
-    fontWeight: "bold",
-  };
+const TABLE_MIN_WIDTH_PX = 1240;
 
 const COLUMNS = [
   "Patient",
   "Status",
   "Assigned reviewer",
   "Revision",
+  "Created time",
   "Updated time",
   "Action",
 ];
+
+function formatStatus(
+  status: NoteStatus,
+): string {
+  return status
+    .toLowerCase()
+    .split("_")
+    .map(
+      (part) =>
+        part.charAt(0).toUpperCase() +
+        part.slice(1),
+    )
+    .join(" ");
+}
+
+function formatDateTime(
+  value: string,
+): string {
+  return new Date(
+    value,
+  ).toLocaleString();
+}
+
+function getStatusClassName(
+  status: NoteStatus,
+): string {
+  return status
+    .toLowerCase()
+    .replaceAll("_", "-");
+}
 
 export function NotesTable({
   notes,
@@ -110,7 +127,7 @@ export function NotesTable({
       () =>
         virtualRows
           .map(
-            virtualRow =>
+            (virtualRow) =>
               notes[
                 virtualRow.index
               ]?.id,
@@ -133,33 +150,32 @@ export function NotesTable({
       visibleNoteIds,
     );
 
-  const allLoadedSelected =
-    notes.length > 0 &&
-    notes.every(note =>
-      selectedIds.has(
-        note.id,
-      ),
+  const selectedVisibleCount =
+    notes.reduce(
+      (count, note) =>
+        selectedIds.has(note.id)
+          ? count + 1
+          : count,
+      0,
     );
 
-  const someLoadedSelected =
-    notes.some(note =>
-      selectedIds.has(
-        note.id,
-      ),
-    );
+  const allVisibleSelected =
+    notes.length > 0 &&
+    selectedVisibleCount ===
+      notes.length;
+
+  const someVisibleSelected =
+    selectedVisibleCount > 0 &&
+    !allVisibleSelected;
 
   useEffect(() => {
     if (
-      selectAllRef.current
+      selectAllRef.current !== null
     ) {
       selectAllRef.current.indeterminate =
-        someLoadedSelected &&
-        !allLoadedSelected;
+        someVisibleSelected;
     }
-  }, [
-    allLoadedSelected,
-    someLoadedSelected,
-  ]);
+  }, [someVisibleSelected]);
 
   useEffect(() => {
     const lastVirtualRow =
@@ -168,8 +184,7 @@ export function NotesTable({
       ];
 
     if (
-      lastVirtualRow ===
-      undefined
+      lastVirtualRow === undefined
     ) {
       return;
     }
@@ -197,67 +212,64 @@ export function NotesTable({
 
   return (
     <section
+      className="notes-table-section"
       aria-labelledby="notes-table-heading"
-      aria-describedby="notes-table-instructions"
     >
-      <h2 id="notes-table-heading">
-        Notes results
-      </h2>
+      <div className="notes-table-heading">
+        <div>
+          <h2 id="notes-table-heading">
+            Notes list
+          </h2>
 
-      <p id="notes-table-instructions">
-        The results are virtualized. Use
-        Tab to move between selection
-        controls and note links. Scroll
-        the results region to load and
-        display additional rows.
-      </p>
+          <p>
+            Creation and update times
+            are shown separately so date
+            filters can be verified.
+          </p>
+        </div>
 
-      <div
-        style={{
-          overflowX: "auto",
-        }}
-      >
+        {selectedVisibleCount >
+          0 && (
+          <span className="notes-table-selection-count">
+            {selectedVisibleCount} selected
+          </span>
+        )}
+      </div>
+
+      <div className="notes-table-horizontal-scroll">
         <div
+          className="notes-table"
           role="table"
           aria-label="Notes"
           aria-rowcount={
-            displayedNotes.length +
-            1
+            displayedNotes.length + 1
           }
-          aria-colcount={7}
+          aria-colcount={8}
           style={{
             minWidth:
               TABLE_MIN_WIDTH_PX,
           }}
         >
           <div
+            className="notes-table-header"
             role="row"
             aria-rowindex={1}
             style={{
-              display: "grid",
               gridTemplateColumns:
                 TABLE_GRID_TEMPLATE,
-              columnGap: 12,
-              alignItems:
-                "center",
-              minHeight:
-                ROW_HEIGHT_PX,
             }}
           >
             <div
+              className="notes-table-cell notes-table-select-cell"
               role="columnheader"
               aria-colindex={1}
-              aria-label="Selection"
-              style={
-                CELL_STYLE
-              }
             >
               <input
                 ref={selectAllRef}
                 type="checkbox"
                 aria-label="Select all loaded notes"
                 checked={
-                  allLoadedSelected
+                  allVisibleSelected
                 }
                 onChange={
                   onToggleAllVisible
@@ -266,18 +278,13 @@ export function NotesTable({
             </div>
 
             {COLUMNS.map(
-              (
-                column,
-                index,
-              ) => (
+              (column, index) => (
                 <div
                   key={column}
+                  className="notes-table-cell notes-table-header-cell"
                   role="columnheader"
                   aria-colindex={
                     index + 2
-                  }
-                  style={
-                    HEADER_CELL_STYLE
                   }
                 >
                   {column}
@@ -287,43 +294,29 @@ export function NotesTable({
           </div>
 
           <div
-            ref={
-              scrollContainerRef
-            }
+            ref={scrollContainerRef}
+            className="notes-table-scroll-region"
             role="region"
-            aria-label="Scrollable notes results"
+            aria-label="Scrollable notes rows"
             tabIndex={0}
-            style={{
-              height:
-                CONTAINER_HEIGHT_PX,
-              overflowY:
-                "auto",
-              position:
-                "relative",
-            }}
           >
             <div
-              role="rowgroup"
+              className="notes-table-virtual-space"
               style={{
                 height:
                   rowVirtualizer
                     .getTotalSize(),
-                position:
-                  "relative",
-                width: "100%",
               }}
             >
               {virtualRows.map(
-                virtualRow => {
+                (virtualRow) => {
                   const note =
                     displayedNotes[
-                      virtualRow
-                        .index
+                      virtualRow.index
                     ];
 
                   if (
-                    note ===
-                    undefined
+                    note === undefined
                   ) {
                     return null;
                   }
@@ -333,57 +326,56 @@ export function NotesTable({
                       ?.displayName ??
                     "Unassigned";
 
+                  const createdAtLabel =
+                    formatDateTime(
+                      note.createdAt,
+                    );
+
                   const updatedAtLabel =
-                    new Date(
+                    formatDateTime(
                       note.updatedAt,
-                    ).toLocaleString();
+                    );
+
+                  const isSelected =
+                    selectedIds.has(
+                      note.id,
+                    );
 
                   return (
                     <div
                       key={note.id}
+                      className="notes-table-row"
                       role="row"
                       aria-rowindex={
-                        virtualRow
-                          .index +
+                        virtualRow.index +
                         2
                       }
+                      data-selected={
+                        isSelected
+                          ? "true"
+                          : "false"
+                      }
                       data-index={
-                        virtualRow
-                          .index
+                        virtualRow.index
                       }
                       style={{
-                        position:
-                          "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
                         height:
-                          virtualRow
-                            .size,
+                          virtualRow.size,
                         transform:
                           `translateY(${virtualRow.start}px)`,
-                        display:
-                          "grid",
                         gridTemplateColumns:
                           TABLE_GRID_TEMPLATE,
-                        columnGap: 12,
-                        alignItems:
-                          "center",
                       }}
                     >
                       <div
+                        className="notes-table-cell notes-table-select-cell"
                         role="cell"
                         aria-colindex={1}
-                        style={
-                          CELL_STYLE
-                        }
                       >
                         <input
                           type="checkbox"
                           aria-label={`Select note for ${note.patient.displayName}`}
-                          checked={selectedIds.has(
-                            note.id,
-                          )}
+                          checked={isSelected}
                           onChange={() =>
                             onToggleRow(
                               note.id,
@@ -393,11 +385,9 @@ export function NotesTable({
                       </div>
 
                       <div
+                        className="notes-table-cell notes-table-patient"
                         role="cell"
                         aria-colindex={2}
-                        style={
-                          CELL_STYLE
-                        }
                         title={
                           note.patient
                             .displayName
@@ -410,24 +400,28 @@ export function NotesTable({
                       </div>
 
                       <div
+                        className="notes-table-cell"
                         role="cell"
                         aria-colindex={3}
-                        style={
-                          CELL_STYLE
-                        }
-                        title={
-                          note.status
-                        }
                       >
-                        {note.status}
+                        <span
+                          className={`notes-status-badge notes-status-${getStatusClassName(
+                            note.status,
+                          )}`}
+                          title={note.status}
+                        >
+                          {
+                            formatStatus(
+                              note.status,
+                            )
+                          }
+                        </span>
                       </div>
 
                       <div
+                        className="notes-table-cell"
                         role="cell"
                         aria-colindex={4}
-                        style={
-                          CELL_STYLE
-                        }
                         title={
                           reviewerName
                         }
@@ -436,16 +430,15 @@ export function NotesTable({
                       </div>
 
                       <div
+                        className="notes-table-cell notes-table-revision"
                         role="cell"
                         aria-colindex={5}
-                        style={
-                          CELL_STYLE
-                        }
                         title={String(
                           note.currentVersion
                             .revision,
                         )}
                       >
+                        Rev.{" "}
                         {
                           note.currentVersion
                             .revision
@@ -453,28 +446,46 @@ export function NotesTable({
                       </div>
 
                       <div
+                        className="notes-table-cell notes-table-date"
                         role="cell"
                         aria-colindex={6}
-                        style={
-                          CELL_STYLE
+                        title={
+                          createdAtLabel
                         }
+                      >
+                        <time
+                          dateTime={
+                            note.createdAt
+                          }
+                        >
+                          {createdAtLabel}
+                        </time>
+                      </div>
+
+                      <div
+                        className="notes-table-cell notes-table-date"
+                        role="cell"
+                        aria-colindex={7}
                         title={
                           updatedAtLabel
                         }
                       >
-                        {
-                          updatedAtLabel
-                        }
+                        <time
+                          dateTime={
+                            note.updatedAt
+                          }
+                        >
+                          {updatedAtLabel}
+                        </time>
                       </div>
 
                       <div
+                        className="notes-table-cell notes-table-action"
                         role="cell"
-                        aria-colindex={7}
-                        style={
-                          CELL_STYLE
-                        }
+                        aria-colindex={8}
                       >
                         <Link
+                          className="notes-table-open-link"
                           to={`/notes/${note.id}`}
                           aria-label={`Open note for ${note.patient.displayName}`}
                         >
@@ -492,9 +503,9 @@ export function NotesTable({
 
       {isLoadingMore && (
         <p
+          className="notes-table-loading"
           role="status"
           aria-live="polite"
-          aria-atomic="true"
         >
           Loading more notes…
         </p>

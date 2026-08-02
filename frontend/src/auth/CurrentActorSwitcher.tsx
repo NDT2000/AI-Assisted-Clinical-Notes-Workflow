@@ -1,8 +1,3 @@
-import {
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
-
 import type {
   UserRole,
 } from "../domain/noteAttributes";
@@ -35,9 +30,6 @@ export function CurrentActorSwitcher() {
     setActorById,
   } = useCurrentActor();
 
-  const location = useLocation();
-  const navigate = useNavigate();
-
   function handleActorChange(
     actorId: string,
   ) {
@@ -46,14 +38,6 @@ export function CurrentActorSwitcher() {
     }
 
     setActorById(actorId);
-
-    if (
-      location.pathname.startsWith(
-        "/notes/",
-      )
-    ) {
-      navigate("/notes");
-    }
   }
 
   return (
@@ -109,16 +93,18 @@ export function CurrentActorSwitcher() {
           role="status"
           aria-live="polite"
         >
-          Role:{" "}
+          Viewing this page as{" "}
           <strong>
-            {
-              getRoleLabel(
-                actor.role,
-              )
-            }
+            {actor.displayName}
           </strong>
-          . Each browser tab keeps
-          its own demo identity.
+          {" — "}
+          {
+            getRoleLabel(
+              actor.role,
+            )
+          }
+          . Permissions and available
+          actions update immediately.
         </p>
       </div>
     </header>
