@@ -1,4 +1,7 @@
-import { saveNoteVersion } from "../api/saveNoteVersion";
+import {
+  SaveNoteVersionRequestError,
+  saveNoteVersion,
+} from "../api/saveNoteVersion";
 
 import {
   getOldestQueuedSave,
@@ -7,16 +10,21 @@ import {
   type PersistedQueuedNoteVersionSave,
 } from "./offlineRepository";
 
+export const DEFAULT_MAX_REPLAY_RETRIES = 3;
+
 export type OfflineSaveReplayStatus =
   | "idle"
   | "offline"
   | "replaying"
+  | "retrying"
   | "paused-error";
 
 export interface OfflineSaveReplaySnapshot {
   status: OfflineSaveReplayStatus;
   currentSequence: number | null;
   replayedCount: number;
+  retryCount: number;
+  nextRetryDelayMs: number | null;
   lastError: string | null;
 }
 
@@ -45,13 +53,94 @@ export interface OfflineSaveReplayDependencies {
     sequence: number,
   ) => Promise<void>;
 
-  recordSaveAttemptFailure: typeof recordSaveAttemptFailure;
+  recordSaveAttemptFailure:
+    typeof recordSaveAttemptFailure;
 
   saveNoteVersion: typeof saveNoteVersion;
 
   isOnline: () => boolean;
 
-  eventTarget: OfflineReplayEventTarget | null;
+  eventTarget:
+    | OfflineReplayEventTarget
+    | null;
+
+  sleep: (
+    delayMs: number,
+    signal: AbortSignal,
+  ) => Promise<void>;
+
+  getRetryDelayMs: (
+    retryCount: number,
+  ) => number;
+
+  maxRetryCount: number;
+}
+
+function createAbortError(): DOMException {
+  return new DOMException(
+    "The operation was aborted.",
+    "AbortError",
+  );
+}
+
+function sleepWithAbort(
+  delayMs: number,
+  signal: AbortSignal,
+): Promise<void> {
+  if (signal.aborted) {
+    return Promise.reject(
+      createAbortError(),
+    );
+  }
+
+  return new Promise<void>(
+    (resolve, reject) => {
+      const timeoutId = window.setTimeout(
+        () => {
+          signal.removeEventListener(
+            "abort",
+            handleAbort,
+          );
+
+          resolve();
+        },
+        delayMs,
+      );
+
+      function handleAbort(): void {
+        window.clearTimeout(timeoutId);
+
+        signal.removeEventListener(
+          "abort",
+          handleAbort,
+        );
+
+        reject(createAbortError());
+      }
+
+      signal.addEventListener(
+        "abort",
+        handleAbort,
+        {
+          once: true,
+        },
+      );
+    },
+  );
+}
+
+export function getOfflineReplayBackoffDelayMs(
+  retryCount: number,
+): number {
+  const normalizedRetryCount =
+    Math.max(1, retryCount);
+
+  return Math.min(
+    250 *
+      2 **
+        (normalizedRetryCount - 1),
+    1_000,
+  );
 }
 
 function createDefaultDependencies(): OfflineSaveReplayDependencies {
@@ -69,6 +158,14 @@ function createDefaultDependencies(): OfflineSaveReplayDependencies {
       typeof window === "undefined"
         ? null
         : window,
+
+    sleep: sleepWithAbort,
+
+    getRetryDelayMs:
+      getOfflineReplayBackoffDelayMs,
+
+    maxRetryCount:
+      DEFAULT_MAX_REPLAY_RETRIES,
   };
 }
 
@@ -81,6 +178,26 @@ function isAbortError(
     "name" in error &&
     error.name === "AbortError"
   );
+}
+
+function isRetryableReplayError(
+  error: unknown,
+): boolean {
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  if (
+    error instanceof
+    SaveNoteVersionRequestError
+  ) {
+    return (
+      error.status >= 500 ||
+      error.code === "internal_error"
+    );
+  }
+
+  return false;
 }
 
 function getErrorMessage(
@@ -103,7 +220,8 @@ export class OfflineSaveReplayCoordinator {
   private readonly listeners =
     new Set<OfflineSaveReplayListener>();
 
-  private snapshot: OfflineSaveReplaySnapshot;
+  private snapshot:
+    OfflineSaveReplaySnapshot;
 
   private started = false;
 
@@ -126,11 +244,15 @@ export class OfflineSaveReplayCoordinator {
     };
 
     this.snapshot = {
-      status: this.dependencies.isOnline()
-        ? "idle"
-        : "offline",
+      status:
+        this.dependencies.isOnline()
+          ? "idle"
+          : "offline",
+
       currentSequence: null,
       replayedCount: 0,
+      retryCount: 0,
+      nextRetryDelayMs: null,
       lastError: null,
     };
   }
@@ -170,6 +292,7 @@ export class OfflineSaveReplayCoordinator {
       this.updateSnapshot({
         status: "offline",
         currentSequence: null,
+        nextRetryDelayMs: null,
       });
 
       return;
@@ -205,6 +328,7 @@ export class OfflineSaveReplayCoordinator {
       this.updateSnapshot({
         status: "offline",
         currentSequence: null,
+        nextRetryDelayMs: null,
       });
 
       return Promise.resolve();
@@ -273,6 +397,7 @@ export class OfflineSaveReplayCoordinator {
       this.updateSnapshot({
         status: "offline",
         currentSequence: null,
+        nextRetryDelayMs: null,
       });
     };
 
@@ -282,6 +407,8 @@ export class OfflineSaveReplayCoordinator {
     this.updateSnapshot({
       status: "replaying",
       currentSequence: null,
+      retryCount: 0,
+      nextRetryDelayMs: null,
       lastError: null,
     });
 
@@ -290,6 +417,7 @@ export class OfflineSaveReplayCoordinator {
         this.updateSnapshot({
           status: "offline",
           currentSequence: null,
+          nextRetryDelayMs: null,
         });
 
         return;
@@ -307,6 +435,8 @@ export class OfflineSaveReplayCoordinator {
         this.updateSnapshot({
           status: "idle",
           currentSequence: null,
+          retryCount: 0,
+          nextRetryDelayMs: null,
           lastError: null,
         });
 
@@ -315,7 +445,11 @@ export class OfflineSaveReplayCoordinator {
 
       this.updateSnapshot({
         status: "replaying",
-        currentSequence: entry.sequence,
+        currentSequence:
+          entry.sequence,
+        retryCount:
+          entry.retryCount,
+        nextRetryDelayMs: null,
         lastError: null,
       });
 
@@ -341,7 +475,10 @@ export class OfflineSaveReplayCoordinator {
           status: "replaying",
           currentSequence: null,
           replayedCount:
-            this.snapshot.replayedCount + 1,
+            this.snapshot.replayedCount +
+            1,
+          retryCount: 0,
+          nextRetryDelayMs: null,
           lastError: null,
         });
       } catch (error) {
@@ -355,20 +492,128 @@ export class OfflineSaveReplayCoordinator {
         const errorMessage =
           getErrorMessage(error);
 
-        await this.dependencies
-          .recordSaveAttemptFailure(
-            entry.sequence,
-            errorMessage,
-          );
+        const updatedEntry =
+          await this.dependencies
+            .recordSaveAttemptFailure(
+              entry.sequence,
+              errorMessage,
+            );
+
+        if (signal.aborted) {
+          return;
+        }
+
+        if (updatedEntry === null) {
+          continue;
+        }
+
+        if (
+          !this.dependencies.isOnline()
+        ) {
+          this.updateSnapshot({
+            status: "offline",
+            currentSequence: null,
+            retryCount:
+              updatedEntry.retryCount,
+            nextRetryDelayMs: null,
+            lastError: errorMessage,
+          });
+
+          return;
+        }
+
+        const shouldRetry =
+          isRetryableReplayError(
+            error,
+          ) &&
+          updatedEntry.retryCount <=
+            this.dependencies
+              .maxRetryCount;
+
+        if (!shouldRetry) {
+          this.updateSnapshot({
+            status: "paused-error",
+            currentSequence:
+              updatedEntry.sequence,
+            retryCount:
+              updatedEntry.retryCount,
+            nextRetryDelayMs: null,
+            lastError: errorMessage,
+          });
+
+          return;
+        }
+
+        const retryDelayMs =
+          this.dependencies
+            .getRetryDelayMs(
+              updatedEntry.retryCount,
+            );
 
         this.updateSnapshot({
-          status: "paused-error",
+          status: "retrying",
           currentSequence:
-            entry.sequence,
+            updatedEntry.sequence,
+          retryCount:
+            updatedEntry.retryCount,
+          nextRetryDelayMs:
+            retryDelayMs,
           lastError: errorMessage,
         });
 
-        return;
+        try {
+          await this.dependencies.sleep(
+            retryDelayMs,
+            signal,
+          );
+        } catch (sleepError) {
+          if (
+            signal.aborted ||
+            isAbortError(sleepError)
+          ) {
+            return;
+          }
+
+          this.updateSnapshot({
+            status: "paused-error",
+            currentSequence:
+              updatedEntry.sequence,
+            retryCount:
+              updatedEntry.retryCount,
+            nextRetryDelayMs: null,
+            lastError:
+              getErrorMessage(
+                sleepError,
+              ),
+          });
+
+          return;
+        }
+
+        if (signal.aborted) {
+          return;
+        }
+
+        if (
+          !this.dependencies.isOnline()
+        ) {
+          this.updateSnapshot({
+            status: "offline",
+            currentSequence: null,
+            nextRetryDelayMs: null,
+          });
+
+          return;
+        }
+
+        this.updateSnapshot({
+          status: "replaying",
+          currentSequence:
+            updatedEntry.sequence,
+          retryCount:
+            updatedEntry.retryCount,
+          nextRetryDelayMs: null,
+        });
       }
     }
   }

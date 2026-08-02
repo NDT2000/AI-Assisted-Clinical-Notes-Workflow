@@ -7,12 +7,17 @@ import {
 
 import type { SaveNoteVersionResponse } from "../../../../domain/noteSave";
 
+import {
+  SaveNoteVersionRequestError,
+} from "../../api/saveNoteVersion";
+
 import type {
   PersistedQueuedNoteVersionSave,
 } from "../offlineRepository";
 
 import {
   OfflineSaveReplayCoordinator,
+  getOfflineReplayBackoffDelayMs,
   type OfflineSaveReplayDependencies,
 } from "../offlineSaveReplay";
 
@@ -78,10 +83,17 @@ function createEntry(
         `mutation-${sequence}`,
 
       content: {
-        subjective: `Subjective ${sequence}`,
-        objective: `Objective ${sequence}`,
-        assessment: `Assessment ${sequence}`,
-        plan: `Plan ${sequence}`,
+        subjective:
+          `Subjective ${sequence}`,
+
+        objective:
+          `Objective ${sequence}`,
+
+        assessment:
+          `Assessment ${sequence}`,
+
+        plan:
+          `Plan ${sequence}`,
       },
     },
 
@@ -131,9 +143,88 @@ function createDependencies(
 
     eventTarget: null,
 
+    sleep:
+      async () => undefined,
+
+    getRetryDelayMs:
+      getOfflineReplayBackoffDelayMs,
+
+    maxRetryCount: 3,
+
     ...overrides,
   };
 }
+
+function recordFailureForEntry(
+  getEntry: () =>
+    PersistedQueuedNoteVersionSave,
+  setEntry: (
+    entry:
+      PersistedQueuedNoteVersionSave,
+  ) => void,
+): OfflineSaveReplayDependencies["recordSaveAttemptFailure"] {
+  return async (
+    sequence,
+    errorMessage,
+    attemptedAt = Date.now(),
+  ) => {
+    const existing =
+      getEntry();
+
+    expect(
+      existing.sequence,
+    ).toBe(sequence);
+
+    const updated:
+      PersistedQueuedNoteVersionSave = {
+        ...existing,
+
+        retryCount:
+          existing.retryCount + 1,
+
+        lastAttemptAt: attemptedAt,
+        lastError: errorMessage,
+      };
+
+    setEntry(updated);
+
+    return updated;
+  };
+}
+
+describe(
+  "getOfflineReplayBackoffDelayMs",
+  () => {
+    it(
+      "returns capped exponential delays",
+      () => {
+        expect(
+          getOfflineReplayBackoffDelayMs(
+            1,
+          ),
+        ).toBe(250);
+
+        expect(
+          getOfflineReplayBackoffDelayMs(
+            2,
+          ),
+        ).toBe(500);
+
+        expect(
+          getOfflineReplayBackoffDelayMs(
+            3,
+          ),
+        ).toBe(1_000);
+
+        expect(
+          getOfflineReplayBackoffDelayMs(
+            4,
+          ),
+        ).toBe(1_000);
+      },
+    );
+  },
+);
 
 describe(
   "OfflineSaveReplayCoordinator",
@@ -168,7 +259,9 @@ describe(
                   const entry =
                     entries[0];
 
-                  if (entry === undefined) {
+                  if (
+                    entry === undefined
+                  ) {
                     throw new Error(
                       "Expected a queued entry.",
                     );
@@ -233,6 +326,8 @@ describe(
           status: "idle",
           currentSequence: null,
           replayedCount: 3,
+          retryCount: 0,
+          nextRetryDelayMs: null,
           lastError: null,
         });
       },
@@ -248,7 +343,8 @@ describe(
           | null = entry;
 
         let releaseSave:
-          () => void = () => undefined;
+          () => void =
+            () => undefined;
 
         const saveGate =
           new Promise<void>(resolve => {
@@ -312,25 +408,40 @@ describe(
     );
 
     it(
-      "keeps a failed entry and pauses replay",
+      "retries the same entry with exponential backoff before continuing",
       async () => {
-        const firstEntry =
-          createEntry(1);
+        let currentEntry:
+          | PersistedQueuedNoteVersionSave
+          | null = createEntry(1);
 
-        const secondEntry =
-          createEntry(2);
+        let saveAttempt = 0;
 
-        const entries = [
-          firstEntry,
-          secondEntry,
-        ];
-
-        const removedSequences:
+        const retryDelays:
           number[] = [];
 
-        const recordFailureMock =
+        const saveNoteVersionMock =
           vi.fn(
-            async () => firstEntry,
+            async () => {
+              saveAttempt += 1;
+
+              if (saveAttempt <= 2) {
+                throw new TypeError(
+                  "Network request failed.",
+                );
+              }
+
+              if (
+                currentEntry === null
+              ) {
+                throw new Error(
+                  "Expected a queued entry.",
+                );
+              }
+
+              return createSaveResponse(
+                currentEntry,
+              );
+            },
           );
 
         const coordinator =
@@ -338,12 +449,121 @@ describe(
             createDependencies({
               getOldestQueuedSave:
                 async () =>
-                  entries[0] ?? null,
+                  currentEntry,
 
               saveNoteVersion:
-                async () => {
-                  throw new TypeError(
-                    "Network request failed.",
+                saveNoteVersionMock,
+
+              recordSaveAttemptFailure:
+                recordFailureForEntry(
+                  () => {
+                    if (
+                      currentEntry ===
+                      null
+                    ) {
+                      throw new Error(
+                        "Expected a queued entry.",
+                      );
+                    }
+
+                    return currentEntry;
+                  },
+
+                  updatedEntry => {
+                    currentEntry =
+                      updatedEntry;
+                  },
+                ),
+
+              sleep:
+                async delayMs => {
+                  retryDelays.push(
+                    delayMs,
+                  );
+                },
+
+              removeQueuedSave:
+                async sequence => {
+                  expect(sequence).toBe(
+                    1,
+                  );
+
+                  currentEntry = null;
+                },
+            }),
+          );
+
+        await coordinator.replay();
+
+        expect(
+          saveNoteVersionMock,
+        ).toHaveBeenCalledTimes(3);
+
+        expect(
+          retryDelays,
+        ).toEqual([250, 500]);
+
+        expect(
+          coordinator.getSnapshot(),
+        ).toMatchObject({
+          status: "idle",
+          currentSequence: null,
+          replayedCount: 1,
+          retryCount: 0,
+          nextRetryDelayMs: null,
+          lastError: null,
+        });
+      },
+    );
+
+    it(
+      "pauses after the retry limit without processing a later entry",
+      async () => {
+        let firstEntry =
+          createEntry(1);
+
+        const secondEntry =
+          createEntry(2);
+
+        const removedSequences:
+          number[] = [];
+
+        const retryDelays:
+          number[] = [];
+
+        const saveNoteVersionMock =
+          vi.fn(
+            async () => {
+              throw new TypeError(
+                "Network request failed.",
+              );
+            },
+          );
+
+        const coordinator =
+          new OfflineSaveReplayCoordinator(
+            createDependencies({
+              getOldestQueuedSave:
+                async () =>
+                  firstEntry,
+
+              saveNoteVersion:
+                saveNoteVersionMock,
+
+              recordSaveAttemptFailure:
+                recordFailureForEntry(
+                  () => firstEntry,
+
+                  updatedEntry => {
+                    firstEntry =
+                      updatedEntry;
+                  },
+                ),
+
+              sleep:
+                async delayMs => {
+                  retryDelays.push(
+                    delayMs,
                   );
                 },
 
@@ -353,23 +573,31 @@ describe(
                     sequence,
                   );
                 },
-
-              recordSaveAttemptFailure:
-                recordFailureMock,
             }),
           );
 
         await coordinator.replay();
 
         expect(
+          saveNoteVersionMock,
+        ).toHaveBeenCalledTimes(4);
+
+        expect(
+          retryDelays,
+        ).toEqual([
+          250,
+          500,
+          1_000,
+        ]);
+
+        expect(
           removedSequences,
         ).toEqual([]);
 
         expect(
-          recordFailureMock,
-        ).toHaveBeenCalledWith(
-          1,
-          "Network request failed.",
+          firstEntry.sequence,
+        ).toBeLessThan(
+          secondEntry.sequence,
         );
 
         expect(
@@ -378,8 +606,85 @@ describe(
           status: "paused-error",
           currentSequence: 1,
           replayedCount: 0,
+          retryCount: 4,
+          nextRetryDelayMs: null,
           lastError:
             "Network request failed.",
+        });
+      },
+    );
+
+    it(
+      "does not retry a terminal server error",
+      async () => {
+        let entry =
+          createEntry(1);
+
+        const sleepMock =
+          vi.fn(
+            async () => undefined,
+          );
+
+        const removeQueuedSaveMock =
+          vi.fn(
+            async () => undefined,
+          );
+
+        const coordinator =
+          new OfflineSaveReplayCoordinator(
+            createDependencies({
+              getOldestQueuedSave:
+                async () => entry,
+
+              saveNoteVersion:
+                async () => {
+                  throw new SaveNoteVersionRequestError(
+                    {
+                      status: 403,
+                      code: "forbidden",
+                      message:
+                        "You are not allowed to save this note.",
+                    },
+                  );
+                },
+
+              recordSaveAttemptFailure:
+                recordFailureForEntry(
+                  () => entry,
+
+                  updatedEntry => {
+                    entry =
+                      updatedEntry;
+                  },
+                ),
+
+              sleep: sleepMock,
+
+              removeQueuedSave:
+                removeQueuedSaveMock,
+            }),
+          );
+
+        await coordinator.replay();
+
+        expect(
+          sleepMock,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          removeQueuedSaveMock,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          coordinator.getSnapshot(),
+        ).toMatchObject({
+          status: "paused-error",
+          currentSequence: 1,
+          replayedCount: 0,
+          retryCount: 1,
+          nextRetryDelayMs: null,
+          lastError:
+            "You are not allowed to save this note.",
         });
       },
     );
