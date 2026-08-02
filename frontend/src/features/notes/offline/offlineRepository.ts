@@ -33,6 +33,12 @@ export interface QueueLatestNoteVersionSaveInput {
   queuedAt?: number;
 }
 
+export interface ReplaceBlockedSaveWithResolutionInput {
+  sequence: number;
+  request: QueuedNoteVersionSave["request"];
+  queuedAt?: number;
+}
+
 function requirePersistedSequence(
   entry: QueuedNoteVersionSave,
 ): PersistedQueuedNoteVersionSave {
@@ -284,6 +290,55 @@ export async function markSaveConflict(
     lastAttemptAt: attemptedAt,
     lastError: conflict.message,
     conflict,
+  };
+
+  await transaction.store.put(updated);
+  await transaction.done;
+
+  return requirePersistedSequence(updated);
+}
+
+export async function replaceBlockedSaveWithResolution(
+  input: ReplaceBlockedSaveWithResolutionInput,
+): Promise<PersistedQueuedNoteVersionSave | null> {
+  const database = await getOfflineDatabase();
+
+  const transaction = database.transaction(
+    NOTE_VERSION_SAVE_QUEUE_STORE,
+    "readwrite",
+  );
+
+  const existing =
+    await transaction.store.get(
+      input.sequence,
+    );
+
+  if (
+    existing === undefined ||
+    existing.state !== "blocked-conflict"
+  ) {
+    await transaction.done;
+    return null;
+  }
+
+  const updated: QueuedNoteVersionSave = {
+    ...existing,
+
+    request: {
+      ...input.request,
+      content: {
+        ...input.request.content,
+      },
+    },
+
+    queuedAt:
+      input.queuedAt ?? Date.now(),
+
+    state: "queued",
+    retryCount: 0,
+    lastAttemptAt: null,
+    lastError: null,
+    conflict: null,
   };
 
   await transaction.store.put(updated);

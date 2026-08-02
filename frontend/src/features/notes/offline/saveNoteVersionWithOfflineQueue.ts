@@ -14,6 +14,10 @@ import {
   type PersistedQueuedNoteVersionSave,
 } from "./offlineRepository";
 
+import {
+  offlineSaveReplayCoordinator,
+} from "./offlineSaveReplay";
+
 export type OfflineAwareSaveResult =
   | {
       kind: "saved";
@@ -70,12 +74,14 @@ async function queueSave(
 
       request: {
         ...request,
-
         content: {
           ...request.content,
         },
       },
     });
+
+  offlineSaveReplayCoordinator
+    .notifyQueueChanged();
 
   return {
     kind: "queued",
@@ -102,12 +108,13 @@ export async function saveNoteVersionWithOfflineQueue(
   }
 
   try {
-    const response = await saveNoteVersion(
-      noteId,
-      actor,
-      request,
-      signal,
-    );
+    const response =
+      await saveNoteVersion(
+        noteId,
+        actor,
+        request,
+        signal,
+      );
 
     return {
       kind: "saved",

@@ -159,6 +159,9 @@ function createDependencies(
   overrides: Partial<OfflineSaveReplayDependencies> = {},
 ): OfflineSaveReplayDependencies {
   return {
+    getQueuedSaves:
+      async () => [],
+
     getOldestQueuedSave:
       async () => null,
 
@@ -169,6 +172,9 @@ function createDependencies(
       async () => null,
 
     markSaveConflict:
+      async () => null,
+
+    replaceBlockedSaveWithResolution:
       async () => null,
 
     saveNoteVersion:
@@ -193,6 +199,9 @@ function createDependencies(
       getOfflineReplayBackoffDelayMs,
 
     maxRetryCount: 3,
+
+    createClientMutationId:
+      () => "offline-resolution-test",
 
     ...overrides,
   };
@@ -974,16 +983,16 @@ describe(
 
         eventTarget.dispatch("online");
 
-        await coordinator.replay();
+        await vi.waitFor(() => {
+          expect(
+            saveNoteVersionMock,
+          ).toHaveBeenCalledTimes(1);
 
-        expect(
-          saveNoteVersionMock,
-        ).toHaveBeenCalledTimes(1);
-
-        expect(
-          coordinator.getSnapshot()
-            .status,
-        ).toBe("idle");
+          expect(
+            coordinator.getSnapshot()
+              .status,
+          ).toBe("idle");
+        });
 
         coordinator.stop();
       },
