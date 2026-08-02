@@ -406,6 +406,12 @@ export class TelemetryClient {
         this.queue.length,
     });
 
+    if (
+      !this.snapshot.started
+    ) {
+      return;
+    }
+
     if (event.important) {
       void this.flush(
         "important",

@@ -8,6 +8,9 @@ import type {
   SaveNoteVersionResponse,
 } from "../../../domain/noteSave";
 import {
+  track,
+} from "../../../telemetry/telemtry";
+import {
   mockRealtimeChannel,
 } from "../realtime/mockRealtimeChannel";
 
@@ -178,35 +181,96 @@ export async function saveNoteVersion(
   body: SaveNoteVersionRequestBody,
   signal?: AbortSignal,
 ): Promise<SaveNoteVersionResponse> {
-  const response = await fetch(
-    `/api/notes/${encodeURIComponent(
-      noteId,
-    )}/versions`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-actor-id": actor.id,
-        "x-actor-role": actor.role,
-        "x-actor-display-name":
-          actor.displayName,
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `/api/notes/${encodeURIComponent(
+        noteId,
+      )}/versions`,
+      {
+        method: "POST",
+        headers: {
+          "content-type":
+            "application/json",
+          "x-actor-id": actor.id,
+          "x-actor-role":
+            actor.role,
+          "x-actor-display-name":
+            actor.displayName,
+        },
+        body:
+          JSON.stringify(body),
+        signal,
       },
-      body: JSON.stringify(body),
-      signal,
-    },
-  );
+    );
+  } catch (error) {
+    track(
+      "note.version_save",
+      {
+        operation:
+          "save_note_version",
+        outcome:
+          signal?.aborted === true
+            ? "aborted"
+            : "network_failure",
+        errorCode:
+          signal?.aborted === true
+            ? "aborted"
+            : "network_error",
+        role: actor.role,
+        source: "rest",
+      },
+    );
+
+    throw error;
+  }
 
   const responseBody =
     await readResponseBody(response);
 
   if (!response.ok) {
-    throw createRequestError(
-      response.status,
-      responseBody,
+    const requestError =
+      createRequestError(
+        response.status,
+        responseBody,
+      );
+
+    track(
+      "note.version_save",
+      {
+        operation:
+          "save_note_version",
+        outcome: "failure",
+        httpStatus:
+          response.status,
+        errorCode:
+          requestError.code,
+        role: actor.role,
+        source: "rest",
+      },
     );
+
+    throw requestError;
   }
 
   if (!isSaveResponse(responseBody)) {
+    track(
+      "note.version_save",
+      {
+        operation:
+          "save_note_version",
+        outcome:
+          "invalid_response",
+        httpStatus:
+          response.status,
+        errorCode:
+          "internal_error",
+        role: actor.role,
+        source: "rest",
+      },
+    );
+
     throw new SaveNoteVersionRequestError({
       status: response.status,
       code: "internal_error",
@@ -216,10 +280,27 @@ export async function saveNoteVersion(
   }
 
   mockRealtimeChannel.publish({
-    type: "note.version_added",
+    type:
+      "note.version_added",
     noteId,
     response: responseBody,
   });
+
+  track(
+    "note.version_save",
+    {
+      operation:
+        "save_note_version",
+      outcome: "success",
+      status:
+        responseBody.note.status,
+      revision:
+        responseBody.savedVersion
+          .revisionNumber,
+      role: actor.role,
+      source: "rest",
+    },
+  );
 
   await Promise.resolve();
 

@@ -15,14 +15,17 @@ import {
   offlineSaveReplayCoordinator,
 } from "./features/notes/offline/offlineSaveReplay";
 import {
-  mockRealtimePresenceService,
-} from "./features/notes/realtime/mockRealtimePresenceService";
-import {
   NoteDetailPage,
 } from "./features/notes/pages/NoteDetailPage";
 import {
   NotesPage,
 } from "./features/notes/pages/NotesPage";
+import {
+  mockRealtimePresenceService,
+} from "./features/notes/realtime/mockRealtimePresenceService";
+import {
+  TelemetryLifecycle,
+} from "./telemetry/TelemetryLifecycle";
 
 function App() {
   useEffect(() => {
@@ -49,6 +52,8 @@ function App() {
 
   return (
     <>
+      <TelemetryLifecycle />
+
       <OfflineConnectivityStatus />
 
       <Routes>

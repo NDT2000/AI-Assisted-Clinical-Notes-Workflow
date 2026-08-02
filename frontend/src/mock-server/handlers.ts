@@ -6,6 +6,7 @@ import { assignReviewerHandler, regenerateHandler, } from "./bulkActionsHandler"
 import { getNoteDetailHandler, } from "./getNoteDetailHandler";
 import { saveNoteVersionHandler } from "./saveNoteVersionHandler";
 import { transitionNoteHandler } from "./transitionNoteHandler";
+import { telemetryHandler } from "./telemetryHandler";
 
 export const handlers: RequestHandler[] = [
     getNoteDetailHandler,
@@ -16,4 +17,5 @@ export const handlers: RequestHandler[] = [
     regenerateHandler,
     saveNoteVersionHandler,
     transitionNoteHandler,
+    telemetryHandler,
 ];

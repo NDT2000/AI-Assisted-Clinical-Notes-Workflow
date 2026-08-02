@@ -8,6 +8,9 @@ import type {
   TransitionNoteResponse,
 } from "../../../domain/noteTransition";
 import {
+  track,
+} from "../../../telemetry/telemtry";
+import {
   mockRealtimeChannel,
 } from "../realtime/mockRealtimeChannel";
 
@@ -164,36 +167,83 @@ export async function transitionNote(
   body: TransitionNoteRequestBody,
   signal?: AbortSignal,
 ): Promise<TransitionNoteResponse> {
-  const response = await fetch(
-    `/api/notes/${encodeURIComponent(
-      noteId,
-    )}/transitions`,
-    {
-      method: "POST",
-      headers: {
-        "content-type":
-          "application/json",
-        "x-actor-id": actor.id,
-        "x-actor-role": actor.role,
-        "x-actor-display-name":
-          actor.displayName,
-        "x-mfa-verified": String(
-          actor.mfaVerified === true,
-        ),
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `/api/notes/${encodeURIComponent(
+        noteId,
+      )}/transitions`,
+      {
+        method: "POST",
+        headers: {
+          "content-type":
+            "application/json",
+          "x-actor-id": actor.id,
+          "x-actor-role":
+            actor.role,
+          "x-actor-display-name":
+            actor.displayName,
+          "x-mfa-verified": String(
+            actor.mfaVerified ===
+              true,
+          ),
+        },
+        body:
+          JSON.stringify(body),
+        signal,
       },
-      body: JSON.stringify(body),
-      signal,
-    },
-  );
+    );
+  } catch (error) {
+    track(
+      "note.status_transition",
+      {
+        operation:
+          "transition_note",
+        outcome:
+          signal?.aborted === true
+            ? "aborted"
+            : "network_failure",
+        errorCode:
+          signal?.aborted === true
+            ? "aborted"
+            : "network_error",
+        trigger: body.trigger,
+        role: actor.role,
+        source: "rest",
+      },
+    );
+
+    throw error;
+  }
 
   const responseBody =
     await readResponseBody(response);
 
   if (!response.ok) {
-    throw createRequestError(
-      response.status,
-      responseBody,
+    const requestError =
+      createRequestError(
+        response.status,
+        responseBody,
+      );
+
+    track(
+      "note.status_transition",
+      {
+        operation:
+          "transition_note",
+        outcome: "failure",
+        httpStatus:
+          response.status,
+        errorCode:
+          requestError.code,
+        trigger: body.trigger,
+        role: actor.role,
+        source: "rest",
+      },
     );
+
+    throw requestError;
   }
 
   if (
@@ -201,6 +251,23 @@ export async function transitionNote(
       responseBody,
     )
   ) {
+    track(
+      "note.status_transition",
+      {
+        operation:
+          "transition_note",
+        outcome:
+          "invalid_response",
+        httpStatus:
+          response.status,
+        errorCode:
+          "internal_error",
+        trigger: body.trigger,
+        role: actor.role,
+        source: "rest",
+      },
+    );
+
     throw new TransitionNoteRequestError({
       status: response.status,
       code: "internal_error",
@@ -210,11 +277,33 @@ export async function transitionNote(
   }
 
   mockRealtimeChannel.publish({
-    type: "note.status_changed",
+    type:
+      "note.status_changed",
     noteId,
     trigger: body.trigger,
     response: responseBody,
   });
+
+  track(
+    "note.status_transition",
+    {
+      operation:
+        "transition_note",
+      outcome: "success",
+      trigger: body.trigger,
+      previousStatus:
+        responseBody.timelineEvent
+          .fromStatus,
+      nextStatus:
+        responseBody.timelineEvent
+          .toStatus,
+      revision:
+        responseBody.currentVersion
+          .revisionNumber,
+      role: actor.role,
+      source: "rest",
+    },
+  );
 
   await Promise.resolve();
 
