@@ -22,7 +22,7 @@ import {
 
 import {
   telemetryClient,
-} from "../telemtry";
+} from "../telemetry";
 import {
   TelemetryLifecycle,
 } from "../TelemetryLifecycle";

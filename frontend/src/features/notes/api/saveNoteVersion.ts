@@ -9,7 +9,7 @@ import type {
 } from "../../../domain/noteSave";
 import {
   track,
-} from "../../../telemetry/telemtry";
+} from "../../../telemetry/telemetry";
 import {
   mockRealtimeChannel,
 } from "../realtime/mockRealtimeChannel";

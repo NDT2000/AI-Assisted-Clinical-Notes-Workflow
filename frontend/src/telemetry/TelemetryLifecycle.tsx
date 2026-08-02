@@ -9,7 +9,7 @@ import {
 import {
   telemetryClient,
   track,
-} from "./telemtry";
+} from "./telemetry";
 
 function getCurrentRoute(
   pathname: string,
