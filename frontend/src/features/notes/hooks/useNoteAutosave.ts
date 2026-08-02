@@ -1,12 +1,33 @@
-import { useCallback, useEffect, useRef, useState, } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
-import type { SoapContent, } from "../../../domain/noteAttributes";
-import type { SaveNoteVersionActor, } from "../../../domain/noteSave";
-import { AutosaveCoordinator, } from "../autosave/AutosaveCoordinator";
-import type { AutosaveSnapshot, AutosaveSuccess, } from "../autosave/AutosaveCoordinator";
-import { getNoteAutosaveConflict, type NoteAutosaveConflict } from "../autosave/noteAutosaveConflict";
-import { classifySaveNoteVersionError, } from "../api/saveNoteVersion";
-import { saveNoteVersionWithOfflineQueue } from "../offline/saveNoteVersionWithOfflineQueue";
+import type { SoapContent } from "../../../domain/noteAttributes";
+import type { SaveNoteVersionActor } from "../../../domain/noteSave";
+import {
+  AutosaveCoordinator,
+} from "../autosave/AutosaveCoordinator";
+import type {
+  AutosaveSnapshot,
+  AutosaveSuccess,
+} from "../autosave/AutosaveCoordinator";
+import {
+  getNoteAutosaveConflict,
+  type NoteAutosaveConflict,
+} from "../autosave/noteAutosaveConflict";
+import {
+  classifySaveNoteVersionError,
+} from "../api/saveNoteVersion";
+import {
+  offlineSaveReplayCoordinator,
+} from "../offline/offlineSaveReplay";
+import {
+  saveNoteVersionWithOfflineQueue,
+} from "../offline/saveNoteVersionWithOfflineQueue";
 
 interface UseNoteAutosaveOptions {
   noteId: string;
@@ -82,8 +103,10 @@ export function useNoteAutosave({
   const initializationRef =
     useRef<NoteAutosaveInitialization>({
       noteId,
-      baseVersionId: initialBaseVersionId,
-      content: cloneContent(initialContent),
+      baseVersionId:
+        initialBaseVersionId,
+      content:
+        cloneContent(initialContent),
       debounceMs,
     });
 
@@ -97,7 +120,14 @@ export function useNoteAutosave({
 
   const pendingDraftRef =
     useRef<SoapContent | null>(null);
-  
+
+  const replaySnapshot =
+    useSyncExternalStore(
+      offlineSaveReplayCoordinator.subscribe,
+      offlineSaveReplayCoordinator.getSnapshot,
+      offlineSaveReplayCoordinator.getSnapshot,
+    );
+
   useEffect(() => {
     onSaveSuccessRef.current =
       onSaveSuccess;
@@ -110,8 +140,10 @@ export function useNoteAutosave({
   useEffect(() => {
     initializationRef.current = {
       noteId,
-      baseVersionId: initialBaseVersionId,
-      content: cloneContent(initialContent),
+      baseVersionId:
+        initialBaseVersionId,
+      content:
+        cloneContent(initialContent),
       debounceMs,
     };
   }, [
@@ -124,86 +156,106 @@ export function useNoteAutosave({
     noteId,
   ]);
 
+  const installCoordinator =
+    useCallback(
+      (
+        initialization:
+          NoteAutosaveInitialization,
+      ): AutosaveCoordinator => {
+        coordinatorRef.current?.dispose();
+
+        activeRequestRef.current?.abort();
+        activeRequestRef.current = null;
+
+        const coordinator =
+          new AutosaveCoordinator({
+            initialBaseVersionId:
+              initialization.baseVersionId,
+
+            initialContent:
+              cloneContent(
+                initialization.content,
+              ),
+
+            debounceMs:
+              initialization.debounceMs,
+
+            save: async (request) => {
+              const controller =
+                new AbortController();
+
+              activeRequestRef.current =
+                controller;
+
+              try {
+                return await saveNoteVersionWithOfflineQueue(
+                  initialization.noteId,
+                  actorRef.current,
+                  request,
+                  controller.signal,
+                );
+              } finally {
+                if (
+                  activeRequestRef.current ===
+                  controller
+                ) {
+                  activeRequestRef.current =
+                    null;
+                }
+              }
+            },
+
+            classifyError:
+              classifySaveNoteVersionError,
+
+            onStateChange:
+              setSnapshot,
+
+            onSaveSuccess: (result) => {
+              onSaveSuccessRef.current(
+                result,
+              );
+            },
+          });
+
+        coordinatorRef.current =
+          coordinator;
+
+        setSnapshot(
+          coordinator.getSnapshot(),
+        );
+
+        return coordinator;
+      },
+      [],
+    );
+
   useEffect(() => {
     const initialization =
       initializationRef.current;
 
     const coordinator =
-      new AutosaveCoordinator({
-        initialBaseVersionId:
-          initialization.baseVersionId,
-
-        initialContent:
-          cloneContent(
-            initialization.content,
-          ),
-
-        debounceMs:
-          initialization.debounceMs,
-
-        save: async (request) => {
-          const controller =
-            new AbortController();
-
-          activeRequestRef.current =
-            controller;
-
-          try {
-            return await saveNoteVersionWithOfflineQueue(
-              initialization.noteId,
-              actorRef.current,
-              request,
-              controller.signal,
-            );
-          } finally {
-            if (
-              activeRequestRef.current ===
-              controller
-            ) {
-              activeRequestRef.current =
-                null;
-            }
-          }
-        },
-
-        classifyError:
-          classifySaveNoteVersionError,
-
-        onStateChange:
-          setSnapshot,
-
-        onSaveSuccess: (result) => {
-          onSaveSuccessRef.current(
-            result,
-          );
-        },
-      });
-
-    coordinatorRef.current =
-      coordinator;
-
-    setSnapshot(
-      coordinator.getSnapshot(),
-    );
+      installCoordinator(
+        initialization,
+      );
 
     if (pendingDraftRef.current) {
       coordinator.updateDraft(
         pendingDraftRef.current,
       );
 
-      pendingDraftRef.current =
-        null;
+      pendingDraftRef.current = null;
     }
 
     return () => {
-      coordinator.dispose();
+      coordinatorRef.current?.dispose();
 
       activeRequestRef.current?.abort();
       activeRequestRef.current = null;
 
       coordinatorRef.current = null;
     };
-  }, [noteId]);
+  }, [installCoordinator, noteId]);
 
   const updateDraft = useCallback(
     (content: SoapContent) => {
@@ -226,32 +278,139 @@ export function useNoteAutosave({
     [],
   );
 
+  const offlineBlockedEntry =
+    replaySnapshot.blockedConflict !==
+      null &&
+    replaySnapshot.blockedConflict
+      .noteId === noteId
+      ? replaySnapshot.blockedConflict
+      : null;
+
+  const offlineConflict:
+    NoteAutosaveConflict | null =
+    offlineBlockedEntry?.conflict
+      ? {
+          message:
+            offlineBlockedEntry.conflict
+              .message,
+          currentVersion:
+            offlineBlockedEntry.conflict
+              .currentVersion,
+          commonAncestor:
+            offlineBlockedEntry.conflict
+              .commonAncestor,
+        }
+      : null;
+
+  const localConflict =
+    snapshot.status === "conflict"
+      ? getNoteAutosaveConflict(
+          snapshot.error,
+        )
+      : null;
+
+  const conflict =
+    offlineConflict ?? localConflict;
+
+  const effectiveSnapshot:
+    AutosaveSnapshot =
+    offlineConflict !== null
+      ? {
+          status: "conflict",
+          hasPendingChanges: true,
+          error: new Error(
+            offlineConflict.message,
+          ),
+        }
+      : snapshot;
+
   const retry = useCallback(() => {
+    if (
+      offlineBlockedEntry !== null
+    ) {
+      void offlineSaveReplayCoordinator.replay();
+      return;
+    }
+
     coordinatorRef.current?.retry();
-  }, []);
+  }, [offlineBlockedEntry]);
 
   const resolveConflict = useCallback(
     (
       resolvedContent: SoapContent,
       serverBaseVersionId: string,
     ): void => {
+      const copiedContent =
+        cloneContent(resolvedContent);
+
+      if (
+        offlineBlockedEntry !== null &&
+        offlineBlockedEntry.conflict !==
+          null
+      ) {
+        const resolutionNoteId = noteId;
+
+        void offlineSaveReplayCoordinator
+          .resolveBlockedConflict(
+            copiedContent,
+          )
+          .then((response) => {
+            if (
+              response === null ||
+              initializationRef.current
+                .noteId !== resolutionNoteId
+            ) {
+              return;
+            }
+
+            const nextInitialization:
+              NoteAutosaveInitialization = {
+              noteId: resolutionNoteId,
+              baseVersionId:
+                response.savedVersion
+                  .versionId,
+              content:
+                cloneContent(
+                  copiedContent,
+                ),
+              debounceMs:
+                initializationRef.current
+                  .debounceMs,
+            };
+
+            initializationRef.current =
+              nextInitialization;
+
+            installCoordinator(
+              nextInitialization,
+            );
+
+            onSaveSuccessRef.current({
+              response,
+              savedContent:
+                cloneContent(
+                  copiedContent,
+                ),
+            });
+          });
+
+        return;
+      }
+
       coordinatorRef.current?.resolveConflict(
-        cloneContent(resolvedContent),
+        copiedContent,
         serverBaseVersionId,
       );
     },
-    [],
+    [
+      installCoordinator,
+      noteId,
+      offlineBlockedEntry,
+    ],
   );
 
-  const conflict =
-  snapshot.status === "conflict"
-    ? getNoteAutosaveConflict(
-        snapshot.error,
-      )
-    : null;
-
   return {
-    snapshot,
+    snapshot: effectiveSnapshot,
     conflict,
     updateDraft,
     retry,
