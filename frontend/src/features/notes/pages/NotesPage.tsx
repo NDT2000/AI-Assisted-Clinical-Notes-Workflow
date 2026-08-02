@@ -3,8 +3,13 @@ import { useSearchParams } from "react-router-dom";
 
 import type { NoteSortField, SortDirection, } from "../utils/noteListSearchParams";
 import { parseNoteListSearchParams, } from "../utils/noteListSearchParams";
-import type { NoteStatus, UserRole } from "../../../domain/noteAttributes";
-import { canRequestRegeneration } from "../../../domain/noteGuards";
+import type { NoteStatus } from "../../../domain/noteAttributes";
+import {
+  canAssignReviewer,
+  canManageReviewerAssignments,
+  canRequestRegeneration,
+} from "../../../domain/noteGuards";
+import { CURRENT_ACTOR } from "../../../auth/currentActor";
 import type { NoteSummary, } from "../../../domain/noteSummary";
 import { getNotes } from "../api/getNotes";
 import { postAssignReviewer, postRequestRegeneration, } from "../api/bulkActions";
@@ -12,9 +17,6 @@ import { NotesFilters } from "../components/note-list/NotesFilters";
 import { NotesTable } from "../components/note-list/NoteTable";
 import { NotesTableSkeleton } from "../components/note-list/NotesTableSkeleton";
 import { REVIEWERS, } from "../../../mock-data/generateNoteSummary";
-
-const CURRENT_ACTOR_ROLE: UserRole =
-  "CLINICIAN";
 
 type ReviewerOption = {
   id: string;
@@ -324,11 +326,30 @@ export function NotesPage() {
       selectedIds.has(item.id),
     );
 
+  const assignReviewerRolePermission =
+    canManageReviewerAssignments(
+      CURRENT_ACTOR.role,
+    );
+
+  const eligibleForReviewerAssignment =
+    selectedNotes.filter(note =>
+      canAssignReviewer(
+        note.status,
+        CURRENT_ACTOR.role,
+      ).allowed,
+    );
+
+  const regenerationRolePermission =
+    canRequestRegeneration(
+      "FAILED",
+      CURRENT_ACTOR.role,
+    );
+
   const eligibleForRegeneration =
   selectedNotes.filter((note) =>
     canRequestRegeneration(
       note.status,
-      CURRENT_ACTOR_ROLE,
+      CURRENT_ACTOR.role,
     ).allowed,
   );
 
@@ -341,7 +362,10 @@ export function NotesPage() {
   ) {
     if (
       selectedNotes.length === 0 ||
-      isBulkActionInFlight
+      isBulkActionInFlight ||
+      !assignReviewerRolePermission.allowed ||
+      eligibleForReviewerAssignment.length ===
+        0
     ) {
       return;
     }
@@ -349,8 +373,8 @@ export function NotesPage() {
     const previousItems = items;
 
     const selectedIdSet = new Set(
-      selectedNotes.map(
-        (note) => note.id,
+      eligibleForReviewerAssignment.map(
+        note => note.id,
       ),
     );
 
@@ -375,6 +399,7 @@ export function NotesPage() {
         await postAssignReviewer(
           Array.from(selectedIdSet),
           reviewer,
+          CURRENT_ACTOR,
         );
 
       const updatedIdSet =
@@ -406,11 +431,13 @@ export function NotesPage() {
           return original ?? item;
         }),
       );
-    } catch {
+    } catch (error) {
       setItems(previousItems);
 
       setBulkActionError(
-        "Unable to assign reviewer. Changes were rolled back.",
+        error instanceof Error
+          ? `${error.message} Changes were rolled back.`
+          : "Unable to assign reviewer. Changes were rolled back.",
       );
     } finally {
       setIsBulkActionInFlight(false);
@@ -421,7 +448,8 @@ export function NotesPage() {
     if (
       eligibleForRegeneration.length ===
         0 ||
-      isBulkActionInFlight
+      isBulkActionInFlight ||
+      !regenerationRolePermission.allowed
     ) {
       return;
     }
@@ -451,8 +479,10 @@ export function NotesPage() {
     try {
       const response =
         await postRequestRegeneration(
-          Array.from(eligibleIdSet,),
-          CURRENT_ACTOR_ROLE,
+          Array.from(
+            eligibleIdSet,
+          ),
+          CURRENT_ACTOR,
         );
 
       const updatedIdSet =
@@ -484,11 +514,13 @@ export function NotesPage() {
           return original ?? item;
         }),
       );
-    } catch {
+    } catch (error) {
       setItems(previousItems);
 
       setBulkActionError(
-        "Unable to request regeneration. Changes were rolled back.",
+        error instanceof Error
+          ? `${error.message} Changes were rolled back.`
+          : "Unable to request regeneration. Changes were rolled back.",
       );
     } finally {
       setIsBulkActionInFlight(false);
@@ -832,6 +864,15 @@ export function NotesPage() {
           isBusy={
             isBulkActionInFlight
           }
+          assignReviewerRolePermission={
+            assignReviewerRolePermission
+          }
+          eligibleForReviewerAssignmentCount={
+            eligibleForReviewerAssignment.length
+          }
+          regenerationRolePermission={
+            regenerationRolePermission
+          }
           error={bulkActionError}
           onAssignReviewer={
             handleBulkAssignReviewer
@@ -886,6 +927,9 @@ function BulkActionBar({
   eligibleForRegenerationCount,
   ineligibleForRegenerationCount,
   isBusy,
+  assignReviewerRolePermission,
+  eligibleForReviewerAssignmentCount,
+  regenerationRolePermission,
   error,
   onAssignReviewer,
   onRegenerate,
@@ -897,6 +941,16 @@ function BulkActionBar({
   ineligibleForRegenerationCount:
     number;
   isBusy: boolean;
+  assignReviewerRolePermission:
+    ReturnType<
+      typeof canManageReviewerAssignments
+    >;
+  eligibleForReviewerAssignmentCount:
+    number;
+  regenerationRolePermission:
+    ReturnType<
+      typeof canRequestRegeneration
+    >;
   error: string | null;
   onAssignReviewer: (
     reviewer:
@@ -910,6 +964,22 @@ function BulkActionBar({
     selectedReviewerId,
     setSelectedReviewerId,
   ] = useState("");
+
+  const assignPermissionReason =
+    !assignReviewerRolePermission.allowed
+      ? assignReviewerRolePermission.reason
+      : eligibleForReviewerAssignmentCount ===
+        0
+      ? "Reviewer assignment is available only for notes that are ready for review or amended."
+      : null;
+
+  const regenerationDisabledReason =
+    !regenerationRolePermission.allowed
+      ? regenerationRolePermission.reason
+      : eligibleForRegenerationCount ===
+        0
+      ? "Only FAILED notes are eligible for regeneration."
+      : null;
 
   function handleAssignClick() {
     const reviewer =
@@ -939,7 +1009,17 @@ function BulkActionBar({
             event.target.value,
           )
         }
-        disabled={isBusy}
+        disabled={
+          isBusy ||
+          assignPermissionReason !==
+          null
+        }
+        aria-describedby={
+          assignPermissionReason !==
+          null
+            ? "bulk-assign-permission-reason"
+            : undefined
+        }
       >
         <option value="">
           Choose reviewer…
@@ -964,24 +1044,41 @@ function BulkActionBar({
         onClick={handleAssignClick}
         disabled={
           isBusy ||
-          selectedReviewerId === ""
+          selectedReviewerId === "" ||
+          assignPermissionReason !==
+          null
+        }
+        aria-describedby={
+          assignPermissionReason !==
+          null
+            ? "bulk-assign-permission-reason"
+            : undefined
         }
       >
         Assign reviewer
       </button>
+
+      {assignPermissionReason !==
+      null ? (
+        <p
+          id="bulk-assign-permission-reason"
+        >
+          {assignPermissionReason}
+        </p>
+      ) : null}
 
       <button
         type="button"
         onClick={onRegenerate}
         disabled={
           isBusy ||
-          eligibleForRegenerationCount ===
-            0
+          regenerationDisabledReason !==
+            null
         }
-        title={
-          eligibleForRegenerationCount ===
-          0
-            ? "Only FAILED notes are eligible for regeneration."
+        aria-describedby={
+          regenerationDisabledReason !==
+          null
+            ? "bulk-regeneration-permission-reason"
             : undefined
         }
       >
@@ -991,6 +1088,15 @@ function BulkActionBar({
         }
         )
       </button>
+
+      {regenerationDisabledReason !==
+      null ? (
+        <p
+          id="bulk-regeneration-permission-reason"
+        >
+          {regenerationDisabledReason}
+        </p>
+      ) : null}
 
       {ineligibleForRegenerationCount >
         0 && (
@@ -1003,8 +1109,7 @@ function BulkActionBar({
           1
             ? ""
             : "s"}{" "}
-          not eligible for regeneration
-          (not FAILED).
+          not eligible for regeneration.
         </p>
       )}
 

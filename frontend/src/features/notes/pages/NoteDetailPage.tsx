@@ -2,15 +2,8 @@ import { Link, useParams, } from "react-router-dom";
 
 import { useNoteDetail, } from "../hooks/useNoteDetail";
 import { NoteDetailWorkspace } from "../components/note-detail/NoteDetailWorkspace";
-import type { SaveNoteVersionActor } from "../../../domain/noteSave";
+import { CURRENT_ACTOR } from "../../../auth/currentActor";
 import "../components/css/NoteDetailPage.css";
-
-const CURRENT_ACTOR:
-  SaveNoteVersionActor = {
-    id: "reviewer-1",
-    displayName: "Current Reviewer",
-    role: "REVIEWER",
-  };
 
 function formatCachedAt(
   cachedAt: number,

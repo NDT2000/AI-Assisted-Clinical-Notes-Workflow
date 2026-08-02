@@ -285,6 +285,17 @@ export const saveNoteVersionHandler =
       switch (
         result.outcome
       ) {
+        case "forbidden":
+          return HttpResponse.json(
+            {
+              error: "forbidden",
+              message: result.reason,
+            },
+            {
+              status: 403,
+            },
+          );
+
         case "not-found":
           return HttpResponse.json(
             {

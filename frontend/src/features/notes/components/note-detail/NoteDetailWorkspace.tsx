@@ -9,6 +9,7 @@ import type {
   SoapContent,
 } from "../../../../domain/noteAttributes";
 import {
+  canEditNoteContent,
   canTransition,
 } from "../../../../domain/noteGuards";
 import type {
@@ -539,6 +540,33 @@ export function NoteDetailWorkspace({
                 : {}),
             };
 
+            const shouldAssignReviewer =
+              command.trigger ===
+              "START_REVIEW";
+
+            const shouldReleaseReviewer =
+              command.trigger ===
+                "RETURN_TO_QUEUE" ||
+              command.trigger ===
+                "RESUBMIT" ||
+              command.trigger ===
+                "AMEND" ||
+              command.trigger ===
+                "REGENERATE";
+
+            const nextAssignedReviewer =
+              shouldAssignReviewer
+                ? {
+                    id: actor.id,
+                    displayName:
+                      actor.displayName,
+                    role: actor.role,
+                  }
+                : shouldReleaseReviewer
+                ? null
+                : currentDetail
+                    .assignedReviewer;
+
             return {
               ...currentDetail,
               note: {
@@ -546,6 +574,9 @@ export function NoteDetailWorkspace({
                 status:
                   transitionResult
                     .nextStatus,
+                assignedReviewerId:
+                  nextAssignedReviewer
+                    ?.id ?? null,
                 updatedAt:
                   occurredAt,
                 ...(transitionResult
@@ -557,6 +588,8 @@ export function NoteDetailWorkspace({
                     }
                   : {}),
               },
+              assignedReviewer:
+                nextAssignedReviewer,
               timeline: [
                 ...currentDetail.timeline,
                 optimisticTimelineEvent,
@@ -595,9 +628,45 @@ export function NoteDetailWorkspace({
                     .eventId,
               );
 
+            const assignedReviewerId =
+              response.note
+                .assignedReviewerId;
+
+            const nextAssignedReviewer =
+              assignedReviewerId ===
+              null
+                ? null
+                : currentDetail
+                    .assignedReviewer
+                    ?.id ===
+                  assignedReviewerId
+                ? currentDetail
+                    .assignedReviewer
+                : response.timelineEvent
+                    .actorId ===
+                  assignedReviewerId
+                ? {
+                    id:
+                      response
+                        .timelineEvent
+                        .actorId,
+                    displayName:
+                      response
+                        .timelineEvent
+                        .actorDisplayName,
+                    role:
+                      response
+                        .timelineEvent
+                        .actorRole,
+                  }
+                : currentDetail
+                    .assignedReviewer;
+
             return {
               ...currentDetail,
               note: response.note,
+              assignedReviewer:
+                nextAssignedReviewer,
               currentVersion:
                 response.currentVersion,
               timeline:
@@ -887,11 +956,31 @@ export function NoteDetailWorkspace({
     },
   });
 
+  const editPermission =
+    useMemo(
+      () =>
+        canEditNoteContent(
+          workspaceDetail.note,
+          actor,
+        ),
+      [
+        actor,
+        workspaceDetail.note,
+      ],
+    );
+
   const isEditable =
-    workspaceDetail.note.status ===
-      "IN_REVIEW" &&
+    editPermission.allowed &&
     transitionState.status !==
       "pending";
+
+  const editorReadOnlyReason =
+    !editPermission.allowed
+      ? editPermission.reason
+      : transitionState.status ===
+        "pending"
+      ? "Editing is temporarily unavailable while the current action is pending."
+      : null;
 
   const workspaceBlockReason =
     useMemo(() => {
@@ -1058,6 +1147,10 @@ export function NoteDetailWorkspace({
     section: SoapSectionKey,
     value: string,
   ): void {
+    if (!isEditable) {
+      return;
+    }
+
     const nextContent:
       SoapContent = {
         ...draftContentRef.current,
@@ -1242,6 +1335,18 @@ export function NoteDetailWorkspace({
                 .session
             }
           />
+
+          {editorReadOnlyReason !==
+          null &&
+          !isViewingHistoricalVersion ? (
+            <p
+              role="status"
+              aria-label="Editing permission"
+              className="note-editing-permission"
+            >
+              {editorReadOnlyReason}
+            </p>
+          ) : null}
 
           {isEditable ? (
             <AutosaveStatus

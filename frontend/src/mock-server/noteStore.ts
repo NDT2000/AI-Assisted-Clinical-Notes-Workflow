@@ -1,7 +1,7 @@
 import { generateNoteSummaries } from "../mock-data/generateNoteSummary";
 import type { NoteSummary } from "../domain/noteSummary";
 import type { SoapContent, UserRole } from "../domain/noteAttributes";
-import { canRequestRegeneration, canTransition } from "../domain/noteGuards";
+import { canAssignReviewer, canEditNoteContent, canRequestRegeneration, canTransition } from "../domain/noteGuards";
 import type { NoteDetail, NoteVersionDetail, ReviewTimelineEvent } from "../domain/noteDetail";
 import { generateNoteDetail } from "../mock-data/generateNoteDetail";
 import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../domain/noteSave";
@@ -18,6 +18,10 @@ export type SaveNoteVersionStoreResult =
     }
   | {
       outcome: "not-found";
+    }
+  | {
+      outcome: "forbidden";
+      reason: string;
     }
   | {
       outcome: "version-conflict";
@@ -233,6 +237,20 @@ export function saveNoteVersion(
     };
   }
 
+  const editPermission =
+    canEditNoteContent(
+      detail.note,
+      actor,
+    );
+
+  if (!editPermission.allowed) {
+    return {
+      outcome: "forbidden",
+      reason:
+        editPermission.reason,
+    };
+  }
+
   if (
     request.baseVersionId !==
     detail.note.currentVersionId
@@ -346,12 +364,17 @@ function getTransitionMutationKey(
 
 function getTransitionRequestSignature(
   request: TransitionNoteRequestBody,
+  actor: TransitionNoteActor,
 ): string {
   return JSON.stringify({
-    baseVersionId: request.baseVersionId,
+    baseVersionId:
+      request.baseVersionId,
     trigger: request.trigger,
     rejectionReason:
-      request.rejectionReason ?? null,
+      request.rejectionReason ??
+      null,
+    actorId: actor.id,
+    actorRole: actor.role,
   });
 }
 
@@ -368,7 +391,10 @@ export function transitionNote(
     );
 
   const requestSignature =
-    getTransitionRequestSignature(request);
+    getTransitionRequestSignature(
+      request,
+      actor,
+    );
 
   const existingMutation =
     transitionMutations.get(mutationKey);
@@ -428,18 +454,54 @@ export function transitionNote(
     };
   }
 
+  const shouldAssignReviewer =
+    request.trigger ===
+      "START_REVIEW";
+
+  const shouldReleaseReviewer =
+    request.trigger ===
+      "RETURN_TO_QUEUE" ||
+    request.trigger ===
+      "RESUBMIT" ||
+    request.trigger === "AMEND" ||
+    request.trigger ===
+      "REGENERATE";
+
+  const nextAssignedReviewerId =
+    shouldAssignReviewer
+      ? actor.id
+      : shouldReleaseReviewer
+      ? null
+      : detail.note
+          .assignedReviewerId;
+
+  const nextAssignedReviewer =
+    shouldAssignReviewer
+      ? {
+          id: actor.id,
+          displayName:
+            actor.displayName,
+          role: actor.role,
+        }
+      : shouldReleaseReviewer
+      ? null
+      : detail.assignedReviewer;
+
   const updatedNote = {
     ...detail.note,
-    status: transitionResult.nextStatus,
+    status:
+      transitionResult.nextStatus,
+    assignedReviewerId:
+      nextAssignedReviewerId,
     updatedAt: transitionedAt,
     ...(transitionResult.nextStatus ===
     "APPROVED"
       ? {
-          approvedAt: transitionedAt,
+          approvedAt:
+            transitionedAt,
         }
       : {}),
   };
-
   const rejectionReason =
     request.trigger === "REJECT"
       ? request.rejectionReason?.trim()
@@ -467,6 +529,8 @@ export function transitionNote(
   const updatedDetail: NoteDetail = {
     ...detail,
     note: updatedNote,
+    assignedReviewer:
+      nextAssignedReviewer,
     timeline: [
       ...detail.timeline,
       timelineEvent,
@@ -482,7 +546,19 @@ export function transitionNote(
 
     return {
       ...summary,
-      status: transitionResult.nextStatus,
+      status:
+        transitionResult.nextStatus,
+      assignedReviewer:
+        nextAssignedReviewer ===
+        null
+          ? null
+          : {
+              id:
+                nextAssignedReviewer.id,
+              displayName:
+                nextAssignedReviewer
+                  .displayName,
+            },
       updatedAt: transitionedAt,
     };
   });
@@ -510,6 +586,7 @@ export function transitionNote(
 export function reassignNotes(
   noteIds: string[],
   reviewer: { id: string; displayName: string } | null,
+  actorRole: UserRole = "ADMIN",
 ): string[] {
   const noteIdSet = new Set(noteIds);
   const updatedIds: string[] = [];
@@ -519,7 +596,13 @@ export function reassignNotes(
       return note;
     }
 
-    if (note.status === "LOCKED") {
+    const permission =
+      canAssignReviewer(
+        note.status,
+        actorRole,
+      );
+
+    if (!permission.allowed) {
       return note;
     }
 
@@ -559,7 +642,12 @@ export function regenerateNotes(
 
     noteDetails.delete(note.id);
 
-    return { ...note, status: eligibility.nextStatus};
+    return {
+      ...note,
+      status:
+        eligibility.nextStatus,
+      assignedReviewer: null,
+    };
   });
 
   return updatedIds;
