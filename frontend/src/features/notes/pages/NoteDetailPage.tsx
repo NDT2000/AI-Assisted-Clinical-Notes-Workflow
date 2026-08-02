@@ -1,9 +1,18 @@
-import { Link, useParams, } from "react-router-dom";
+import {
+  Link,
+  useParams,
+} from "react-router-dom";
 
-import { useNoteDetail, } from "../hooks/useNoteDetail";
-import { NoteDetailWorkspace } from "../components/note-detail/NoteDetailWorkspace";
-import { CURRENT_ACTOR } from "../../../auth/currentActor";
+import {
+  useCurrentActor,
+} from "../../../auth/CurrentActorContext";
+import {
+  NoteDetailWorkspace,
+} from "../components/note-detail/NoteDetailWorkspace";
 import "../components/css/NoteDetailPage.css";
+import {
+  useNoteDetail,
+} from "../hooks/useNoteDetail";
 
 function formatCachedAt(
   cachedAt: number,
@@ -14,16 +23,20 @@ function formatCachedAt(
 }
 
 export function NoteDetailPage() {
-  const { noteId } = useParams<{
-    noteId: string;
-  }>();
+  const { actor } =
+    useCurrentActor();
+
+  const { noteId } =
+    useParams<{
+      noteId: string;
+    }>();
 
   const {
     state,
     retry,
   } = useNoteDetail(
     noteId,
-    CURRENT_ACTOR.role,
+    actor.role,
   );
 
   if (state.status === "loading") {
@@ -46,7 +59,8 @@ export function NoteDetailPage() {
   }
 
   if (
-    state.status === "unauthorized"
+    state.status ===
+    "unauthorized"
   ) {
     return (
       <main>
@@ -63,14 +77,19 @@ export function NoteDetailPage() {
     );
   }
 
-  if (state.status === "not-found") {
+  if (
+    state.status ===
+    "not-found"
+  ) {
     return (
       <main>
         <Link to="/notes">
           Back to notes
         </Link>
 
-        <h1>Note not found</h1>
+        <h1>
+          Note not found
+        </h1>
 
         <p role="alert">
           {state.message}
@@ -86,7 +105,9 @@ export function NoteDetailPage() {
           Back to notes
         </Link>
 
-        <h1>Unable to load note</h1>
+        <h1>
+          Unable to load note
+        </h1>
 
         <p role="alert">
           {state.message}
@@ -108,7 +129,8 @@ export function NoteDetailPage() {
     <main className="note-detail-page">
       <Link
         className="note-detail-back-line"
-        to="/notes">
+        to="/notes"
+      >
         Back to notes
       </Link>
 
@@ -121,15 +143,18 @@ export function NoteDetailPage() {
           aria-atomic="true"
         >
           <strong>
-            Offline — showing a cached note
+            Offline — showing a
+            cached note
           </strong>
 
           <p>
-            This note may not include recent
-            changes made by other users.
+            This note may not include
+            recent changes made by
+            other users.
           </p>
 
-          {state.cachedAt !== null && (
+          {state.cachedAt !==
+            null && (
             <p>
               Cached{" "}
               <time
@@ -147,9 +172,9 @@ export function NoteDetailPage() {
       )}
 
       <NoteDetailWorkspace
-        key={detail.note.id}
+        key={`${detail.note.id}:${actor.id}`}
         detail={detail}
-        actor={CURRENT_ACTOR} 
+        actor={actor}
       />
     </main>
   );

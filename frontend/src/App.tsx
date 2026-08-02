@@ -9,6 +9,12 @@ import {
 import "./App.css";
 
 import {
+  CurrentActorProvider,
+} from "./auth/CurrentActorContext";
+import {
+  CurrentActorSwitcher,
+} from "./auth/CurrentActorSwitcher";
+import {
   OfflineConnectivityStatus,
 } from "./features/notes/components/offline/OfflineConnectivityStatus";
 import {
@@ -27,7 +33,7 @@ import {
   TelemetryLifecycle,
 } from "./telemetry/TelemetryLifecycle";
 
-function App() {
+function AppContent() {
   useEffect(() => {
     if (
       typeof indexedDB !==
@@ -54,6 +60,8 @@ function App() {
     <>
       <TelemetryLifecycle />
 
+      <CurrentActorSwitcher />
+
       <OfflineConnectivityStatus />
 
       <Routes>
@@ -79,6 +87,14 @@ function App() {
         />
       </Routes>
     </>
+  );
+}
+
+function App() {
+  return (
+    <CurrentActorProvider>
+      <AppContent />
+    </CurrentActorProvider>
   );
 }
 

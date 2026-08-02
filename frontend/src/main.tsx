@@ -1,28 +1,51 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
-import { BrowserRouter } from 'react-router-dom'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  BrowserRouter,
+} from "react-router-dom";
+
+import App from "./App.tsx";
+import "./index.css";
 
 async function enableMocking(): Promise<void> {
-  if(!import.meta.env.DEV) {
+  if (!import.meta.env.DEV) {
     return;
   }
 
-  const { worker } = await import("./mock-server/browser.ts");
+  const { worker } = await import(
+    "./mock-server/browser.ts"
+  );
 
   await worker.start({
-    onUnhandledRequest: "warn",
+    onUnhandledRequest(
+      request,
+      print,
+    ) {
+      const url = new URL(request.url);
+
+      if (
+        url.origin ===
+          window.location.origin &&
+        !url.pathname.startsWith(
+          "/api/",
+        )
+      ) {
+        return;
+      }
+
+      print.warning();
+    },
   });
 }
 
 await enableMocking();
 
-createRoot(document.getElementById('root')!).render(
+createRoot(
+  document.getElementById("root")!,
+).render(
   <StrictMode>
-    {/* Browser makes the Route and Routes property of react to work and give the context where we are in the URL */}
     <BrowserRouter>
       <App />
     </BrowserRouter>
   </StrictMode>,
-)
+);
