@@ -1,23 +1,75 @@
-import { useCallback, useMemo, useRef, useState, } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import type { SoapContent, } from "../../../../domain/noteAttributes";
-import { canTransition } from "../../../../domain/noteGuards";
-import type { NoteDetail, ReviewTimelineEvent } from "../../../../domain/noteDetail";
-import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteResponse, 
-  UserNoteActionTrigger, } from "../../../../domain/noteTransition";
-import type { AutosaveSnapshot, AutosaveSuccess, } from "../../autosave/AutosaveCoordinator";
-import { useNoteAutosave, } from "../../hooks/useNoteAutosave";
-import { useNoteTransition, } from "../../hooks/useNoteTransition";
-import { NoteActionBar, } from "./NoteActionBar";
-import { deriveAvailableNoteActions, type ActionExecutionState, } from "./noteActionBarModel";
-import { NoteDetailHeader, } from "./NoteDetailHeader";
-import { PatientSessionCard, } from "./PatientSessionCard";
-import { PresencePanel, } from "./PresencePanel";
-import { ReviewTimeline, } from "./ReviewTimeline";
-import { SoapEditor, type SoapSectionKey, } from "./SoapEditor";
-import { VersionHistorySidebar, type VersionComparisonStatus } from "./VersionHistorySidebar";
-import { VersionConflictResolver, } from "./VersionConflictResolver";
-import { VersionDiffViewer, } from "./VersionDiffViewer";
+import type {
+  SoapContent,
+} from "../../../../domain/noteAttributes";
+import {
+  canTransition,
+} from "../../../../domain/noteGuards";
+import type {
+  NoteDetail,
+  ReviewTimelineEvent,
+} from "../../../../domain/noteDetail";
+import type {
+  TransitionNoteActor,
+  TransitionNoteCommand,
+  TransitionNoteResponse,
+  UserNoteActionTrigger,
+} from "../../../../domain/noteTransition";
+import type {
+  AutosaveSnapshot,
+  AutosaveSuccess,
+} from "../../autosave/AutosaveCoordinator";
+import {
+  useNoteAutosave,
+} from "../../hooks/useNoteAutosave";
+import {
+  useNoteTransition,
+} from "../../hooks/useNoteTransition";
+import {
+  applyRealtimeEventToNoteDetail,
+} from "../../realtime/realtimeReconciliation";
+import {
+  useRealtimeSubscription,
+} from "../../realtime/useRealtimeSubscription";
+import {
+  NoteActionBar,
+} from "./NoteActionBar";
+import {
+  deriveAvailableNoteActions,
+  type ActionExecutionState,
+} from "./noteActionBarModel";
+import {
+  NoteDetailHeader,
+} from "./NoteDetailHeader";
+import {
+  PatientSessionCard,
+} from "./PatientSessionCard";
+import {
+  PresencePanel,
+} from "./PresencePanel";
+import {
+  ReviewTimeline,
+} from "./ReviewTimeline";
+import {
+  SoapEditor,
+  type SoapSectionKey,
+} from "./SoapEditor";
+import {
+  VersionHistorySidebar,
+  type VersionComparisonStatus,
+} from "./VersionHistorySidebar";
+import {
+  VersionConflictResolver,
+} from "./VersionConflictResolver";
+import {
+  VersionDiffViewer,
+} from "./VersionDiffViewer";
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
@@ -53,27 +105,25 @@ function getDirtySections(
     subjective:
       draftContent.subjective !==
       savedContent.subjective,
-
     objective:
       draftContent.objective !==
       savedContent.objective,
-
     assessment:
       draftContent.assessment !==
       savedContent.assessment,
-
     plan:
       draftContent.plan !==
       savedContent.plan,
   };
 }
 
-const CLEAN_SECTIONS: DirtySections = {
-  subjective: false,
-  objective: false,
-  assessment: false,
-  plan: false,
-};
+const CLEAN_SECTIONS:
+  DirtySections = {
+    subjective: false,
+    objective: false,
+    assessment: false,
+    plan: false,
+  };
 
 function getAutosaveStatusMessage(
   snapshot: AutosaveSnapshot,
@@ -81,19 +131,14 @@ function getAutosaveStatusMessage(
   switch (snapshot.status) {
     case "idle":
       return "All changes saved";
-
     case "changes-pending":
       return "Unsaved changes";
-
     case "saving":
       return "Saving changes";
-
     case "queued":
       return "Offline — changes queued";
-
     case "save-failed":
       return "Save failed";
-
     case "conflict":
       return "Conflict requires attention";
   }
@@ -108,7 +153,10 @@ function AutosaveStatus({
     `note-autosave-status--${snapshot.status}`,
   ].join(" ");
 
-  if (snapshot.status === "save-failed") {
+  if (
+    snapshot.status ===
+    "save-failed"
+  ) {
     return (
       <div
         className={className}
@@ -127,15 +175,19 @@ function AutosaveStatus({
     );
   }
 
-  if (snapshot.status === "conflict") {
+  if (
+    snapshot.status ===
+    "conflict"
+  ) {
     return (
       <p
         className={className}
         role="alert"
         aria-label="Autosave status"
       >
-        Conflict requires attention. This
-        note was updated elsewhere.
+        Conflict requires attention.
+        This note was updated
+        elsewhere.
       </p>
     );
   }
@@ -148,7 +200,11 @@ function AutosaveStatus({
       aria-live="polite"
       aria-atomic="true"
     >
-      {getAutosaveStatusMessage(snapshot)}
+      {
+        getAutosaveStatusMessage(
+          snapshot,
+        )
+      }
     </p>
   );
 }
@@ -160,15 +216,27 @@ export function NoteDetailWorkspace({
   const [
     workspaceDetail,
     setWorkspaceDetail,
-  ] = useState<NoteDetail>(() => detail);
+  ] = useState<NoteDetail>(
+    () => detail,
+  );
+
+  const workspaceDetailRef =
+    useRef<NoteDetail>(
+      detail,
+    );
+
+  workspaceDetailRef.current =
+    workspaceDetail;
 
   const [
     savedContent,
     setSavedContent,
-  ] = useState<SoapContent>(() =>
-    copySoapContent(
-      detail.currentVersion.content,
-    ),
+  ] = useState<SoapContent>(
+    () =>
+      copySoapContent(
+        detail.currentVersion
+          .content,
+      ),
   );
 
   const initialDraftContent =
@@ -186,104 +254,115 @@ export function NoteDetailWorkspace({
   const [
     historicalVersionId,
     setHistoricalVersionId,
-  ] = useState<string | null>(null);
-
-  const [
-  comparisonStatus,
-  setComparisonStatus,
-] =
-  useState<VersionComparisonStatus>(
-    "closed",
+  ] = useState<string | null>(
+    null,
   );
 
-const [
-  compareFromVersionId,
-  setCompareFromVersionId,
-] = useState<string | null>(null);
+  const [
+    comparisonStatus,
+    setComparisonStatus,
+  ] =
+    useState<VersionComparisonStatus>(
+      "closed",
+    );
 
-const [
-  compareToVersionId,
-  setCompareToVersionId,
-] = useState<string | null>(null);
+  const [
+    compareFromVersionId,
+    setCompareFromVersionId,
+  ] = useState<string | null>(
+    null,
+  );
+
+  const [
+    compareToVersionId,
+    setCompareToVersionId,
+  ] = useState<string | null>(
+    null,
+  );
 
   const [
     rejectionReason,
     setRejectionReason,
   ] = useState("");
 
-  const historicalVersion = useMemo(
-    () => {
+  const [
+    realtimeNotice,
+    setRealtimeNotice,
+  ] = useState<string | null>(
+    null,
+  );
+
+  const historicalVersion =
+    useMemo(() => {
       if (
-        historicalVersionId === null
+        historicalVersionId ===
+        null
       ) {
         return null;
       }
 
       return (
         workspaceDetail.versions.find(
-          (version) =>
+          version =>
             version.versionId ===
             historicalVersionId,
         ) ?? null
       );
-    },
-    [
+    }, [
       historicalVersionId,
       workspaceDetail.versions,
-    ],
-  );
+    ]);
 
-  const compareFromVersion = useMemo(
-  () => {
-    if (
-      compareFromVersionId === null
-    ) {
-      return null;
-    }
+  const compareFromVersion =
+    useMemo(() => {
+      if (
+        compareFromVersionId ===
+        null
+      ) {
+        return null;
+      }
 
-    return (
-      workspaceDetail.versions.find(
-        (version) =>
-          version.versionId ===
-          compareFromVersionId,
-      ) ?? null
-    );
-  },
-  [
-    compareFromVersionId,
-    workspaceDetail.versions,
-  ],
-);
+      return (
+        workspaceDetail.versions.find(
+          version =>
+            version.versionId ===
+            compareFromVersionId,
+        ) ?? null
+      );
+    }, [
+      compareFromVersionId,
+      workspaceDetail.versions,
+    ]);
 
-const compareToVersion = useMemo(
-  () => {
-    if (
-      compareToVersionId === null
-    ) {
-      return null;
-    }
+  const compareToVersion =
+    useMemo(() => {
+      if (
+        compareToVersionId ===
+        null
+      ) {
+        return null;
+      }
 
-    return (
-      workspaceDetail.versions.find(
-        (version) =>
-          version.versionId ===
-          compareToVersionId,
-      ) ?? null
-    );
-  },
-  [
-    compareToVersionId,
-    workspaceDetail.versions,
-  ],
-);
+      return (
+        workspaceDetail.versions.find(
+          version =>
+            version.versionId ===
+            compareToVersionId,
+        ) ?? null
+      );
+    }, [
+      compareToVersionId,
+      workspaceDetail.versions,
+    ]);
 
-const isComparisonOpen =
-  comparisonStatus !== "closed";
+  const isComparisonOpen =
+    comparisonStatus !== "closed";
 
-const isComparingVersions =
-  comparisonStatus === "active" &&
-  compareFromVersion !== null &&
-  compareToVersion !== null;
+  const isComparingVersions =
+    comparisonStatus ===
+      "active" &&
+    compareFromVersion !== null &&
+    compareToVersion !== null;
 
   const draftContentRef =
     useRef<SoapContent>(
@@ -291,22 +370,32 @@ const isComparingVersions =
     );
 
   const optimisticSnapshotRef =
-    useRef<NoteDetail | null>(null);
+    useRef<NoteDetail | null>(
+      null,
+    );
 
   const optimisticTimelineEventIdRef =
-    useRef<string | null>(null);
+    useRef<string | null>(
+      null,
+    );
 
-  const dirtySections = useMemo(
-    () =>
-      getDirtySections(
+  const dirtySections =
+    useMemo(
+      () =>
+        getDirtySections(
+          draftContent,
+          savedContent,
+        ),
+      [
         draftContent,
         savedContent,
-      ),
-    [
-      draftContent,
-      savedContent,
-    ],
-  );
+      ],
+    );
+
+  const hasDirtySections =
+    Object.values(
+      dirtySections,
+    ).some(Boolean);
 
   const isViewingHistoricalVersion =
     historicalVersion !== null;
@@ -320,107 +409,118 @@ const isComparingVersions =
       ? CLEAN_SECTIONS
       : dirtySections;
 
-  const handleSaveSuccess = useCallback(
-    ({
-      response,
-      savedContent:
-        successfullySavedContent,
-    }: AutosaveSuccess): void => {
-      setSavedContent(
-        copySoapContent(
+  const handleSaveSuccess =
+    useCallback(
+      ({
+        response,
+        savedContent:
           successfullySavedContent,
-        ),
-      );
+      }: AutosaveSuccess): void => {
+        setSavedContent(
+          copySoapContent(
+            successfullySavedContent,
+          ),
+        );
 
-      setWorkspaceDetail(
-        (currentDetail) => {
-          const versionAlreadyExists =
-            currentDetail.versions.some(
-              (version) =>
-                version.versionId ===
-                response.savedVersion
-                  .versionId,
-            );
+        setWorkspaceDetail(
+          currentDetail => {
+            const versionAlreadyExists =
+              currentDetail.versions.some(
+                version =>
+                  version.versionId ===
+                  response.savedVersion
+                    .versionId,
+              );
 
-          return {
-            ...currentDetail,
-
-            note: response.note,
-
-            currentVersion:
-              response.savedVersion,
-
-            versions:
-              versionAlreadyExists
-                ? currentDetail.versions
-                : [
-                    ...currentDetail.versions,
-                    response.savedVersion,
-                  ],
-          };
-        },
-      );
-    },
-    [],
-  );
+            return {
+              ...currentDetail,
+              note: response.note,
+              currentVersion:
+                response.savedVersion,
+              versions:
+                versionAlreadyExists
+                  ? currentDetail.versions
+                  : [
+                      ...currentDetail.versions,
+                      response.savedVersion,
+                    ],
+            };
+          },
+        );
+      },
+      [],
+    );
 
   const handleOptimisticApply =
     useCallback(
       (
-        command: TransitionNoteCommand,
+        command:
+          TransitionNoteCommand,
       ): void => {
         const occurredAt =
           new Date().toISOString();
 
         setWorkspaceDetail(
-          (currentDetail) => {
+          currentDetail => {
             const transitionResult =
               canTransition({
-                note: currentDetail.note,
+                note:
+                  currentDetail.note,
                 version:
-                  currentDetail.currentVersion,
+                  currentDetail
+                    .currentVersion,
                 actor,
-                action: command.trigger,
+                action:
+                  command.trigger,
                 now: occurredAt,
-                ...(command.rejectionReason !==
+                ...(command
+                  .rejectionReason !==
                 undefined
                   ? {
                       rejectionReason:
-                        command.rejectionReason,
+                        command
+                          .rejectionReason,
                     }
                   : {}),
               });
 
-            if (!transitionResult.allowed) {
+            if (
+              !transitionResult.allowed
+            ) {
               return currentDetail;
             }
 
             optimisticSnapshotRef.current =
               currentDetail;
 
-            const optimisticEventId = [
-              "optimistic-transition",
-              Date.now(),
-              Math.random()
-                .toString(36)
-                .slice(2),
-            ].join("-");
+            const optimisticEventId =
+              [
+                "optimistic-transition",
+                Date.now(),
+                Math.random()
+                  .toString(36)
+                  .slice(2),
+              ].join("-");
 
             optimisticTimelineEventIdRef.current =
               optimisticEventId;
 
             const optimisticTimelineEvent:
               ReviewTimelineEvent = {
-              eventId: optimisticEventId,
+              eventId:
+                optimisticEventId,
               noteId:
                 currentDetail.note.id,
               versionId:
-                currentDetail.currentVersion
+                currentDetail
+                  .currentVersion
                   .versionId,
               fromStatus:
-                currentDetail.note.status,
+                currentDetail.note
+                  .status,
               toStatus:
-                transitionResult.nextStatus,
+                transitionResult
+                  .nextStatus,
               actorId: actor.id,
               actorRole: actor.role,
               actorDisplayName:
@@ -428,10 +528,13 @@ const isComparingVersions =
               occurredAt,
               ...(command.trigger ===
                 "REJECT" &&
-              command.rejectionReason?.trim()
+              command.rejectionReason
+                ?.trim()
                 ? {
                     reason:
-                      command.rejectionReason.trim(),
+                      command
+                        .rejectionReason
+                        .trim(),
                   }
                 : {}),
             };
@@ -441,9 +544,12 @@ const isComparingVersions =
               note: {
                 ...currentDetail.note,
                 status:
-                  transitionResult.nextStatus,
-                updatedAt: occurredAt,
-                ...(transitionResult.nextStatus ===
+                  transitionResult
+                    .nextStatus,
+                updatedAt:
+                  occurredAt,
+                ...(transitionResult
+                  .nextStatus ===
                 "APPROVED"
                   ? {
                       approvedAt:
@@ -465,26 +571,44 @@ const isComparingVersions =
   const handleTransitionSuccess =
     useCallback(
       (
-        response: TransitionNoteResponse,
+        response:
+          TransitionNoteResponse,
       ): void => {
         const optimisticEventId =
-          optimisticTimelineEventIdRef.current;
+          optimisticTimelineEventIdRef
+            .current;
 
         setWorkspaceDetail(
-          (currentDetail) => ({
-            ...currentDetail,
-            note: response.note,
-            currentVersion:
-              response.currentVersion,
-            timeline: [
-              ...currentDetail.timeline.filter(
-                (event) =>
+          currentDetail => {
+            const timelineWithoutOptimistic =
+              currentDetail.timeline.filter(
+                event =>
                   event.eventId !==
                   optimisticEventId,
-              ),
-              response.timelineEvent,
-            ],
-          }),
+              );
+
+            const authoritativeExists =
+              timelineWithoutOptimistic.some(
+                event =>
+                  event.eventId ===
+                  response.timelineEvent
+                    .eventId,
+              );
+
+            return {
+              ...currentDetail,
+              note: response.note,
+              currentVersion:
+                response.currentVersion,
+              timeline:
+                authoritativeExists
+                  ? timelineWithoutOptimistic
+                  : [
+                      ...timelineWithoutOptimistic,
+                      response.timelineEvent,
+                    ],
+            };
+          },
         );
 
         optimisticSnapshotRef.current =
@@ -503,8 +627,10 @@ const isComparingVersions =
       const snapshot =
         optimisticSnapshotRef.current;
 
-      if (snapshot) {
-        setWorkspaceDetail(snapshot);
+      if (snapshot !== null) {
+        setWorkspaceDetail(
+          snapshot,
+        );
       }
 
       optimisticSnapshotRef.current =
@@ -513,24 +639,26 @@ const isComparingVersions =
       optimisticTimelineEventIdRef.current =
         null;
     }, []);
-  
+
   const {
     snapshot: autosaveSnapshot,
     conflict: autosaveConflict,
     updateDraft: queueAutosave,
     retry: retryAutosave,
-    resolveConflict: resolveAutosaveConflict,
+    resolveConflict:
+      resolveAutosaveConflict,
+    adoptServerVersion:
+      adoptAutosaveServerVersion,
   } = useNoteAutosave({
     noteId: detail.note.id,
     actor,
     initialBaseVersionId:
-      detail.currentVersion.versionId,
-
+      detail.currentVersion
+        .versionId,
     initialContent:
-      detail.currentVersion.content,
-
+      detail.currentVersion
+        .content,
     debounceMs: 500,
-
     onSaveSuccess:
       handleSaveSuccess,
   });
@@ -538,9 +666,12 @@ const isComparingVersions =
   const handleConflictResolve =
     useCallback(
       (
-        resolvedContent: SoapContent,
+        resolvedContent:
+          SoapContent,
       ): void => {
-        if (!autosaveConflict) {
+        if (
+          autosaveConflict === null
+        ) {
           return;
         }
 
@@ -552,22 +683,31 @@ const isComparingVersions =
         draftContentRef.current =
           nextContent;
 
-        setDraftContent(nextContent);
-        setHistoricalVersionId(null);
+        setDraftContent(
+          nextContent,
+        );
+
+        setHistoricalVersionId(
+          null,
+        );
 
         setWorkspaceDetail(
-          (currentDetail) => {
+          currentDetail => {
             const serverVersion =
-              autosaveConflict.currentVersion;
+              autosaveConflict
+                .currentVersion;
 
             const serverVersionExists =
               currentDetail.versions.some(
-                (version) =>
+                version =>
                   version.versionId ===
-                  serverVersion.versionId,
+                  serverVersion
+                    .versionId,
               );
 
-            if (serverVersionExists) {
+            if (
+              serverVersionExists
+            ) {
               return currentDetail;
             }
 
@@ -581,27 +721,170 @@ const isComparingVersions =
           },
         );
 
-      resolveAutosaveConflict(
-        nextContent,
-        autosaveConflict.currentVersion
-          .versionId,
-      );
-    },
-    [
-      autosaveConflict,
-      resolveAutosaveConflict,
-    ],
-  );
+        resolveAutosaveConflict(
+          nextContent,
+          autosaveConflict
+            .currentVersion
+            .versionId,
+        );
+      },
+      [
+        autosaveConflict,
+        resolveAutosaveConflict,
+      ],
+    );
 
   const {
     state: transitionState,
     execute: executeTransition,
   } = useNoteTransition({
-    noteId: workspaceDetail.note.id,
+    noteId:
+      workspaceDetail.note.id,
     actor,
-    onOptimisticApply: handleOptimisticApply,
-    onSuccess: handleTransitionSuccess,
-    onFailure: handleTransitionFailure,
+    onOptimisticApply:
+      handleOptimisticApply,
+    onSuccess:
+      handleTransitionSuccess,
+    onFailure:
+      handleTransitionFailure,
+  });
+
+  useRealtimeSubscription({
+    noteIds: [
+      workspaceDetail.note.id,
+    ],
+
+    onEvent: event => {
+      if (
+        event.type ===
+        "note.status_changed"
+      ) {
+        const isOwnOptimisticEcho =
+          workspaceDetailRef.current
+            .timeline.some(
+              timelineEvent =>
+                timelineEvent.eventId
+                  .startsWith(
+                    "optimistic-transition",
+                  ) &&
+                timelineEvent.fromStatus ===
+                  event.response
+                    .timelineEvent
+                    .fromStatus &&
+                timelineEvent.toStatus ===
+                  event.response
+                    .timelineEvent
+                    .toStatus,
+            );
+
+        if (!isOwnOptimisticEcho) {
+          setRealtimeNotice(
+            "This note changed in another session. The latest server status has been applied.",
+          );
+        }
+
+        setWorkspaceDetail(
+          currentDetail => {
+            const nextDetail =
+              applyRealtimeEventToNoteDetail(
+                currentDetail,
+                event,
+              );
+
+            workspaceDetailRef.current =
+              nextDetail;
+
+            return nextDetail;
+          },
+        );
+
+        return;
+      }
+
+      if (
+        event.type ===
+        "note.version_added"
+      ) {
+        const hasUnacknowledgedLocalWork =
+          autosaveSnapshot.status !==
+            "idle" ||
+          hasDirtySections;
+
+        if (
+          autosaveSnapshot.status !==
+            "saving" &&
+          hasUnacknowledgedLocalWork
+        ) {
+          setRealtimeNotice(
+            "A newer version arrived while local edits were pending. Saving will use the normal conflict-resolution flow.",
+          );
+        }
+
+        setWorkspaceDetail(
+          currentDetail => {
+            const nextDetail =
+              applyRealtimeEventToNoteDetail(
+                currentDetail,
+                event,
+              );
+
+            workspaceDetailRef.current =
+              nextDetail;
+
+            return nextDetail;
+          },
+        );
+
+        if (
+          !hasUnacknowledgedLocalWork
+        ) {
+          const nextContent =
+            copySoapContent(
+              event.response
+                .savedVersion
+                .content,
+            );
+
+          const adopted =
+            adoptAutosaveServerVersion(
+              event.response
+                .savedVersion
+                .versionId,
+              nextContent,
+            );
+
+          if (adopted) {
+            setSavedContent(
+              nextContent,
+            );
+
+            setDraftContent(
+              nextContent,
+            );
+
+            draftContentRef.current =
+              nextContent;
+          }
+        }
+
+        return;
+      }
+
+      setWorkspaceDetail(
+        currentDetail => {
+          const nextDetail =
+            applyRealtimeEventToNoteDetail(
+              currentDetail,
+              event,
+            );
+
+          workspaceDetailRef.current =
+            nextDetail;
+
+          return nextDetail;
+        },
+      );
+    },
   });
 
   const isEditable =
@@ -610,16 +893,12 @@ const isComparingVersions =
     transitionState.status !==
       "pending";
 
-  const hasDirtySections =
-    Object.values(
-      dirtySections,
-    ).some(Boolean);
-
   const workspaceBlockReason =
     useMemo(() => {
       if (isComparisonOpen) {
         return "Exit version comparison before running an action.";
       }
+
       if (
         isViewingHistoricalVersion
       ) {
@@ -698,7 +977,8 @@ const isComparingVersions =
       >
     >(() => {
       if (
-        transitionState.trigger === null
+        transitionState.trigger ===
+        null
       ) {
         return {};
       }
@@ -745,64 +1025,67 @@ const isComparingVersions =
       null
       ? optimisticSnapshotRef.current
       : workspaceDetail;
-    
-  const availableActions = useMemo(
-    () =>
-      deriveAvailableNoteActions({
-        note: actionSourceDetail.note,
 
-        version:
-          actionSourceDetail.currentVersion,
-
+  const availableActions =
+    useMemo(
+      () =>
+        deriveAvailableNoteActions({
+          note:
+            actionSourceDetail.note,
+          version:
+            actionSourceDetail
+              .currentVersion,
+          actor,
+          now:
+            new Date().toISOString(),
+          rejectionReason,
+          workspaceBlockReason,
+          executionStates:
+            actionExecutionStates,
+        }),
+      [
+        actionExecutionStates,
         actor,
-
-        now:
-          new Date().toISOString(),
-
         rejectionReason,
-
         workspaceBlockReason,
-
-        executionStates:
-          actionExecutionStates,
-      }),
-    [
-      isComparisonOpen,
-      actionExecutionStates,
-      actor,
-      rejectionReason,
-      workspaceBlockReason,
-      actionSourceDetail.currentVersion,
-      actionSourceDetail.note,
-    ],
-  );
+        actionSourceDetail
+          .currentVersion,
+        actionSourceDetail.note,
+      ],
+    );
 
   function handleSectionChange(
     section: SoapSectionKey,
     value: string,
   ): void {
-    const nextContent: SoapContent = {
-      ...draftContentRef.current,
-      [section]: value,
-    };
+    const nextContent:
+      SoapContent = {
+        ...draftContentRef.current,
+        [section]: value,
+      };
 
     draftContentRef.current =
       nextContent;
 
-    setDraftContent(nextContent);
-    queueAutosave(nextContent);
+    setDraftContent(
+      nextContent,
+    );
+
+    queueAutosave(
+      nextContent,
+    );
   }
 
   function handleAction(
-    trigger: UserNoteActionTrigger,
+    trigger:
+      UserNoteActionTrigger,
   ): void {
     void executeTransition({
       baseVersionId:
-        workspaceDetail.currentVersion
+        workspaceDetail
+          .currentVersion
           .versionId,
-
       trigger,
-
       ...(trigger === "REJECT"
         ? {
             rejectionReason,
@@ -819,21 +1102,31 @@ const isComparingVersions =
       ...workspaceDetail.versions,
     ]
       .filter(
-        (version) =>
+        version =>
           version.versionId !==
           currentVersion.versionId,
       )
       .sort(
-        (firstVersion, secondVersion) =>
-          secondVersion.revisionNumber -
-          firstVersion.revisionNumber,
+        (
+          firstVersion,
+          secondVersion,
+        ) =>
+          secondVersion
+            .revisionNumber -
+          firstVersion
+            .revisionNumber,
       )[0];
 
-    if (!previousVersion) {
+    if (
+      previousVersion ===
+      undefined
+    ) {
       return;
     }
 
-    setHistoricalVersionId(null);
+    setHistoricalVersionId(
+      null,
+    );
 
     setCompareFromVersionId(
       previousVersion.versionId,
@@ -843,27 +1136,46 @@ const isComparingVersions =
       currentVersion.versionId,
     );
 
-    setComparisonStatus("selecting");
+    setComparisonStatus(
+      "selecting",
+    );
   }
 
   function handleShowComparison(): void {
     if (
-      compareFromVersion === null ||
-      compareToVersion === null ||
-      compareFromVersion.versionId ===
-        compareToVersion.versionId
+      compareFromVersion ===
+        null ||
+      compareToVersion ===
+        null ||
+      compareFromVersion
+        .versionId ===
+        compareToVersion
+          .versionId
     ) {
       return;
     }
 
-    setHistoricalVersionId(null);
-    setComparisonStatus("active");
+    setHistoricalVersionId(
+      null,
+    );
+
+    setComparisonStatus(
+      "active",
+    );
   }
 
   function handleExitComparison(): void {
-    setComparisonStatus("closed");
-    setCompareFromVersionId(null);
-    setCompareToVersionId(null);
+    setComparisonStatus(
+      "closed",
+    );
+
+    setCompareFromVersionId(
+      null,
+    );
+
+    setCompareToVersionId(
+      null,
+    );
   }
 
   function handleVersionSelect(
@@ -875,41 +1187,59 @@ const isComparingVersions =
 
     const isCurrentVersion =
       versionId ===
-      workspaceDetail.currentVersion
+      workspaceDetail
+        .currentVersion
         .versionId;
 
-    if (isCurrentVersion) {
-      setHistoricalVersionId(null);
-      return;
-    }
-
-    setHistoricalVersionId(versionId);
+    setHistoricalVersionId(
+      isCurrentVersion
+        ? null
+        : versionId,
+    );
   }
 
   return (
     <>
       <NoteDetailHeader
-        note={workspaceDetail.note}
+        note={
+          workspaceDetail.note
+        }
         patient={
           workspaceDetail.patient
         }
         assignedReviewer={
-          workspaceDetail.assignedReviewer
+          workspaceDetail
+            .assignedReviewer
         }
         revisionNumber={
-          workspaceDetail.currentVersion
+          workspaceDetail
+            .currentVersion
             .revisionNumber
         }
       />
+
+      {realtimeNotice !== null ? (
+        <p
+          role="status"
+          aria-label="Real-time note update"
+          aria-live="polite"
+          aria-atomic="true"
+          className="note-realtime-notice"
+        >
+          {realtimeNotice}
+        </p>
+      ) : null}
 
       <div className="note-detail-layout">
         <div className="note-detail-main">
           <PatientSessionCard
             patient={
-              workspaceDetail.patient
+              workspaceDetail
+                .patient
             }
             session={
-              workspaceDetail.session
+              workspaceDetail
+                .session
             }
           />
 
@@ -925,14 +1255,18 @@ const isComparingVersions =
           ) : null}
 
           <NoteActionBar
-            actions={availableActions}
+            actions={
+              availableActions
+            }
             rejectionReason={
               rejectionReason
             }
             onRejectionReasonChange={
               setRejectionReason
             }
-            onAction={handleAction}
+            onAction={
+              handleAction
+            }
           />
 
           {transitionState.status ===
@@ -943,7 +1277,9 @@ const isComparingVersions =
               className="note-action-error"
               role="alert"
             >
-              {transitionState.message}
+              {
+                transitionState.message
+              }
             </p>
           ) : null}
 
@@ -953,11 +1289,13 @@ const isComparingVersions =
               className="note-action-success"
               role="status"
             >
-              Action completed successfully.
+              Action completed
+              successfully.
             </p>
           ) : null}
 
-          {historicalVersion ? (
+          {historicalVersion !==
+          null ? (
             <p
               className="historical-version-notice"
               role="status"
@@ -967,59 +1305,67 @@ const isComparingVersions =
                 historicalVersion
                   .revisionNumber
               }
-              . Historical versions are
-              read-only.
+              . Historical versions
+              are read-only.
             </p>
           ) : null}
 
-          {autosaveConflict !== null &&
-            !isViewingHistoricalVersion ? (
-              <VersionConflictResolver
-                ancestorContent={
-                  autosaveConflict
-                    .commonAncestor?.content ??
-                  savedContent
-                }
-                localContent={draftContent}
-                serverContent={
-                  autosaveConflict
-                    .currentVersion.content
-                }
-                onResolve={
-                  handleConflictResolve
-                }
-              />
-            ) : isComparingVersions ? (
-              <VersionDiffViewer
-                fromVersion={
-                  compareFromVersion
-                }
-                toVersion={
-                  compareToVersion
-                }
-                onClose={
-                  handleExitComparison
-                }
-              />
-            ) : (
-              <SoapEditor
-                content={displayedContent}
-                readOnly={
-                  !isEditable ||
-                  isViewingHistoricalVersion
-                }
-                dirtySections={
-                  displayedDirtySections
-                }
-                onSectionChange={
-                  handleSectionChange
-                }
-              />
-            )}
+          {autosaveConflict !==
+            null &&
+          !isViewingHistoricalVersion ? (
+            <VersionConflictResolver
+              ancestorContent={
+                autosaveConflict
+                  .commonAncestor
+                  ?.content ??
+                savedContent
+              }
+              localContent={
+                draftContent
+              }
+              serverContent={
+                autosaveConflict
+                  .currentVersion
+                  .content
+              }
+              onResolve={
+                handleConflictResolve
+              }
+            />
+          ) : isComparingVersions ? (
+            <VersionDiffViewer
+              fromVersion={
+                compareFromVersion
+              }
+              toVersion={
+                compareToVersion
+              }
+              onClose={
+                handleExitComparison
+              }
+            />
+          ) : (
+            <SoapEditor
+              content={
+                displayedContent
+              }
+              readOnly={
+                !isEditable ||
+                isViewingHistoricalVersion
+              }
+              dirtySections={
+                displayedDirtySections
+              }
+              onSectionChange={
+                handleSectionChange
+              }
+            />
+          )}
 
           <ReviewTimeline
             events={
-              workspaceDetail.timeline
+              workspaceDetail
+                .timeline
             }
           />
         </div>
@@ -1030,21 +1376,25 @@ const isComparingVersions =
         >
           <PresencePanel
             presence={
-              workspaceDetail.presence
+              workspaceDetail
+                .presence
             }
           />
 
           <VersionHistorySidebar
             versions={
-              workspaceDetail.versions
+              workspaceDetail
+                .versions
             }
             currentVersionId={
-              workspaceDetail.currentVersion
+              workspaceDetail
+                .currentVersion
                 .versionId
             }
             selectedVersionId={
               historicalVersionId ??
-              workspaceDetail.currentVersion
+              workspaceDetail
+                .currentVersion
                 .versionId
             }
             comparisonStatus={

@@ -1,12 +1,20 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   type CSSProperties,
 } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  useVirtualizer,
+} from "@tanstack/react-virtual";
 import { Link } from "react-router-dom";
 
-import type { NoteSummary } from "../../../../domain/noteSummary";
+import type {
+  NoteSummary,
+} from "../../../../domain/noteSummary";
+import {
+  useVisibleNotesRealtime,
+} from "../../realtime/useVisibleNotesRealtime";
 
 interface NotesTableProps {
   notes: NoteSummary[];
@@ -14,30 +22,16 @@ interface NotesTableProps {
   isLoadingMore: boolean;
   onLoadMore: () => void;
   selectedIds: Set<string>;
-  onToggleRow: (noteId: string) => void;
+  onToggleRow: (
+    noteId: string,
+  ) => void;
   onToggleAllVisible: () => void;
 }
 
-/*
- * Fixed row height keeps virtualization straightforward.
- *
- * Every cell is forced onto one line and truncated when
- * necessary so that the visual row height always matches
- * the height expected by TanStack Virtual.
- */
 const ROW_HEIGHT_PX = 44;
 const CONTAINER_HEIGHT_PX = 600;
-
-/*
- * Start loading another cursor page before the user reaches
- * the final loaded row.
- */
 const LOAD_MORE_THRESHOLD = 10;
 
-/*
- * The header and every virtualized row use this same grid.
- * This keeps all columns aligned.
- */
 const TABLE_GRID_TEMPLATE = `
   32px
   minmax(150px, 1.2fr)
@@ -59,10 +53,11 @@ const CELL_STYLE: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-const HEADER_CELL_STYLE: CSSProperties = {
-  ...CELL_STYLE,
-  fontWeight: "bold",
-};
+const HEADER_CELL_STYLE:
+  CSSProperties = {
+    ...CELL_STYLE,
+    fontWeight: "bold",
+  };
 
 const COLUMNS = [
   "Patient",
@@ -83,50 +78,74 @@ export function NotesTable({
   onToggleAllVisible,
 }: NotesTableProps) {
   const scrollContainerRef =
-    useRef<HTMLDivElement | null>(null);
-
-  const allVisibleSelected =
-    notes.length > 0 &&
-    notes.every((note) =>
-      selectedIds.has(note.id),
+    useRef<HTMLDivElement | null>(
+      null,
     );
 
-  const rowVirtualizer = useVirtualizer({
-    count: notes.length,
-    getScrollElement: () =>
-      scrollContainerRef.current,
-    estimateSize: () => ROW_HEIGHT_PX,
-
-    /*
-     * Overscan renders extra rows outside the currently
-     * visible area. This reduces blank flashes during fast
-     * scrolling.
-     */
-    overscan: 8,
-  });
+  const rowVirtualizer =
+    useVirtualizer({
+      count: notes.length,
+      getScrollElement: () =>
+        scrollContainerRef.current,
+      estimateSize: () =>
+        ROW_HEIGHT_PX,
+      overscan: 8,
+    });
 
   const virtualRows =
     rowVirtualizer.getVirtualItems();
 
-  /*
-   * When the last rendered virtual row approaches the end of
-   * the loaded notes, request the next cursor page.
-   *
-   * Pagination still controls how much data is fetched.
-   * Virtualization only controls how many loaded rows are
-   * rendered in the DOM.
-   */
+  const visibleNoteIds =
+    useMemo(
+      () =>
+        virtualRows
+          .map(
+            virtualRow =>
+              notes[
+                virtualRow.index
+              ]?.id,
+          )
+          .filter(
+            (
+              noteId,
+            ): noteId is string =>
+              noteId !== undefined,
+          ),
+      [
+        notes,
+        virtualRows,
+      ],
+    );
+
+  const displayedNotes =
+    useVisibleNotesRealtime(
+      notes,
+      visibleNoteIds,
+    );
+
+  const allVisibleSelected =
+    notes.length > 0 &&
+    notes.every(note =>
+      selectedIds.has(note.id),
+    );
+
   useEffect(() => {
     const lastVirtualRow =
-      virtualRows[virtualRows.length - 1];
+      virtualRows[
+        virtualRows.length - 1
+      ];
 
-    if (lastVirtualRow === undefined) {
+    if (
+      lastVirtualRow === undefined
+    ) {
       return;
     }
 
     const isNearEnd =
       lastVirtualRow.index >=
-      notes.length - 1 - LOAD_MORE_THRESHOLD;
+      notes.length -
+        1 -
+        LOAD_MORE_THRESHOLD;
 
     if (
       isNearEnd &&
@@ -145,18 +164,20 @@ export function NotesTable({
 
   return (
     <div>
-      {/*
-       * The outer wrapper provides horizontal scrolling on
-       * narrow screens instead of compressing and wrapping
-       * table cells.
-       */}
-      <div style={{ overflowX: "auto" }}>
+      <div
+        style={{
+          overflowX: "auto",
+        }}
+      >
         <div
           role="table"
           aria-label="Notes"
-          aria-rowcount={notes.length}
+          aria-rowcount={
+            displayedNotes.length
+          }
           style={{
-            minWidth: TABLE_MIN_WIDTH_PX,
+            minWidth:
+              TABLE_MIN_WIDTH_PX,
           }}
         >
           <div
@@ -167,7 +188,8 @@ export function NotesTable({
                 TABLE_GRID_TEMPLATE,
               columnGap: 12,
               alignItems: "center",
-              minHeight: ROW_HEIGHT_PX,
+              minHeight:
+                ROW_HEIGHT_PX,
             }}
           >
             <div
@@ -177,16 +199,22 @@ export function NotesTable({
               <input
                 type="checkbox"
                 aria-label="Select all loaded notes"
-                checked={allVisibleSelected}
-                onChange={onToggleAllVisible}
+                checked={
+                  allVisibleSelected
+                }
+                onChange={
+                  onToggleAllVisible
+                }
               />
             </div>
 
-            {COLUMNS.map((column) => (
+            {COLUMNS.map(column => (
               <div
                 key={column}
                 role="columnheader"
-                style={HEADER_CELL_STYLE}
+                style={
+                  HEADER_CELL_STYLE
+                }
               >
                 {column}
               </div>
@@ -194,9 +222,12 @@ export function NotesTable({
           </div>
 
           <div
-            ref={scrollContainerRef}
+            ref={
+              scrollContainerRef
+            }
             style={{
-              height: CONTAINER_HEIGHT_PX,
+              height:
+                CONTAINER_HEIGHT_PX,
               overflowY: "auto",
               position: "relative",
             }}
@@ -204,15 +235,24 @@ export function NotesTable({
             <div
               style={{
                 height:
-                  rowVirtualizer.getTotalSize(),
+                  rowVirtualizer
+                    .getTotalSize(),
                 position: "relative",
                 width: "100%",
               }}
             >
               {virtualRows.map(
-                (virtualRow) => {
+                virtualRow => {
                   const note =
-                    notes[virtualRow.index];
+                    displayedNotes[
+                      virtualRow.index
+                    ];
+
+                  if (
+                    note === undefined
+                  ) {
+                    return null;
+                  }
 
                   const reviewerName =
                     note.assignedReviewer
@@ -229,29 +269,35 @@ export function NotesTable({
                       key={note.id}
                       role="row"
                       aria-rowindex={
-                        virtualRow.index + 1
+                        virtualRow.index +
+                        1
                       }
                       data-index={
                         virtualRow.index
                       }
                       style={{
-                        position: "absolute",
+                        position:
+                          "absolute",
                         top: 0,
                         left: 0,
                         width: "100%",
                         height:
                           virtualRow.size,
-                        transform: `translateY(${virtualRow.start}px)`,
+                        transform:
+                          `translateY(${virtualRow.start}px)`,
                         display: "grid",
                         gridTemplateColumns:
                           TABLE_GRID_TEMPLATE,
                         columnGap: 12,
-                        alignItems: "center",
+                        alignItems:
+                          "center",
                       }}
                     >
                       <div
                         role="cell"
-                        style={CELL_STYLE}
+                        style={
+                          CELL_STYLE
+                        }
                       >
                         <input
                           type="checkbox"
@@ -260,14 +306,18 @@ export function NotesTable({
                             note.id,
                           )}
                           onChange={() =>
-                            onToggleRow(note.id)
+                            onToggleRow(
+                              note.id,
+                            )
                           }
                         />
                       </div>
 
                       <div
                         role="cell"
-                        style={CELL_STYLE}
+                        style={
+                          CELL_STYLE
+                        }
                         title={
                           note.patient
                             .displayName
@@ -281,23 +331,33 @@ export function NotesTable({
 
                       <div
                         role="cell"
-                        style={CELL_STYLE}
-                        title={note.status}
+                        style={
+                          CELL_STYLE
+                        }
+                        title={
+                          note.status
+                        }
                       >
                         {note.status}
                       </div>
 
                       <div
                         role="cell"
-                        style={CELL_STYLE}
-                        title={reviewerName}
+                        style={
+                          CELL_STYLE
+                        }
+                        title={
+                          reviewerName
+                        }
                       >
                         {reviewerName}
                       </div>
 
                       <div
                         role="cell"
-                        style={CELL_STYLE}
+                        style={
+                          CELL_STYLE
+                        }
                         title={String(
                           note.currentVersion
                             .revision,
@@ -311,15 +371,23 @@ export function NotesTable({
 
                       <div
                         role="cell"
-                        style={CELL_STYLE}
-                        title={updatedAtLabel}
+                        style={
+                          CELL_STYLE
+                        }
+                        title={
+                          updatedAtLabel
+                        }
                       >
-                        {updatedAtLabel}
+                        {
+                          updatedAtLabel
+                        }
                       </div>
 
                       <div
                         role="cell"
-                        style={CELL_STYLE}
+                        style={
+                          CELL_STYLE
+                        }
                       >
                         <Link
                           to={`/notes/${note.id}`}
@@ -337,7 +405,9 @@ export function NotesTable({
       </div>
 
       {isLoadingMore && (
-        <p>Loading more notes…</p>
+        <p>
+          Loading more notes…
+        </p>
       )}
     </div>
   );

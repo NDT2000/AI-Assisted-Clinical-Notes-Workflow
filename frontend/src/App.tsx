@@ -1,4 +1,6 @@
-import { useEffect } from "react";
+import {
+  useEffect,
+} from "react";
 import {
   Route,
   Routes,
@@ -12,21 +14,36 @@ import {
 import {
   offlineSaveReplayCoordinator,
 } from "./features/notes/offline/offlineSaveReplay";
-import { NoteDetailPage } from "./features/notes/pages/NoteDetailPage";
-import { NotesPage } from "./features/notes/pages/NotesPage";
+import {
+  mockRealtimePresenceService,
+} from "./features/notes/realtime/mockRealtimePresenceService";
+import {
+  NoteDetailPage,
+} from "./features/notes/pages/NoteDetailPage";
+import {
+  NotesPage,
+} from "./features/notes/pages/NotesPage";
 
 function App() {
   useEffect(() => {
     if (
-      typeof indexedDB === "undefined"
+      typeof indexedDB !==
+      "undefined"
     ) {
-      return;
+      offlineSaveReplayCoordinator.start();
     }
 
-    offlineSaveReplayCoordinator.start();
+    mockRealtimePresenceService.start();
 
     return () => {
-      offlineSaveReplayCoordinator.stop();
+      if (
+        typeof indexedDB !==
+        "undefined"
+      ) {
+        offlineSaveReplayCoordinator.stop();
+      }
+
+      mockRealtimePresenceService.stop();
     };
   }, []);
 
@@ -37,17 +54,23 @@ function App() {
       <Routes>
         <Route
           path="/"
-          element={<NotesPage />}
+          element={
+            <NotesPage />
+          }
         />
 
         <Route
           path="/notes"
-          element={<NotesPage />}
+          element={
+            <NotesPage />
+          }
         />
 
         <Route
           path="/notes/:noteId"
-          element={<NoteDetailPage />}
+          element={
+            <NoteDetailPage />
+          }
         />
       </Routes>
     </>

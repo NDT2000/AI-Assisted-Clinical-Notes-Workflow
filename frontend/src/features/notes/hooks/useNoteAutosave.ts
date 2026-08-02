@@ -6,14 +6,16 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import type { SoapContent } from "../../../domain/noteAttributes";
-import type { SaveNoteVersionActor } from "../../../domain/noteSave";
+import type {
+  SoapContent,
+} from "../../../domain/noteAttributes";
+import type {
+  SaveNoteVersionActor,
+} from "../../../domain/noteSave";
 import {
   AutosaveCoordinator,
-} from "../autosave/AutosaveCoordinator";
-import type {
-  AutosaveSnapshot,
-  AutosaveSuccess,
+  type AutosaveSnapshot,
+  type AutosaveSuccess,
 } from "../autosave/AutosaveCoordinator";
 import {
   getNoteAutosaveConflict,
@@ -42,15 +44,24 @@ interface UseNoteAutosaveOptions {
 
 interface UseNoteAutosaveResult {
   snapshot: AutosaveSnapshot;
-  conflict: NoteAutosaveConflict | null;
-  updateDraft: (
+  conflict:
+    NoteAutosaveConflict | null;
+
+  updateDraft(
     content: SoapContent,
-  ) => void;
-  retry: () => void;
-  resolveConflict: (
+  ): void;
+
+  retry(): void;
+
+  resolveConflict(
     resolvedContent: SoapContent,
     serverBaseVersionId: string,
-  ) => void;
+  ): void;
+
+  adoptServerVersion(
+    serverBaseVersionId: string,
+    content: SoapContent,
+  ): boolean;
 }
 
 interface NoteAutosaveInitialization {
@@ -60,19 +71,23 @@ interface NoteAutosaveInitialization {
   debounceMs: number;
 }
 
-const INITIAL_SNAPSHOT: AutosaveSnapshot = {
-  status: "idle",
-  hasPendingChanges: false,
-  error: null,
-};
+const INITIAL_SNAPSHOT:
+  AutosaveSnapshot = {
+    status: "idle",
+    hasPendingChanges: false,
+    error: null,
+  };
 
 function cloneContent(
   content: SoapContent,
 ): SoapContent {
   return {
-    subjective: content.subjective,
-    objective: content.objective,
-    assessment: content.assessment,
+    subjective:
+      content.subjective,
+    objective:
+      content.objective,
+    assessment:
+      content.assessment,
     plan: content.plan,
   };
 }
@@ -98,7 +113,9 @@ export function useNoteAutosave({
     );
 
   const actorRef =
-    useRef<SaveNoteVersionActor>(actor);
+    useRef<SaveNoteVersionActor>(
+      actor,
+    );
 
   const initializationRef =
     useRef<NoteAutosaveInitialization>({
@@ -119,13 +136,18 @@ export function useNoteAutosave({
     useRef(onSaveSuccess);
 
   const pendingDraftRef =
-    useRef<SoapContent | null>(null);
+    useRef<SoapContent | null>(
+      null,
+    );
 
   const replaySnapshot =
     useSyncExternalStore(
-      offlineSaveReplayCoordinator.subscribe,
-      offlineSaveReplayCoordinator.getSnapshot,
-      offlineSaveReplayCoordinator.getSnapshot,
+      offlineSaveReplayCoordinator
+        .subscribe,
+      offlineSaveReplayCoordinator
+        .getSnapshot,
+      offlineSaveReplayCoordinator
+        .getSnapshot,
     );
 
   useEffect(() => {
@@ -162,25 +184,32 @@ export function useNoteAutosave({
         initialization:
           NoteAutosaveInitialization,
       ): AutosaveCoordinator => {
-        coordinatorRef.current?.dispose();
+        coordinatorRef.current
+          ?.dispose();
 
-        activeRequestRef.current?.abort();
-        activeRequestRef.current = null;
+        activeRequestRef.current
+          ?.abort();
+
+        activeRequestRef.current =
+          null;
 
         const coordinator =
           new AutosaveCoordinator({
             initialBaseVersionId:
-              initialization.baseVersionId,
+              initialization
+                .baseVersionId,
 
             initialContent:
               cloneContent(
-                initialization.content,
+                initialization
+                  .content,
               ),
 
             debounceMs:
-              initialization.debounceMs,
+              initialization
+                .debounceMs,
 
-            save: async (request) => {
+            save: async request => {
               const controller =
                 new AbortController();
 
@@ -189,14 +218,16 @@ export function useNoteAutosave({
 
               try {
                 return await saveNoteVersionWithOfflineQueue(
-                  initialization.noteId,
+                  initialization
+                    .noteId,
                   actorRef.current,
                   request,
                   controller.signal,
                 );
               } finally {
                 if (
-                  activeRequestRef.current ===
+                  activeRequestRef
+                    .current ===
                   controller
                 ) {
                   activeRequestRef.current =
@@ -211,11 +242,12 @@ export function useNoteAutosave({
             onStateChange:
               setSnapshot,
 
-            onSaveSuccess: (result) => {
-              onSaveSuccessRef.current(
-                result,
-              );
-            },
+            onSaveSuccess:
+              result => {
+                onSaveSuccessRef.current(
+                  result,
+                );
+              },
           });
 
         coordinatorRef.current =
@@ -239,51 +271,68 @@ export function useNoteAutosave({
         initialization,
       );
 
-    if (pendingDraftRef.current) {
+    if (
+      pendingDraftRef.current !==
+      null
+    ) {
       coordinator.updateDraft(
         pendingDraftRef.current,
       );
 
-      pendingDraftRef.current = null;
+      pendingDraftRef.current =
+        null;
     }
 
     return () => {
-      coordinatorRef.current?.dispose();
+      coordinatorRef.current
+        ?.dispose();
 
-      activeRequestRef.current?.abort();
-      activeRequestRef.current = null;
+      activeRequestRef.current
+        ?.abort();
 
-      coordinatorRef.current = null;
+      activeRequestRef.current =
+        null;
+
+      coordinatorRef.current =
+        null;
     };
-  }, [installCoordinator, noteId]);
+  }, [
+    installCoordinator,
+    noteId,
+  ]);
 
-  const updateDraft = useCallback(
-    (content: SoapContent) => {
-      const copiedContent =
-        cloneContent(content);
+  const updateDraft =
+    useCallback(
+      (
+        content: SoapContent,
+      ): void => {
+        const copiedContent =
+          cloneContent(content);
 
-      const coordinator =
-        coordinatorRef.current;
+        const coordinator =
+          coordinatorRef.current;
 
-      if (!coordinator) {
-        pendingDraftRef.current =
-          copiedContent;
-        return;
-      }
+        if (coordinator === null) {
+          pendingDraftRef.current =
+            copiedContent;
 
-      coordinator.updateDraft(
-        copiedContent,
-      );
-    },
-    [],
-  );
+          return;
+        }
+
+        coordinator.updateDraft(
+          copiedContent,
+        );
+      },
+      [],
+    );
 
   const offlineBlockedEntry =
     replaySnapshot.blockedConflict !==
       null &&
     replaySnapshot.blockedConflict
       .noteId === noteId
-      ? replaySnapshot.blockedConflict
+      ? replaySnapshot
+          .blockedConflict
       : null;
 
   const offlineConflict:
@@ -291,13 +340,17 @@ export function useNoteAutosave({
     offlineBlockedEntry?.conflict
       ? {
           message:
-            offlineBlockedEntry.conflict
-              .message,
+            offlineBlockedEntry
+              .conflict.message,
+
           currentVersion:
-            offlineBlockedEntry.conflict
+            offlineBlockedEntry
+              .conflict
               .currentVersion,
+
           commonAncestor:
-            offlineBlockedEntry.conflict
+            offlineBlockedEntry
+              .conflict
               .commonAncestor,
         }
       : null;
@@ -310,7 +363,8 @@ export function useNoteAutosave({
       : null;
 
   const conflict =
-    offlineConflict ?? localConflict;
+    offlineConflict ??
+    localConflict;
 
   const effectiveSnapshot:
     AutosaveSnapshot =
@@ -328,92 +382,159 @@ export function useNoteAutosave({
     if (
       offlineBlockedEntry !== null
     ) {
-      void offlineSaveReplayCoordinator.replay();
+      void offlineSaveReplayCoordinator
+        .replay();
+
       return;
     }
 
     coordinatorRef.current?.retry();
   }, [offlineBlockedEntry]);
 
-  const resolveConflict = useCallback(
-    (
-      resolvedContent: SoapContent,
-      serverBaseVersionId: string,
-    ): void => {
-      const copiedContent =
-        cloneContent(resolvedContent);
+  const resolveConflict =
+    useCallback(
+      (
+        resolvedContent:
+          SoapContent,
+        serverBaseVersionId:
+          string,
+      ): void => {
+        const copiedContent =
+          cloneContent(
+            resolvedContent,
+          );
 
-      if (
-        offlineBlockedEntry !== null &&
-        offlineBlockedEntry.conflict !==
-          null
-      ) {
-        const resolutionNoteId = noteId;
+        if (
+          offlineBlockedEntry !==
+            null &&
+          offlineBlockedEntry
+            .conflict !== null
+        ) {
+          const resolutionNoteId =
+            noteId;
 
-        void offlineSaveReplayCoordinator
-          .resolveBlockedConflict(
-            copiedContent,
-          )
-          .then((response) => {
-            if (
-              response === null ||
-              initializationRef.current
-                .noteId !== resolutionNoteId
-            ) {
-              return;
-            }
+          void offlineSaveReplayCoordinator
+            .resolveBlockedConflict(
+              copiedContent,
+            )
+            .then(response => {
+              if (
+                response === null ||
+                initializationRef
+                  .current.noteId !==
+                  resolutionNoteId
+              ) {
+                return;
+              }
 
-            const nextInitialization:
-              NoteAutosaveInitialization = {
-              noteId: resolutionNoteId,
-              baseVersionId:
-                response.savedVersion
-                  .versionId,
-              content:
-                cloneContent(
-                  copiedContent,
-                ),
-              debounceMs:
-                initializationRef.current
-                  .debounceMs,
-            };
+              const nextInitialization:
+                NoteAutosaveInitialization = {
+                noteId:
+                  resolutionNoteId,
 
-            initializationRef.current =
-              nextInitialization;
+                baseVersionId:
+                  response
+                    .savedVersion
+                    .versionId,
 
-            installCoordinator(
-              nextInitialization,
-            );
+                content:
+                  cloneContent(
+                    copiedContent,
+                  ),
 
-            onSaveSuccessRef.current({
-              response,
-              savedContent:
-                cloneContent(
-                  copiedContent,
-                ),
+                debounceMs:
+                  initializationRef
+                    .current
+                    .debounceMs,
+              };
+
+              initializationRef.current =
+                nextInitialization;
+
+              installCoordinator(
+                nextInitialization,
+              );
+
+              onSaveSuccessRef.current({
+                response,
+
+                savedContent:
+                  cloneContent(
+                    copiedContent,
+                  ),
+              });
             });
-          });
 
-        return;
-      }
+          return;
+        }
 
-      coordinatorRef.current?.resolveConflict(
-        copiedContent,
-        serverBaseVersionId,
-      );
-    },
-    [
-      installCoordinator,
-      noteId,
-      offlineBlockedEntry,
-    ],
-  );
+        coordinatorRef.current
+          ?.resolveConflict(
+            copiedContent,
+            serverBaseVersionId,
+          );
+      },
+      [
+        installCoordinator,
+        noteId,
+        offlineBlockedEntry,
+      ],
+    );
+
+  const adoptServerVersion =
+    useCallback(
+      (
+        serverBaseVersionId:
+          string,
+        content: SoapContent,
+      ): boolean => {
+        if (
+          effectiveSnapshot.status !==
+            "idle" ||
+          offlineBlockedEntry !== null
+        ) {
+          return false;
+        }
+
+        const nextInitialization:
+          NoteAutosaveInitialization = {
+          noteId,
+          baseVersionId:
+            serverBaseVersionId,
+          content:
+            cloneContent(content),
+          debounceMs:
+            initializationRef.current
+              .debounceMs,
+        };
+
+        pendingDraftRef.current =
+          null;
+
+        initializationRef.current =
+          nextInitialization;
+
+        installCoordinator(
+          nextInitialization,
+        );
+
+        return true;
+      },
+      [
+        effectiveSnapshot.status,
+        installCoordinator,
+        noteId,
+        offlineBlockedEntry,
+      ],
+    );
 
   return {
-    snapshot: effectiveSnapshot,
+    snapshot:
+      effectiveSnapshot,
     conflict,
     updateDraft,
     retry,
     resolveConflict,
+    adoptServerVersion,
   };
 }

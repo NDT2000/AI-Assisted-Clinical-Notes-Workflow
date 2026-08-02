@@ -1,5 +1,15 @@
-import type { NoteVersionDetail, } from "../../../domain/noteDetail";
-import type { SaveNoteVersionActor, SaveNoteVersionErrorCode, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../../../domain/noteSave";
+import type {
+  NoteVersionDetail,
+} from "../../../domain/noteDetail";
+import type {
+  SaveNoteVersionActor,
+  SaveNoteVersionErrorCode,
+  SaveNoteVersionRequestBody,
+  SaveNoteVersionResponse,
+} from "../../../domain/noteSave";
+import {
+  mockRealtimeChannel,
+} from "../realtime/mockRealtimeChannel";
 
 interface SaveNoteVersionRequestErrorOptions {
   status: number;
@@ -204,6 +214,14 @@ export async function saveNoteVersion(
         "The server returned an invalid save response.",
     });
   }
+
+  mockRealtimeChannel.publish({
+    type: "note.version_added",
+    noteId,
+    response: responseBody,
+  });
+
+  await Promise.resolve();
 
   return responseBody;
 }

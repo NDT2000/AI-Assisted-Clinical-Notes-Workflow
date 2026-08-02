@@ -1,5 +1,15 @@
-import type { NoteVersionDetail } from "../../../domain/noteDetail";
-import type { TransitionNoteActor, TransitionNoteErrorCode, TransitionNoteRequestBody, TransitionNoteResponse, } from "../../../domain/noteTransition";
+import type {
+  NoteVersionDetail,
+} from "../../../domain/noteDetail";
+import type {
+  TransitionNoteActor,
+  TransitionNoteErrorCode,
+  TransitionNoteRequestBody,
+  TransitionNoteResponse,
+} from "../../../domain/noteTransition";
+import {
+  mockRealtimeChannel,
+} from "../realtime/mockRealtimeChannel";
 
 interface TransitionNoteRequestErrorOptions {
   status: number;
@@ -8,15 +18,20 @@ interface TransitionNoteRequestErrorOptions {
   currentVersion?: NoteVersionDetail;
 }
 
-export class TransitionNoteRequestError extends Error {
+export class TransitionNoteRequestError
+  extends Error {
   readonly status: number;
-  readonly code: TransitionNoteErrorCode;
+
+  readonly code:
+    TransitionNoteErrorCode;
+
   readonly currentVersion:
     | NoteVersionDetail
     | undefined;
 
   constructor(
-    options: TransitionNoteRequestErrorOptions,
+    options:
+      TransitionNoteRequestErrorOptions,
   ) {
     super(options.message);
 
@@ -94,8 +109,9 @@ function createRequestError(
   status: number,
   body: unknown,
 ): TransitionNoteRequestError {
-  let code: TransitionNoteErrorCode =
-    "internal_error";
+  let code:
+    TransitionNoteErrorCode =
+      "internal_error";
 
   let message =
     `Unable to update the note status. ` +
@@ -106,12 +122,17 @@ function createRequestError(
     | undefined;
 
   if (isRecord(body)) {
-    if (isTransitionErrorCode(body.error)) {
+    if (
+      isTransitionErrorCode(
+        body.error,
+      )
+    ) {
       code = body.error;
     }
 
     if (
-      typeof body.message === "string" &&
+      typeof body.message ===
+        "string" &&
       body.message.trim().length > 0
     ) {
       message = body.message;
@@ -119,7 +140,9 @@ function createRequestError(
 
     if (
       code === "version_conflict" &&
-      isRecord(body.currentVersion)
+      isRecord(
+        body.currentVersion,
+      )
     ) {
       currentVersion =
         body.currentVersion as unknown as
@@ -148,7 +171,8 @@ export async function transitionNote(
     {
       method: "POST",
       headers: {
-        "content-type": "application/json",
+        "content-type":
+          "application/json",
         "x-actor-id": actor.id,
         "x-actor-role": actor.role,
         "x-actor-display-name":
@@ -172,7 +196,11 @@ export async function transitionNote(
     );
   }
 
-  if (!isTransitionResponse(responseBody)) {
+  if (
+    !isTransitionResponse(
+      responseBody,
+    )
+  ) {
     throw new TransitionNoteRequestError({
       status: response.status,
       code: "internal_error",
@@ -180,6 +208,15 @@ export async function transitionNote(
         "The server returned an invalid transition response.",
     });
   }
+
+  mockRealtimeChannel.publish({
+    type: "note.status_changed",
+    noteId,
+    trigger: body.trigger,
+    response: responseBody,
+  });
+
+  await Promise.resolve();
 
   return responseBody;
 }

@@ -1,28 +1,48 @@
-import { http, HttpResponse } from "msw";
+import {
+  http,
+  HttpResponse,
+} from "msw";
 
-import type { SoapContent, UserRole, } from "../domain/noteAttributes";
-import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, } from "../domain/noteSave";
-// import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
-import { devFailureControls } from "./devFailureControls";
-import { saveNoteVersion } from "./noteStore";
+import type {
+  SoapContent,
+  UserRole,
+} from "../domain/noteAttributes";
+import type {
+  SaveNoteVersionActor,
+  SaveNoteVersionRequestBody,
+} from "../domain/noteSave";
+import {
+  SimulatedNetworkFailure,
+  simulateNetwork,
+} from "./mockNetwork";
+import {
+  devFailureControls,
+} from "./devFailureControls";
+import {
+  saveNoteVersion,
+} from "./noteStore";
 
-const EDITING_ROLES: readonly UserRole[] = [
-  "CLINICIAN",
-  "REVIEWER",
-  "ADMIN",
-];
+const EDITING_ROLES:
+  readonly UserRole[] = [
+    "CLINICIAN",
+    "REVIEWER",
+    "ADMIN",
+  ];
 
 function wait(
   delayMs: number,
 ): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     setTimeout(resolve, delayMs);
   });
 }
 
 function isRecord(
   value: unknown,
-): value is Record<string, unknown> {
+): value is Record<
+  string,
+  unknown
+> {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -38,10 +58,14 @@ function isSoapContent(
   }
 
   return (
-    typeof value.subjective === "string" &&
-    typeof value.objective === "string" &&
-    typeof value.assessment === "string" &&
-    typeof value.plan === "string"
+    typeof value.subjective ===
+      "string" &&
+    typeof value.objective ===
+      "string" &&
+    typeof value.assessment ===
+      "string" &&
+    typeof value.plan ===
+      "string"
   );
 }
 
@@ -53,10 +77,14 @@ function isSaveNoteVersionRequestBody(
   }
 
   return (
-    typeof value.baseVersionId === "string" &&
-    value.baseVersionId.trim().length > 0 &&
-    typeof value.clientMutationId === "string" &&
-    value.clientMutationId.trim().length > 0 &&
+    typeof value.baseVersionId ===
+      "string" &&
+    value.baseVersionId.trim()
+      .length > 0 &&
+    typeof value.clientMutationId ===
+      "string" &&
+    value.clientMutationId.trim()
+      .length > 0 &&
     isSoapContent(value.content)
   );
 }
@@ -68,13 +96,17 @@ function getSaveActor(
     .get("x-actor-id")
     ?.trim();
 
-  const displayName = request.headers
-    .get("x-actor-display-name")
-    ?.trim();
+  const displayName =
+    request.headers
+      .get(
+        "x-actor-display-name",
+      )
+      ?.trim();
 
-  const rawRole = request.headers.get(
-    "x-actor-role",
-  );
+  const rawRole =
+    request.headers.get(
+      "x-actor-role",
+    );
 
   if (
     !id ||
@@ -97,8 +129,12 @@ function getSaveActor(
 export const saveNoteVersionHandler =
   http.post(
     "*/api/notes/:noteId/versions",
-    async ({ params, request }) => {
-      const actor = getSaveActor(request);
+    async ({
+      params,
+      request,
+    }) => {
+      const actor =
+        getSaveActor(request);
 
       if (!actor) {
         return HttpResponse.json(
@@ -114,14 +150,16 @@ export const saveNoteVersionHandler =
       }
 
       const noteId =
-        typeof params.noteId === "string"
+        typeof params.noteId ===
+        "string"
           ? params.noteId
           : "";
 
       if (!noteId) {
         return HttpResponse.json(
           {
-            error: "invalid_request",
+            error:
+              "invalid_request",
             message:
               "A valid note ID is required.",
           },
@@ -131,14 +169,17 @@ export const saveNoteVersionHandler =
         );
       }
 
-      let requestBody: unknown;
+      let requestBody:
+        unknown;
 
       try {
-        requestBody = await request.json();
+        requestBody =
+          await request.json();
       } catch {
         return HttpResponse.json(
           {
-            error: "invalid_request",
+            error:
+              "invalid_request",
             message:
               "The request body must contain valid JSON.",
           },
@@ -155,7 +196,8 @@ export const saveNoteVersionHandler =
       ) {
         return HttpResponse.json(
           {
-            error: "invalid_request",
+            error:
+              "invalid_request",
             message:
               "baseVersionId, clientMutationId and complete SOAP content are required.",
           },
@@ -166,16 +208,25 @@ export const saveNoteVersionHandler =
       }
 
       const controls =
-        devFailureControls.consumeSaveControls();
+        devFailureControls
+          .consumeSaveControls();
 
-      if (controls.delayMs !== null) {
-        await wait(controls.delayMs);
+      if (
+        controls.delayMs !==
+        null
+      ) {
+        await wait(
+          controls.delayMs,
+        );
       }
 
-      if (controls.shouldFail) {
+      if (
+        controls.shouldFail
+      ) {
         return HttpResponse.json(
           {
-            error: "internal_error",
+            error:
+              "internal_error",
             message:
               "Development control: the next save was intentionally failed.",
           },
@@ -185,38 +236,33 @@ export const saveNoteVersionHandler =
         );
       }
 
-      // if (
-      //   controls.delayMs === null &&
-      //   !controls.shouldConflict
-      // ) {
-      //   try {
-      //     await simulateNetwork();
-      //   } catch (error) {
-      //     if (
-      //       error instanceof
-      //       SimulatedNetworkFailure
-      //     ) {
-      //       return HttpResponse.json(
-      //         {
-      //           error: "internal_error",
-      //           message:
-      //             "Simulated network failure.",
-      //         },
-      //         {
-      //           status: 503,
-      //         },
-      //       );
-      //     }
-
-      //     throw error;
-      //   }
-      // }
-
       if (
-        controls.delayMs === null &&
+        controls.delayMs ===
+          null &&
         !controls.shouldConflict
       ) {
-        await wait(100);
+        try {
+          await simulateNetwork();
+        } catch (error) {
+          if (
+            error instanceof
+            SimulatedNetworkFailure
+          ) {
+            return HttpResponse.json(
+              {
+                error:
+                  "internal_error",
+                message:
+                  "Simulated network failure.",
+              },
+              {
+                status: 503,
+              },
+            );
+          }
+
+          throw error;
+        }
       }
 
       const effectiveRequestBody:
@@ -229,17 +275,21 @@ export const saveNoteVersionHandler =
               }
             : requestBody;
 
-      const result = saveNoteVersion(
-        noteId,
-        effectiveRequestBody,
-        actor,
-      );
+      const result =
+        saveNoteVersion(
+          noteId,
+          effectiveRequestBody,
+          actor,
+        );
 
-      switch (result.outcome) {
+      switch (
+        result.outcome
+      ) {
         case "not-found":
           return HttpResponse.json(
             {
-              error: "not_found",
+              error:
+                "not_found",
               message:
                 `Note ${noteId} was not found.`,
             },
@@ -251,7 +301,8 @@ export const saveNoteVersionHandler =
         case "version-conflict":
           return HttpResponse.json(
             {
-              error: "version_conflict",
+              error:
+                "version_conflict",
               message:
                 "The note has been updated since this draft was opened.",
               currentVersion:
@@ -263,11 +314,12 @@ export const saveNoteVersionHandler =
               status: 409,
             },
           );
-        
+
         case "idempotency-conflict":
           return HttpResponse.json(
             {
-              error: "idempotency_conflict",
+              error:
+                "idempotency_conflict",
               message:
                 "This clientMutationId has already been used for a different save request.",
             },
