@@ -5,6 +5,7 @@ import {
   vi,
 } from "vitest";
 
+import type { NoteVersionDetail } from "../../../../domain/noteDetail";
 import type { SaveNoteVersionResponse } from "../../../../domain/noteSave";
 
 import {
@@ -14,6 +15,10 @@ import {
 import type {
   PersistedQueuedNoteVersionSave,
 } from "../offlineRepository";
+
+import type {
+  OfflineSaveConflict,
+} from "../offlineStorageTypes";
 
 import {
   OfflineSaveReplayCoordinator,
@@ -106,6 +111,41 @@ function createEntry(
   };
 }
 
+function createVersion(
+  versionId: string,
+  revisionNumber: number,
+  parentVersionId: string | null,
+): NoteVersionDetail {
+  return {
+    versionId,
+    noteId: "note-1",
+    revisionNumber,
+    parentVersionId,
+
+    content: {
+      subjective:
+        `Subjective ${revisionNumber}`,
+
+      objective:
+        `Objective ${revisionNumber}`,
+
+      assessment:
+        `Assessment ${revisionNumber}`,
+
+      plan:
+        `Plan ${revisionNumber}`,
+    },
+
+    authorId: "reviewer-2",
+    authorRole: "REVIEWER",
+    authorDisplayName:
+      "Reviewer Two",
+
+    createdAt:
+      "2026-08-01T18:00:00.000Z",
+  };
+}
+
 function createSaveResponse(
   entry: PersistedQueuedNoteVersionSave,
 ): SaveNoteVersionResponse {
@@ -126,6 +166,9 @@ function createDependencies(
       async () => undefined,
 
     recordSaveAttemptFailure:
+      async () => null,
+
+    markSaveConflict:
       async () => null,
 
     saveNoteVersion:
@@ -178,10 +221,9 @@ function recordFailureForEntry(
     const updated:
       PersistedQueuedNoteVersionSave = {
         ...existing,
-
+        state: "queued",
         retryCount:
           existing.retryCount + 1,
-
         lastAttemptAt: attemptedAt,
         lastError: errorMessage,
       };
@@ -329,6 +371,7 @@ describe(
           retryCount: 0,
           nextRetryDelayMs: null,
           lastError: null,
+          blockedConflict: null,
         });
       },
     );
@@ -512,6 +555,7 @@ describe(
           retryCount: 0,
           nextRetryDelayMs: null,
           lastError: null,
+          blockedConflict: null,
         });
       },
     );
@@ -610,7 +654,194 @@ describe(
           nextRetryDelayMs: null,
           lastError:
             "Network request failed.",
+          blockedConflict: null,
         });
+      },
+    );
+
+    it(
+      "persists a replay conflict and stops before later entries",
+      async () => {
+        const firstEntry =
+          createEntry(1);
+
+        const secondEntry =
+          createEntry(2);
+
+        const entries:
+          PersistedQueuedNoteVersionSave[] = [
+            firstEntry,
+            secondEntry,
+          ];
+
+        const currentVersion =
+          createVersion(
+            "server-version-2",
+            2,
+            "version-1",
+          );
+
+        const commonAncestor =
+          createVersion(
+            "version-1",
+            1,
+            null,
+          );
+
+        const conflictError =
+          new SaveNoteVersionRequestError(
+            {
+              status: 409,
+              code:
+                "version_conflict",
+              message:
+                "The note has changed on the server.",
+              currentVersion,
+              commonAncestor,
+            },
+          );
+
+        const saveNoteVersionMock =
+          vi.fn(
+            async () => {
+              throw conflictError;
+            },
+          );
+
+        const removeQueuedSaveMock =
+          vi.fn(
+            async () => undefined,
+          );
+
+        const recordFailureMock =
+          vi.fn(
+            async () => null,
+          );
+
+        const sleepMock =
+          vi.fn(
+            async () => undefined,
+          );
+
+        const markSaveConflictMock =
+          vi.fn(
+            async (
+              sequence: number,
+              conflict:
+                OfflineSaveConflict,
+            ) => {
+              expect(sequence).toBe(1);
+
+              const blockedEntry:
+                PersistedQueuedNoteVersionSave = {
+                  ...firstEntry,
+                  state:
+                    "blocked-conflict",
+                  lastAttemptAt:
+                    Date.now(),
+                  lastError:
+                    conflict.message,
+                  conflict,
+                };
+
+              entries[0] =
+                blockedEntry;
+
+              return blockedEntry;
+            },
+          );
+
+        const coordinator =
+          new OfflineSaveReplayCoordinator(
+            createDependencies({
+              getOldestQueuedSave:
+                async () =>
+                  entries.find(
+                    entry =>
+                      entry.state ===
+                      "queued",
+                  ) ?? null,
+
+              saveNoteVersion:
+                saveNoteVersionMock,
+
+              markSaveConflict:
+                markSaveConflictMock,
+
+              recordSaveAttemptFailure:
+                recordFailureMock,
+
+              removeQueuedSave:
+                removeQueuedSaveMock,
+
+              sleep: sleepMock,
+            }),
+          );
+
+        await coordinator.replay();
+
+        expect(
+          saveNoteVersionMock,
+        ).toHaveBeenCalledTimes(1);
+
+        expect(
+          markSaveConflictMock,
+        ).toHaveBeenCalledWith(
+          1,
+          {
+            message:
+              "The note has changed on the server.",
+            currentVersion,
+            commonAncestor,
+          },
+        );
+
+        expect(
+          recordFailureMock,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          removeQueuedSaveMock,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          sleepMock,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          coordinator.getSnapshot(),
+        ).toMatchObject({
+          status:
+            "blocked-conflict",
+          currentSequence: 1,
+          replayedCount: 0,
+          retryCount: 0,
+          nextRetryDelayMs: null,
+          lastError:
+            "The note has changed on the server.",
+
+          blockedConflict: {
+            sequence: 1,
+            noteId: "note-1",
+            state:
+              "blocked-conflict",
+
+            conflict: {
+              currentVersion,
+              commonAncestor,
+            },
+          },
+        });
+
+        await coordinator.replay();
+
+        expect(
+          saveNoteVersionMock,
+        ).toHaveBeenCalledTimes(1);
+
+        expect(entries[1]).toBe(
+          secondEntry,
+        );
       },
     );
 
@@ -685,6 +916,7 @@ describe(
           nextRetryDelayMs: null,
           lastError:
             "You are not allowed to save this note.",
+          blockedConflict: null,
         });
       },
     );

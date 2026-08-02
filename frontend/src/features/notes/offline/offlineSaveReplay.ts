@@ -5,6 +5,7 @@ import {
 
 import {
   getOldestQueuedSave,
+  markSaveConflict,
   recordSaveAttemptFailure,
   removeQueuedSave,
   type PersistedQueuedNoteVersionSave,
@@ -17,6 +18,7 @@ export type OfflineSaveReplayStatus =
   | "offline"
   | "replaying"
   | "retrying"
+  | "blocked-conflict"
   | "paused-error";
 
 export interface OfflineSaveReplaySnapshot {
@@ -26,6 +28,9 @@ export interface OfflineSaveReplaySnapshot {
   retryCount: number;
   nextRetryDelayMs: number | null;
   lastError: string | null;
+  blockedConflict:
+    | PersistedQueuedNoteVersionSave
+    | null;
 }
 
 export type OfflineSaveReplayListener = (
@@ -55,6 +60,9 @@ export interface OfflineSaveReplayDependencies {
 
   recordSaveAttemptFailure:
     typeof recordSaveAttemptFailure;
+
+  markSaveConflict:
+    typeof markSaveConflict;
 
   saveNoteVersion: typeof saveNoteVersion;
 
@@ -95,20 +103,20 @@ function sleepWithAbort(
 
   return new Promise<void>(
     (resolve, reject) => {
-      const timeoutId = window.setTimeout(
-        () => {
+      const timeoutId =
+        globalThis.setTimeout(() => {
           signal.removeEventListener(
             "abort",
             handleAbort,
           );
 
           resolve();
-        },
-        delayMs,
-      );
+        }, delayMs);
 
       function handleAbort(): void {
-        window.clearTimeout(timeoutId);
+        globalThis.clearTimeout(
+          timeoutId,
+        );
 
         signal.removeEventListener(
           "abort",
@@ -148,6 +156,7 @@ function createDefaultDependencies(): OfflineSaveReplayDependencies {
     getOldestQueuedSave,
     removeQueuedSave,
     recordSaveAttemptFailure,
+    markSaveConflict,
     saveNoteVersion,
 
     isOnline: () =>
@@ -177,6 +186,16 @@ function isAbortError(
     error !== null &&
     "name" in error &&
     error.name === "AbortError"
+  );
+}
+
+function isVersionConflictError(
+  error: unknown,
+): error is SaveNoteVersionRequestError {
+  return (
+    error instanceof
+      SaveNoteVersionRequestError &&
+    error.code === "version_conflict"
   );
 }
 
@@ -248,12 +267,12 @@ export class OfflineSaveReplayCoordinator {
         this.dependencies.isOnline()
           ? "idle"
           : "offline",
-
       currentSequence: null,
       replayedCount: 0,
       retryCount: 0,
       nextRetryDelayMs: null,
       lastError: null,
+      blockedConflict: null,
     };
   }
 
@@ -324,6 +343,30 @@ export class OfflineSaveReplayCoordinator {
   }
 
   replay(): Promise<void> {
+    if (
+      this.snapshot.blockedConflict !==
+      null
+    ) {
+      const blockedEntry =
+        this.snapshot.blockedConflict;
+
+      this.updateSnapshot({
+        status:
+          this.dependencies.isOnline()
+            ? "blocked-conflict"
+            : "offline",
+        currentSequence:
+          blockedEntry.sequence,
+        nextRetryDelayMs: null,
+        lastError:
+          blockedEntry.conflict
+            ?.message ??
+          blockedEntry.lastError,
+      });
+
+      return Promise.resolve();
+    }
+
     if (!this.dependencies.isOnline()) {
       this.updateSnapshot({
         status: "offline",
@@ -368,7 +411,9 @@ export class OfflineSaveReplayCoordinator {
         if (
           shouldReplayAgain &&
           this.started &&
-          this.dependencies.isOnline()
+          this.dependencies.isOnline() &&
+          this.snapshot.blockedConflict ===
+            null
         ) {
           void this.replay();
         }
@@ -396,7 +441,9 @@ export class OfflineSaveReplayCoordinator {
 
       this.updateSnapshot({
         status: "offline",
-        currentSequence: null,
+        currentSequence:
+          this.snapshot.blockedConflict
+            ?.sequence ?? null,
         nextRetryDelayMs: null,
       });
     };
@@ -491,6 +538,66 @@ export class OfflineSaveReplayCoordinator {
 
         const errorMessage =
           getErrorMessage(error);
+
+        if (
+          isVersionConflictError(
+            error,
+          ) &&
+          error.currentVersion !==
+            undefined
+        ) {
+          const blockedEntry =
+            await this.dependencies
+              .markSaveConflict(
+                entry.sequence,
+                {
+                  message:
+                    errorMessage,
+                  currentVersion:
+                    error.currentVersion,
+                  commonAncestor:
+                    error.commonAncestor ??
+                    null,
+                },
+              );
+
+          if (signal.aborted) {
+            return;
+          }
+
+          if (blockedEntry === null) {
+            this.updateSnapshot({
+              status: "paused-error",
+              currentSequence:
+                entry.sequence,
+              retryCount:
+                entry.retryCount,
+              nextRetryDelayMs: null,
+              lastError:
+                "The replay conflict could not be stored.",
+            });
+
+            return;
+          }
+
+          this.replayAfterCurrentRun =
+            false;
+
+          this.updateSnapshot({
+            status:
+              "blocked-conflict",
+            currentSequence:
+              blockedEntry.sequence,
+            retryCount:
+              blockedEntry.retryCount,
+            nextRetryDelayMs: null,
+            lastError: errorMessage,
+            blockedConflict:
+              blockedEntry,
+          });
+
+          return;
+        }
 
         const updatedEntry =
           await this.dependencies
