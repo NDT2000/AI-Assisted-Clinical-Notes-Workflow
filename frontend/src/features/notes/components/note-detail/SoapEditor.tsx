@@ -8,6 +8,7 @@ export type SoapSectionKey =
 interface SoapEditorProps {
   content: SoapContent;
   readOnly: boolean;
+  readOnlyReason?: string;
   dirtySections?: Partial<
     Record<SoapSectionKey, boolean>
   >;
@@ -59,6 +60,7 @@ const SOAP_SECTIONS:
 export function SoapEditor({
   content,
   readOnly,
+  readOnlyReason,
   dirtySections = {},
   onSectionChange,
 }: SoapEditorProps) {
@@ -112,9 +114,8 @@ export function SoapEditor({
 
       {readOnly && (
         <p className="soap-readonly-message">
-          This version can be reviewed,
-          but its clinical content cannot
-          be changed.
+          {readOnlyReason ??
+            "This version can be reviewed, but its clinical content cannot be changed."}
         </p>
       )}
 
