@@ -707,3 +707,15 @@
     width: 100%;
   }
 }
+
+/* CSS for offline action. */
+.note-detail-offline-status {
+  margin-block: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+}
+
+.note-detail-offline-status p {
+  margin-block: 0.375rem 0;
+}

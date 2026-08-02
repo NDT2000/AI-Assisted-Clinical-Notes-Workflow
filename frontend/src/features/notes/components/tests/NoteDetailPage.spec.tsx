@@ -328,6 +328,8 @@ describe("NoteDetailPage", () => {
       state: {
         status: "success",
         note,
+        source: "network",
+        cachedAt: null,
         message: null,
       },
       retry: retryMock,
@@ -496,6 +498,86 @@ describe("NoteDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a clear status when displaying a cached note", () => {
+    const note = createNoteDetail();
+
+    useNoteDetailMock.mockReturnValue({
+      state: {
+        status: "success",
+        note,
+        message: null,
+        source: "cache",
+        cachedAt:
+          new Date(
+            "2026-08-01T18:30:00.000Z",
+          ).getTime(),
+      },
+      retry: retryMock,
+    });
+
+    renderPage();
+
+    const offlineStatus =
+      screen.getByRole("status", {
+        name: "Offline note status",
+      });
+
+    expect(
+      offlineStatus,
+    ).toHaveTextContent(
+      "Offline — showing a cached note",
+    );
+
+    expect(
+      offlineStatus,
+    ).toHaveTextContent(
+      "This note may not include recent changes made by other users.",
+    );
+
+    const cachedTime = within(
+      offlineStatus,
+    ).getByText(
+      (_, element) =>
+        element?.tagName.toLowerCase() ===
+        "time",
+    );
+
+    expect(cachedTime).toHaveAttribute(
+      "datetime",
+      "2026-08-01T18:30:00.000Z",
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Patient One",
+        level: 1,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the cached-note status for a network result", () => {
+    const note = createNoteDetail();
+
+    useNoteDetailMock.mockReturnValue({
+      state: {
+        status: "success",
+        note,
+        message: null,
+        source: "network",
+        cachedAt: null,
+      },
+      retry: retryMock,
+    });
+
+    renderPage();
+
+    expect(
+      screen.queryByText(
+        "Offline — showing a cached note",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders empty presence and timeline states", () => {
     const note = createNoteDetail();
 
@@ -507,6 +589,8 @@ describe("NoteDetailPage", () => {
           presence: [],
           timeline: [],
         },
+        source: "network",
+        cachedAt: null,
         message: null,
       },
       retry: retryMock,

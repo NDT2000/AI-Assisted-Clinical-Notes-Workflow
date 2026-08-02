@@ -12,6 +12,14 @@ const CURRENT_ACTOR:
     role: "REVIEWER",
   };
 
+function formatCachedAt(
+  cachedAt: number,
+): string {
+  return new Date(
+    cachedAt,
+  ).toLocaleString();
+}
+
 export function NoteDetailPage() {
   const { noteId } = useParams<{
     noteId: string;
@@ -110,6 +118,40 @@ export function NoteDetailPage() {
         to="/notes">
         Back to notes
       </Link>
+
+      {state.source === "cache" && (
+        <section
+          className="note-detail-offline-status"
+          role="status"
+          aria-label="Offline note status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <strong>
+            Offline — showing a cached note
+          </strong>
+
+          <p>
+            This note may not include recent
+            changes made by other users.
+          </p>
+
+          {state.cachedAt !== null && (
+            <p>
+              Cached{" "}
+              <time
+                dateTime={new Date(
+                  state.cachedAt,
+                ).toISOString()}
+              >
+                {formatCachedAt(
+                  state.cachedAt,
+                )}
+              </time>
+            </p>
+          )}
+        </section>
+      )}
 
       <NoteDetailWorkspace
         key={detail.note.id}

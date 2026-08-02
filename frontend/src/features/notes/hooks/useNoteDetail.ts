@@ -1,8 +1,27 @@
-import { useCallback, useEffect, useRef, useState, } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-import type { UserRole, } from "../../../domain/noteAttributes";
-import type { NoteDetail, } from "../../../domain/noteDetail";
-import { getNoteDetail, NoteDetailRequestError, } from "../api/getNoteDetail";
+import type {
+  UserRole,
+} from "../../../domain/noteAttributes";
+
+import type {
+  NoteDetail,
+} from "../../../domain/noteDetail";
+
+import {
+  NoteDetailRequestError,
+} from "../api/getNoteDetail";
+
+import {
+  OfflineNoteDetailUnavailableError,
+  readNoteDetail,
+  type NoteDetailReadSource,
+} from "../offline/readNoteDetail";
 
 export type NoteDetailLoadState =
   | {
@@ -14,6 +33,10 @@ export type NoteDetailLoadState =
       status: "success";
       note: NoteDetail;
       message: null;
+
+      source: NoteDetailReadSource;
+
+      cachedAt: number | null;
     }
   | {
       status: "unauthorized";
@@ -95,8 +118,8 @@ export function useNoteDetail(
 
     async function loadNote(): Promise<void> {
       try {
-        const note =
-          await getNoteDetail(
+        const result =
+          await readNoteDetail(
             resolvedNoteId,
             actorRole,
             controller.signal,
@@ -112,8 +135,10 @@ export function useNoteDetail(
 
         setState({
           status: "success",
-          note,
+          note: result.note,
           message: null,
+          source: result.source,
+          cachedAt: result.cachedAt,
         });
       } catch (error) {
         if (
@@ -148,6 +173,19 @@ export function useNoteDetail(
             return;
           }
 
+          setState({
+            status: "error",
+            note: null,
+            message: error.message,
+          });
+
+          return;
+        }
+
+        if (
+          error instanceof
+          OfflineNoteDetailUnavailableError
+        ) {
           setState({
             status: "error",
             note: null,
