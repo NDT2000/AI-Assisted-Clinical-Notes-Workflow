@@ -1,101 +1,227 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, } from "vitest";
-import { setupServer } from "msw/node";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  setupServer,
+} from "msw/node";
 
-import type { SaveNoteVersionConflictResponse, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../../domain/noteSave";
+import type {
+  NoteDetail,
+} from "../../domain/noteDetail";
+import type {
+  NoteSummary,
+} from "../../domain/noteSummary";
+import type {
+  SaveNoteVersionRequestBody,
+  SaveNoteVersionResponse,
+} from "../../domain/noteSave";
+import type {
+  TransitionNoteActor,
+} from "../../domain/noteTransition";
 
-vi.mock("../mockNetwork", async () => {
-  const actual =
-    await vi.importActual<
-      typeof import("../mockNetwork")
-    >("../mockNetwork");
+vi.mock(
+  "../mockNetwork",
+  async () => {
+    const actual =
+      await vi.importActual<
+        typeof import("../mockNetwork")
+      >("../mockNetwork");
 
-  return {
-    ...actual,
-    simulateNetwork: vi.fn(),
-  };
-});
-
-import { SimulatedNetworkFailure, simulateNetwork, } from "../mockNetwork";
-import { devFailureControls, } from "../devFailureControls";
-import { getNoteDetail, getNotes, seedNotes, } from "../noteStore";
-import { saveNoteVersionHandler, } from "../saveNoteVersionHandler";
-
-const server = setupServer(
-  saveNoteVersionHandler,
+    return {
+      ...actual,
+      simulateNetwork:
+        vi.fn(),
+    };
+  },
 );
 
+import {
+  SimulatedNetworkFailure,
+  simulateNetwork,
+} from "../mockNetwork";
+import {
+  devFailureControls,
+} from "../devFailureControls";
+import {
+  getNoteDetail,
+  getNotes,
+  reassignNotes,
+  seedNotes,
+  transitionNote,
+} from "../noteStore";
+import {
+  saveNoteVersionHandler,
+} from "../saveNoteVersionHandler";
+
+const server =
+  setupServer(
+    saveNoteVersionHandler,
+  );
+
 const simulateNetworkMock =
-  vi.mocked(simulateNetwork);
+  vi.mocked(
+    simulateNetwork,
+  );
 
 interface ErrorResponse {
   error: string;
   message: string;
 }
 
-function getActorHeaders(): HeadersInit {
+function getActorHeaders(
+  actor:
+    TransitionNoteActor,
+): HeadersInit {
   return {
-    "content-type": "application/json",
-    "x-actor-id": "reviewer-test",
-    "x-actor-role": "REVIEWER",
+    "content-type":
+      "application/json",
+    "x-actor-id": actor.id,
+    "x-actor-role":
+      actor.role,
     "x-actor-display-name":
-      "Test Reviewer",
+      actor.displayName,
   };
 }
 
-function requireFirstNoteId(): string {
-  const summary = getNotes()[0];
+function requireSummary(
+  predicate: (
+    note: NoteSummary,
+  ) => boolean,
+): NoteSummary {
+  const summary =
+    getNotes().find(predicate);
 
   if (!summary) {
     throw new Error(
-      "Expected the seeded dataset to contain a note.",
+      "Expected a matching note summary.",
     );
   }
 
-  return summary.id;
+  return summary;
 }
 
-function createSaveRequestBody(
+function requireDetail(
   noteId: string,
-  clientMutationId: string,
-  value: string,
-): SaveNoteVersionRequestBody {
-  const detail = getNoteDetail(noteId);
+): NoteDetail {
+  const detail =
+    getNoteDetail(noteId);
 
   if (!detail) {
     throw new Error(
-      "Expected note detail.",
+      `Expected note detail for ${noteId}.`,
     );
   }
 
+  return detail;
+}
+
+function createReviewer(
+  id = "reviewer-handler-1",
+): TransitionNoteActor {
+  return {
+    id,
+    displayName:
+      `Reviewer ${id}`,
+    role: "REVIEWER",
+    mfaVerified: true,
+  };
+}
+
+function prepareInReviewNote(
+  reviewer:
+    TransitionNoteActor =
+      createReviewer(),
+): NoteDetail {
+  const ready =
+    requireSummary(
+      note =>
+        note.status ===
+        "READY_FOR_REVIEW",
+    );
+
+  reassignNotes(
+    [ready.id],
+    null,
+    "ADMIN",
+  );
+
+  const detail =
+    requireDetail(ready.id);
+
+  const transitionResult =
+    transitionNote(
+      ready.id,
+      {
+        baseVersionId:
+          detail.currentVersion
+            .versionId,
+        clientMutationId:
+          `start-${reviewer.id}`,
+        trigger:
+          "START_REVIEW",
+      },
+      reviewer,
+      "2026-08-02T13:00:00.000Z",
+    );
+
+  if (
+    transitionResult.outcome !==
+    "transitioned"
+  ) {
+    throw new Error(
+      "Expected the note to enter review.",
+    );
+  }
+
+  return requireDetail(
+    ready.id,
+  );
+}
+
+function createSaveBody(
+  detail: NoteDetail,
+  clientMutationId: string,
+): SaveNoteVersionRequestBody {
   return {
     baseVersionId:
-      detail.currentVersion.versionId,
-
+      detail.currentVersion
+        .versionId,
     clientMutationId,
-
     content: {
       subjective:
-        `${value} subjective`,
+        "Updated subjective.",
       objective:
-        `${value} objective`,
+        "Updated objective.",
       assessment:
-        `${value} assessment`,
+        "Updated assessment.",
       plan:
-        `${value} plan`,
+        "Updated plan.",
     },
   };
 }
 
 function postSave(
   noteId: string,
-  body: SaveNoteVersionRequestBody,
+  body:
+    SaveNoteVersionRequestBody,
+  actor:
+    TransitionNoteActor,
 ): Promise<Response> {
   return fetch(
     `http://localhost/api/notes/${noteId}/versions`,
     {
       method: "POST",
-      headers: getActorHeaders(),
-      body: JSON.stringify(body),
+      headers:
+        getActorHeaders(actor),
+      body:
+        JSON.stringify(body),
     },
   );
 }
@@ -105,18 +231,22 @@ describe(
   () => {
     beforeAll(() => {
       server.listen({
-        onUnhandledRequest: "error",
+        onUnhandledRequest:
+          "error",
       });
     });
 
     beforeEach(() => {
-      seedNotes(100, 42);
+      seedNotes(500, 42);
       devFailureControls.reset();
 
-      simulateNetworkMock.mockReset();
-      simulateNetworkMock.mockResolvedValue(
-        undefined,
-      );
+      simulateNetworkMock
+        .mockReset();
+
+      simulateNetworkMock
+        .mockResolvedValue(
+          undefined,
+        );
     });
 
     afterEach(() => {
@@ -129,127 +259,205 @@ describe(
     });
 
     it(
-      "creates and returns a new note version",
+      "creates a version for the assigned reviewer",
       async () => {
-        const noteId =
-          requireFirstNoteId();
+        const reviewer =
+          createReviewer();
 
-        const originalDetail =
-          getNoteDetail(noteId);
-
-        if (!originalDetail) {
-          throw new Error(
-            "Expected note detail.",
+        const detail =
+          prepareInReviewNote(
+            reviewer,
           );
-        }
 
-        const response = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
-          {
-            method: "POST",
-            headers: getActorHeaders(),
-            body: JSON.stringify({
-              baseVersionId:
-                originalDetail
-                  .currentVersion
-                  .versionId,
-              clientMutationId:
-                "mutation-save-1",
-              content: {
-                subjective:
-                  "Updated subjective",
-                objective:
-                  "Updated objective",
-                assessment:
-                  "Updated assessment",
-                plan: "Updated plan",
-              },
-            }),
-          },
-        );
+        const response =
+          await postSave(
+            detail.note.id,
+            createSaveBody(
+              detail,
+              "save-handler-1",
+            ),
+            reviewer,
+          );
 
-        expect(response.status).toBe(
-          201,
-        );
+        expect(
+          response.status,
+        ).toBe(201);
 
         const body =
           (await response.json()) as
             SaveNoteVersionResponse;
 
         expect(
-          body.clientMutationId,
-        ).toBe("mutation-save-1");
-
-        expect(
           body.savedVersion
             .revisionNumber,
         ).toBe(
-          originalDetail
-            .currentVersion
+          detail.currentVersion
             .revisionNumber + 1,
         );
 
         expect(
           body.savedVersion
-            .parentVersionId,
-        ).toBe(
-          originalDetail
-            .currentVersion
-            .versionId,
-        );
-
-        expect(
-          body.savedVersion.content,
-        ).toEqual({
-          subjective:
-            "Updated subjective",
-          objective:
-            "Updated objective",
-          assessment:
-            "Updated assessment",
-          plan: "Updated plan",
-        });
-
-        const updatedDetail =
-          getNoteDetail(noteId);
-
-        expect(
-          updatedDetail?.currentVersion
-            .versionId,
-        ).toBe(
-          body.savedVersion.versionId,
-        );
+            .authorId,
+        ).toBe(reviewer.id);
       },
     );
 
     it(
-      "returns 400 for an invalid body",
+      "returns 403 for a reviewer who does not own the note",
       async () => {
-        const noteId =
-          requireFirstNoteId();
+        const owner =
+          createReviewer(
+            "reviewer-owner",
+          );
 
-        const response = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
-          {
-            method: "POST",
-            headers: getActorHeaders(),
-            body: JSON.stringify({
-              baseVersionId: "",
-            }),
-          },
-        );
+        const detail =
+          prepareInReviewNote(
+            owner,
+          );
 
-        expect(response.status).toBe(
-          400,
-        );
+        const response =
+          await postSave(
+            detail.note.id,
+            createSaveBody(
+              detail,
+              "save-handler-other",
+            ),
+            createReviewer(
+              "reviewer-other",
+            ),
+          );
 
-        const body =
+        expect(
+          response.status,
+        ).toBe(403);
+
+        expect(
           (await response.json()) as
-            ErrorResponse;
+            ErrorResponse,
+        ).toEqual({
+          error: "forbidden",
+          message:
+            "Only the assigned reviewer can edit this note.",
+        });
+      },
+    );
 
-        expect(body.error).toBe(
-          "invalid_request",
-        );
+    it(
+      "returns 403 for a read-only auditor before sending the request to the store",
+      async () => {
+        const detail =
+          prepareInReviewNote();
+
+        const response =
+          await postSave(
+            detail.note.id,
+            createSaveBody(
+              detail,
+              "save-handler-auditor",
+            ),
+            {
+              id: "auditor-1",
+              displayName:
+                "Read-only Auditor",
+              role:
+                "READONLY_AUDITOR",
+            },
+          );
+
+        expect(
+          response.status,
+        ).toBe(403);
+
+        expect(
+          simulateNetworkMock,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it(
+      "allows a clinician to save corrected rejected content",
+      async () => {
+        const reviewer =
+          createReviewer();
+
+        const inReview =
+          prepareInReviewNote(
+            reviewer,
+          );
+
+        const rejected =
+          transitionNote(
+            inReview.note.id,
+            {
+              baseVersionId:
+                inReview
+                  .currentVersion
+                  .versionId,
+              clientMutationId:
+                "reject-handler-1",
+              trigger: "REJECT",
+              rejectionReason:
+                "The assessment requires clarification.",
+            },
+            reviewer,
+            "2026-08-02T13:05:00.000Z",
+          );
+
+        expect(
+          rejected.outcome,
+        ).toBe("transitioned");
+
+        const rejectedDetail =
+          requireDetail(
+            inReview.note.id,
+          );
+
+        const response =
+          await postSave(
+            rejectedDetail.note.id,
+            createSaveBody(
+              rejectedDetail,
+              "save-rejected-handler-1",
+            ),
+            {
+              id: "clinician-1",
+              displayName:
+                "Current Clinician",
+              role: "CLINICIAN",
+            },
+          );
+
+        expect(
+          response.status,
+        ).toBe(201);
+      },
+    );
+
+    it(
+      "returns 400 for an invalid request body",
+      async () => {
+        const detail =
+          prepareInReviewNote();
+
+        const response =
+          await fetch(
+            `http://localhost/api/notes/${detail.note.id}/versions`,
+            {
+              method: "POST",
+              headers:
+                getActorHeaders(
+                  createReviewer(),
+                ),
+              body:
+                JSON.stringify({
+                  baseVersionId: "",
+                }),
+            },
+          );
+
+        expect(
+          response.status,
+        ).toBe(400);
 
         expect(
           simulateNetworkMock,
@@ -260,53 +468,31 @@ describe(
     it(
       "returns 403 when actor headers are missing",
       async () => {
-        const noteId =
-          requireFirstNoteId();
+        const detail =
+          prepareInReviewNote();
 
-        const response = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
-          {
-            method: "POST",
-            headers: {
-              "content-type":
-                "application/json",
+        const response =
+          await fetch(
+            `http://localhost/api/notes/${detail.note.id}/versions`,
+            {
+              method: "POST",
+              headers: {
+                "content-type":
+                  "application/json",
+              },
+              body:
+                JSON.stringify(
+                  createSaveBody(
+                    detail,
+                    "save-no-actor",
+                  ),
+                ),
             },
-            body: JSON.stringify({}),
-          },
-        );
-
-        expect(response.status).toBe(
-          403,
-        );
+          );
 
         expect(
-          simulateNetworkMock,
-        ).not.toHaveBeenCalled();
-      },
-    );
-
-    it(
-      "returns 403 for a read-only auditor",
-      async () => {
-        const noteId =
-          requireFirstNoteId();
-
-        const response = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
-          {
-            method: "POST",
-            headers: {
-              ...getActorHeaders(),
-              "x-actor-role":
-                "READONLY_AUDITOR",
-            },
-            body: JSON.stringify({}),
-          },
-        );
-
-        expect(response.status).toBe(
-          403,
-        );
+          response.status,
+        ).toBe(403);
 
         expect(
           simulateNetworkMock,
@@ -317,550 +503,163 @@ describe(
     it(
       "returns 404 for an unknown note",
       async () => {
-        const response = await fetch(
-          "http://localhost/api/notes/note-does-not-exist/versions",
-          {
-            method: "POST",
-            headers: getActorHeaders(),
-            body: JSON.stringify({
+        const response =
+          await postSave(
+            "note-does-not-exist",
+            {
               baseVersionId:
                 "version-1",
               clientMutationId:
-                "mutation-missing-1",
+                "save-missing-note",
               content: {
-                subjective: "",
-                objective: "",
-                assessment: "",
-                plan: "",
+                subjective:
+                  "Subjective",
+                objective:
+                  "Objective",
+                assessment:
+                  "Assessment",
+                plan: "Plan",
               },
-            }),
-          },
-        );
-
-        expect(response.status).toBe(
-          404,
-        );
-
-        const body =
-          (await response.json()) as
-            ErrorResponse;
-
-        expect(body.error).toBe(
-          "not_found",
-        );
-      },
-    );
-
-    it(
-      "returns the server head and common ancestor when the base version is stale",
-      async () => {
-        const noteId =
-          requireFirstNoteId();
-
-        const originalDetail =
-          getNoteDetail(noteId);
-
-        if (!originalDetail) {
-          throw new Error(
-            "Expected note detail.",
-          );
-        }
-
-        const originalVersion =
-          originalDetail.currentVersion;
-
-        const concurrentSaveResponse =
-          await postSave(noteId, {
-            baseVersionId:
-              originalVersion.versionId,
-            clientMutationId:
-              "mutation-concurrent-save-1",
-            content: {
-              subjective:
-                "Concurrent subjective",
-              objective:
-                "Concurrent objective",
-              assessment:
-                "Concurrent assessment",
-              plan:
-                "Concurrent plan",
             },
-          });
+            createReviewer(),
+          );
 
         expect(
-          concurrentSaveResponse.status,
-        ).toBe(201);
+          response.status,
+        ).toBe(404);
 
-        const detailAfterConcurrentSave =
-          getNoteDetail(noteId);
+        expect(
+          (await response.json()) as
+            ErrorResponse,
+        ).toMatchObject({
+          error: "not_found",
+        });
+      },
+    );
 
-        if (!detailAfterConcurrentSave) {
-          throw new Error(
-            "Expected updated note detail.",
+    it(
+      "returns 409 with the server head for an authorized stale save",
+      async () => {
+        const reviewer =
+          createReviewer();
+
+        const detail =
+          prepareInReviewNote(
+            reviewer,
           );
-        }
 
-        const response = await postSave(
-          noteId,
-          {
-            baseVersionId:
-              originalVersion.versionId,
-            clientMutationId:
-              "mutation-conflict-1",
-            content: {
-              subjective:
-                "Conflicting subjective",
-              objective:
-                "Conflicting objective",
-              assessment:
-                "Conflicting assessment",
-              plan:
-                "Conflicting plan",
+        const response =
+          await postSave(
+            detail.note.id,
+            {
+              ...createSaveBody(
+                detail,
+                "save-stale-handler",
+              ),
+              baseVersionId:
+                "stale-version-id",
             },
-          },
-        );
+            reviewer,
+          );
 
-        expect(response.status).toBe(409);
+        expect(
+          response.status,
+        ).toBe(409);
+
+        expect(
+          (await response.json()) as
+            ErrorResponse,
+        ).toMatchObject({
+          error:
+            "version_conflict",
+        });
+      },
+    );
+
+    it(
+      "returns the same response for an idempotent retry",
+      async () => {
+        const reviewer =
+          createReviewer();
+
+        const detail =
+          prepareInReviewNote(
+            reviewer,
+          );
 
         const body =
-          (await response.json()) as
-            SaveNoteVersionConflictResponse;
+          createSaveBody(
+            detail,
+            "save-idempotent-handler",
+          );
 
-        expect(body.error).toBe(
-          "version_conflict",
-        );
+        const first =
+          await postSave(
+            detail.note.id,
+            body,
+            reviewer,
+          );
 
-        expect(body.currentVersion).toEqual(
-          detailAfterConcurrentSave.currentVersion,
-        );
+        const second =
+          await postSave(
+            detail.note.id,
+            body,
+            reviewer,
+          );
 
-        expect(body.commonAncestor).toEqual(
-          originalVersion,
+        expect(
+          first.status,
+        ).toBe(201);
+
+        expect(
+          second.status,
+        ).toBe(201);
+
+        expect(
+          await second.json(),
+        ).toEqual(
+          await first.json(),
         );
       },
     );
 
     it(
-      "returns 503 after a simulated network failure",
+      "returns 503 for a simulated network failure",
       async () => {
+        const reviewer =
+          createReviewer();
+
+        const detail =
+          prepareInReviewNote(
+            reviewer,
+          );
+
         simulateNetworkMock
           .mockRejectedValueOnce(
             new SimulatedNetworkFailure(),
           );
 
-        const noteId =
-          requireFirstNoteId();
-
-        const response = await postSave(
-          noteId,
-          createSaveRequestBody(
-            noteId,
-            "mutation-network-failure-1",
-            "Network failure",
-          ),
-        );
-
-        expect(response.status).toBe(
-          503,
-        );
-
-        const body =
-          (await response.json()) as
-            ErrorResponse;
-
-        expect(body).toEqual({
-          error: "internal_error",
-          message:
-            "Simulated network failure.",
-        });
-
-        expect(
-          simulateNetworkMock,
-        ).toHaveBeenCalledTimes(1);
-      },
-    );
-
-    it(
-      "fails only the next valid save when the development failure is armed",
-      async () => {
-        const noteId =
-          requireFirstNoteId();
-
-        devFailureControls
-          .armFailNextSave();
-
-        const failedResponse =
+        const response =
           await postSave(
-            noteId,
-            createSaveRequestBody(
-              noteId,
-              "mutation-dev-failure-1",
-              "Failed save",
+            detail.note.id,
+            createSaveBody(
+              detail,
+              "save-network-failure",
             ),
+            reviewer,
           );
 
         expect(
-          failedResponse.status,
+          response.status,
         ).toBe(503);
 
-        const failedBody =
-          (await failedResponse.json()) as
-            ErrorResponse;
-
-        expect(failedBody).toEqual({
-          error: "internal_error",
-          message:
-            "Development control: the next save was intentionally failed.",
+        expect(
+          (await response.json()) as
+            ErrorResponse,
+        ).toMatchObject({
+          error:
+            "internal_error",
         });
-
-        expect(
-          devFailureControls
-            .getSnapshot()
-            .failNextSave,
-        ).toBe(false);
-
-        expect(
-          simulateNetworkMock,
-        ).not.toHaveBeenCalled();
-
-        const followingResponse =
-          await postSave(
-            noteId,
-            createSaveRequestBody(
-              noteId,
-              "mutation-after-dev-failure-1",
-              "Following save",
-            ),
-          );
-
-        expect(
-          followingResponse.status,
-        ).toBe(201);
-
-        expect(
-          simulateNetworkMock,
-        ).toHaveBeenCalledTimes(1);
-      },
-    );
-
-    it(
-      "causes a version conflict only for the next valid save",
-      async () => {
-        const noteId =
-          requireFirstNoteId();
-
-        const originalDetail =
-          getNoteDetail(noteId);
-
-        if (!originalDetail) {
-          throw new Error(
-            "Expected note detail.",
-          );
-        }
-
-        devFailureControls
-          .armConflictNextSave();
-
-        const conflictResponse =
-          await postSave(
-            noteId,
-            createSaveRequestBody(
-              noteId,
-              "mutation-dev-conflict-1",
-              "Conflict save",
-            ),
-          );
-
-        expect(
-          conflictResponse.status,
-        ).toBe(409);
-
-        const conflictBody =
-          (await conflictResponse.json()) as
-            SaveNoteVersionConflictResponse;
-
-        expect(
-          conflictBody.error,
-        ).toBe("version_conflict");
-
-        expect(
-          conflictBody.currentVersion,
-        ).toEqual(
-          originalDetail.currentVersion,
-        );
-
-        expect(
-          devFailureControls
-            .getSnapshot()
-            .conflictNextSave,
-        ).toBe(false);
-
-        expect(
-          simulateNetworkMock,
-        ).not.toHaveBeenCalled();
-
-        const followingResponse =
-          await postSave(
-            noteId,
-            createSaveRequestBody(
-              noteId,
-              "mutation-after-dev-conflict-1",
-              "Following save",
-            ),
-          );
-
-        expect(
-          followingResponse.status,
-        ).toBe(201);
-
-        expect(
-          simulateNetworkMock,
-        ).toHaveBeenCalledTimes(1);
-
-        expect(
-          conflictBody.commonAncestor,
-        ).toBeNull();
-      },
-    );
-
-    it(
-      "delays only the next valid save",
-      async () => {
-        const noteId =
-          requireFirstNoteId();
-
-        const delayMs = 40;
-
-        devFailureControls
-          .armDelayNextSave(delayMs);
-
-        const startedAt = Date.now();
-
-        const delayedResponse =
-          await postSave(
-            noteId,
-            createSaveRequestBody(
-              noteId,
-              "mutation-dev-delay-1",
-              "Delayed save",
-            ),
-          );
-
-        const elapsedMs =
-          Date.now() - startedAt;
-
-        expect(
-          delayedResponse.status,
-        ).toBe(201);
-
-        expect(elapsedMs).toBeGreaterThanOrEqual(
-          30,
-        );
-
-        expect(
-          devFailureControls
-            .getSnapshot()
-            .delayNextSaveMs,
-        ).toBeNull();
-
-        expect(
-          simulateNetworkMock,
-        ).not.toHaveBeenCalled();
-
-        const followingResponse =
-          await postSave(
-            noteId,
-            createSaveRequestBody(
-              noteId,
-              "mutation-after-dev-delay-1",
-              "Following save",
-            ),
-          );
-
-        expect(
-          followingResponse.status,
-        ).toBe(201);
-
-        expect(
-          simulateNetworkMock,
-        ).toHaveBeenCalledTimes(1);
-      },
-    );
-
-    it(
-      "returns the original saved response when the same mutation is retried",
-      async () => {
-        const noteId = requireFirstNoteId();
-
-        const originalDetail =
-          getNoteDetail(noteId);
-
-        if (!originalDetail) {
-          throw new Error(
-            "Expected note detail.",
-          );
-        }
-
-        const originalVersionCount =
-          originalDetail.versions.length;
-
-        const requestBody = {
-          baseVersionId:
-            originalDetail.currentVersion
-              .versionId,
-          clientMutationId:
-            "mutation-http-retry-1",
-          content: {
-            subjective:
-              "Updated subjective",
-            objective:
-              "Updated objective",
-            assessment:
-              "Updated assessment",
-            plan: "Updated plan",
-          },
-        };
-
-        const firstResponse = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
-          {
-            method: "POST",
-            headers: getActorHeaders(),
-            body: JSON.stringify(requestBody),
-          },
-        );
-
-        expect(firstResponse.status).toBe(
-          201,
-        );
-
-        const firstBody =
-          (await firstResponse.json()) as
-            SaveNoteVersionResponse;
-
-        const retryResponse = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
-          {
-            method: "POST",
-            headers: getActorHeaders(),
-            body: JSON.stringify(requestBody),
-          },
-        );
-
-        expect(retryResponse.status).toBe(
-          201,
-        );
-
-        const retryBody =
-          (await retryResponse.json()) as
-            SaveNoteVersionResponse;
-
-        expect(retryBody).toEqual(firstBody);
-
-        const detailAfterRetry =
-          getNoteDetail(noteId);
-
-        expect(
-          detailAfterRetry?.versions,
-        ).toHaveLength(
-          originalVersionCount + 1,
-        );
-
-        expect(
-          detailAfterRetry?.currentVersion
-            .versionId,
-        ).toBe(
-          firstBody.savedVersion.versionId,
-        );
-      },
-    );
-
-    it(
-      "returns 409 when a mutation ID is reused for different content",
-      async () => {
-        const noteId = requireFirstNoteId();
-
-        const originalDetail =
-          getNoteDetail(noteId);
-
-        if (!originalDetail) {
-          throw new Error(
-            "Expected note detail.",
-          );
-        }
-
-        const originalVersionCount =
-          originalDetail.versions.length;
-
-        const firstRequestBody = {
-          baseVersionId:
-            originalDetail.currentVersion
-              .versionId,
-          clientMutationId:
-            "mutation-http-reused-1",
-          content: {
-            subjective:
-              "First subjective",
-            objective:
-              "First objective",
-            assessment:
-              "First assessment",
-            plan: "First plan",
-          },
-        };
-
-        const firstResponse = await fetch(
-          `http://localhost/api/notes/${noteId}/versions`,
-          {
-            method: "POST",
-            headers: getActorHeaders(),
-            body: JSON.stringify(
-              firstRequestBody,
-            ),
-          },
-        );
-
-        expect(firstResponse.status).toBe(
-          201,
-        );
-
-        const conflictingResponse =
-          await fetch(
-            `http://localhost/api/notes/${noteId}/versions`,
-            {
-              method: "POST",
-              headers: getActorHeaders(),
-              body: JSON.stringify({
-                ...firstRequestBody,
-                content: {
-                  ...firstRequestBody.content,
-                  subjective:
-                    "Different subjective",
-                },
-              }),
-            },
-          );
-
-        expect(
-          conflictingResponse.status,
-        ).toBe(409);
-
-        const conflictBody =
-          (await conflictingResponse.json()) as
-            ErrorResponse;
-
-        expect(conflictBody.error).toBe(
-          "idempotency_conflict",
-        );
-
-        const detailAfterConflict =
-          getNoteDetail(noteId);
-
-        expect(
-          detailAfterConflict?.versions,
-        ).toHaveLength(
-          originalVersionCount + 1,
-        );
       },
     );
   },

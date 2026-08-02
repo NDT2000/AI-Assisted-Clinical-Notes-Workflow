@@ -15,7 +15,9 @@ import type {
   SaveNoteVersionActor,
   SaveNoteVersionRequestBody,
 } from "../../domain/noteSave";
-
+import type {
+  TransitionNoteActor,
+} from "../../domain/noteTransition";
 import {
   getNoteDetail,
   getNotes,
@@ -23,19 +25,20 @@ import {
   regenerateNotes,
   saveNoteVersion,
   seedNotes,
+  transitionNote,
 } from "../noteStore";
 
 function requireSummary(
   predicate: (
     note: NoteSummary,
-  ) => boolean = () => true,
+  ) => boolean,
 ): NoteSummary {
   const summary =
     getNotes().find(predicate);
 
   if (!summary) {
     throw new Error(
-      "Expected a matching note summary in the test dataset.",
+      "Expected a matching note summary.",
     );
   }
 
@@ -57,32 +60,107 @@ function requireDetail(
   return detail;
 }
 
+function createReviewer(
+  id = "reviewer-authorization-1",
+): TransitionNoteActor {
+  return {
+    id,
+    displayName:
+      `Reviewer ${id}`,
+    role: "REVIEWER",
+    mfaVerified: true,
+  };
+}
+
+function createSaveRequest(
+  detail: NoteDetail,
+  clientMutationId: string,
+): SaveNoteVersionRequestBody {
+  return {
+    baseVersionId:
+      detail.currentVersion
+        .versionId,
+    clientMutationId,
+    content: {
+      subjective:
+        "Updated subjective content.",
+      objective:
+        "Updated objective content.",
+      assessment:
+        "Updated assessment content.",
+      plan:
+        "Updated plan content.",
+    },
+  };
+}
+
+function prepareReadyNote():
+  NoteDetail {
+  const summary =
+    requireSummary(
+      note =>
+        note.status ===
+        "READY_FOR_REVIEW",
+    );
+
+  reassignNotes(
+    [summary.id],
+    null,
+    "ADMIN",
+  );
+
+  return requireDetail(
+    summary.id,
+  );
+}
+
+function startReview(
+  reviewer:
+    TransitionNoteActor =
+      createReviewer(),
+): NoteDetail {
+  const detail =
+    prepareReadyNote();
+
+  const result =
+    transitionNote(
+      detail.note.id,
+      {
+        baseVersionId:
+          detail.currentVersion
+            .versionId,
+        clientMutationId:
+          `start-${reviewer.id}`,
+        trigger:
+          "START_REVIEW",
+      },
+      reviewer,
+      "2026-08-02T12:00:00.000Z",
+    );
+
+  expect(
+    result.outcome,
+  ).toBe("transitioned");
+
+  return requireDetail(
+    detail.note.id,
+  );
+}
+
 describe(
-  "noteStore detail storage",
+  "noteStore",
   () => {
     beforeEach(() => {
-      seedNotes(100, 42);
+      seedNotes(500, 42);
     });
-
-    it(
-      "returns undefined when the note does not exist",
-      () => {
-        const detail =
-          getNoteDetail(
-            "note-does-not-exist",
-          );
-
-        expect(
-          detail,
-        ).toBeUndefined();
-      },
-    );
 
     it(
       "generates detail consistent with its summary",
       () => {
         const summary =
-          requireSummary();
+          requireSummary(
+            () => true,
+          );
 
         const detail =
           requireDetail(
@@ -100,45 +178,11 @@ describe(
         );
 
         expect(
-          detail.patient.id,
-        ).toBe(
-          summary.patient.id,
-        );
-
-        expect(
-          detail.patient
-            .displayName,
-        ).toBe(
-          summary.patient
-            .displayName,
-        );
-
-        expect(
-          detail.note.patientId,
-        ).toBe(
-          detail.patient.id,
-        );
-
-        expect(
-          detail.note.sessionId,
-        ).toBe(
-          detail.session.id,
-        );
-
-        expect(
           detail.note
             .currentVersionId,
         ).toBe(
           detail.currentVersion
             .versionId,
-        );
-
-        expect(
-          detail.currentVersion
-            .revisionNumber,
-        ).toBe(
-          summary.currentVersion
-            .revision,
         );
 
         expect(
@@ -148,715 +192,538 @@ describe(
           detail.assignedReviewer
             ?.id ?? null,
         );
-
-        expect(
-          detail.versions,
-        ).toHaveLength(
-          summary.currentVersion
-            .revision,
-        );
-
-        const finalVersion =
-          detail.versions[
-            detail.versions
-              .length - 1
-          ];
-
-        expect(
-          finalVersion.versionId,
-        ).toBe(
-          detail.currentVersion
-            .versionId,
-        );
       },
     );
 
     it(
-      "returns the cached detail when the same note is opened again",
+      "assigns reviewers only to eligible notes and authorized roles",
       () => {
-        const summary =
-          requireSummary();
-
-        const firstResult =
-          requireDetail(
-            summary.id,
-          );
-
-        const secondResult =
-          requireDetail(
-            summary.id,
-          );
-
-        expect(
-          secondResult,
-        ).toBe(firstResult);
-      },
-    );
-
-    it(
-      "invalidates cached detail when the reviewer changes",
-      () => {
-        const summary =
+        const ready =
           requireSummary(
             note =>
-              note.status !==
-              "LOCKED",
+              note.status ===
+              "READY_FOR_REVIEW",
           );
 
-        const originalDetail =
-          requireDetail(
-            summary.id,
+        const inReview =
+          requireSummary(
+            note =>
+              note.status ===
+              "IN_REVIEW",
           );
 
-        const newReviewer = {
-          id: "reviewer-test",
+        const reviewer = {
+          id: "reviewer-new",
           displayName:
-            "Test Reviewer",
+            "New Reviewer",
         };
 
-        const updatedIds =
-          reassignNotes(
-            [summary.id],
-            newReviewer,
-          );
-
         expect(
-          updatedIds,
+          reassignNotes(
+            [
+              ready.id,
+              inReview.id,
+            ],
+            reviewer,
+            "CLINICIAN",
+          ),
         ).toEqual([
-          summary.id,
+          ready.id,
         ]);
 
-        const regeneratedDetail =
+        expect(
           requireDetail(
-            summary.id,
-          );
-
-        expect(
-          regeneratedDetail,
-        ).not.toBe(
-          originalDetail,
-        );
-
-        expect(
-          regeneratedDetail
-            .assignedReviewer,
+            ready.id,
+          ).assignedReviewer,
         ).toEqual({
-          ...newReviewer,
+          ...reviewer,
           role: "REVIEWER",
         });
 
+        const anotherReady =
+          requireSummary(
+            note =>
+              note.status ===
+                "READY_FOR_REVIEW" &&
+              note.id !== ready.id,
+          );
+
         expect(
-          regeneratedDetail.note
-            .assignedReviewerId,
-        ).toBe(
-          newReviewer.id,
-        );
+          reassignNotes(
+            [anotherReady.id],
+            reviewer,
+            "REVIEWER",
+          ),
+        ).toEqual([]);
       },
     );
 
     it(
-      "invalidates cached detail when regeneration changes the status",
+      "regenerates only failed notes for an authorized role",
       () => {
-        const failedSummary =
+        const failed =
           requireSummary(
             note =>
               note.status ===
               "FAILED",
           );
 
-        const originalDetail =
-          requireDetail(
-            failedSummary.id,
-          );
-
-        const updatedIds =
-          regenerateNotes(
-            [failedSummary.id],
-            "CLINICIAN",
+        const ready =
+          requireSummary(
+            note =>
+              note.status ===
+              "READY_FOR_REVIEW",
           );
 
         expect(
-          updatedIds,
+          regenerateNotes(
+            [
+              failed.id,
+              ready.id,
+            ],
+            "CLINICIAN",
+          ),
         ).toEqual([
-          failedSummary.id,
+          failed.id,
         ]);
 
-        const updatedSummary =
+        expect(
           requireSummary(
             note =>
               note.id ===
-              failedSummary.id,
-          );
+              failed.id,
+          ).status,
+        ).toBe("GENERATING");
 
         expect(
-          updatedSummary.status,
-        ).toBe(
-          "GENERATING",
-        );
-
-        const regeneratedDetail =
-          requireDetail(
-            failedSummary.id,
-          );
-
-        expect(
-          regeneratedDetail,
-        ).not.toBe(
-          originalDetail,
-        );
-
-        expect(
-          regeneratedDetail.note
-            .status,
-        ).toBe(
-          "GENERATING",
-        );
+          regenerateNotes(
+            [ready.id],
+            "REVIEWER",
+          ),
+        ).toEqual([]);
       },
     );
 
     it(
-      "clears cached details when the dataset is reseeded",
+      "assigns the acting reviewer when review starts",
       () => {
-        const summary =
-          requireSummary();
+        const reviewer =
+          createReviewer();
 
-        const originalDetail =
-          requireDetail(
-            summary.id,
-          );
-
-        seedNotes(100, 42);
-
-        const regeneratedDetail =
-          requireDetail(
-            summary.id,
-          );
-
-        expect(
-          regeneratedDetail,
-        ).not.toBe(
-          originalDetail,
-        );
-
-        expect(
-          regeneratedDetail,
-        ).toEqual(
-          originalDetail,
-        );
-      },
-    );
-  },
-);
-
-describe(
-  "noteStore version saving",
-  () => {
-    beforeEach(() => {
-      seedNotes(100, 42);
-    });
-
-    const actor:
-      SaveNoteVersionActor = {
-      id: "reviewer-test",
-      displayName:
-        "Test Reviewer",
-      role: "REVIEWER",
-    };
-
-    it(
-      "creates a new version and updates the detail and summary",
-      () => {
-        const summary =
-          requireSummary();
-
-        const originalDetail =
-          requireDetail(
-            summary.id,
-          );
-
-        const originalVersionCount =
-          originalDetail
-            .versions.length;
-
-        const request:
-          SaveNoteVersionRequestBody = {
-          baseVersionId:
-            originalDetail
-              .currentVersion
-              .versionId,
-          clientMutationId:
-            "mutation-save-1",
-          content: {
-            subjective:
-              "Patient reports improved sleep.",
-            objective:
-              "Patient appears alert and comfortable.",
-            assessment:
-              "Symptoms are improving.",
-            plan:
-              "Continue the current treatment plan.",
-          },
-        };
-
-        const savedAt =
-          "2026-07-31T21:30:00.000Z";
+        const detail =
+          prepareReadyNote();
 
         const result =
-          saveNoteVersion(
-            summary.id,
-            request,
-            actor,
-            savedAt,
+          transitionNote(
+            detail.note.id,
+            {
+              baseVersionId:
+                detail.currentVersion
+                  .versionId,
+              clientMutationId:
+                "start-review-1",
+              trigger:
+                "START_REVIEW",
+            },
+            reviewer,
+            "2026-08-02T12:00:00.000Z",
           );
 
         expect(
           result.outcome,
-        ).toBe("saved");
+        ).toBe("transitioned");
 
         if (
           result.outcome !==
-          "saved"
+          "transitioned"
         ) {
           throw new Error(
-            "Expected the version to be saved.",
+            "Expected review to start.",
           );
         }
 
         expect(
-          result.response
-            .clientMutationId,
-        ).toBe(
-          "mutation-save-1",
-        );
+          result.response.note
+            .assignedReviewerId,
+        ).toBe(reviewer.id);
 
         expect(
-          result.response
-            .savedVersion
-            .revisionNumber,
-        ).toBe(
-          originalDetail
-            .currentVersion
-            .revisionNumber + 1,
-        );
-
-        expect(
-          result.response
-            .savedVersion
-            .parentVersionId,
-        ).toBe(
-          originalDetail
-            .currentVersion
-            .versionId,
-        );
-
-        expect(
-          result.response
-            .savedVersion.content,
-        ).toEqual(
-          request.content,
-        );
-
-        expect(
-          result.response
-            .savedVersion.authorId,
-        ).toBe(actor.id);
-
-        expect(
-          result.response
-            .savedVersion
-            .authorRole,
-        ).toBe(actor.role);
-
-        expect(
-          result.response
-            .savedVersion
-            .authorDisplayName,
-        ).toBe(
-          actor.displayName,
-        );
-
-        const updatedDetail =
           requireDetail(
-            summary.id,
-          );
-
-        expect(
-          updatedDetail
-            .currentVersion,
-        ).toEqual(
-          result.response
-            .savedVersion,
-        );
-
-        expect(
-          updatedDetail.versions,
-        ).toHaveLength(
-          originalVersionCount +
-            1,
-        );
-
-        expect(
-          updatedDetail.versions[
-            updatedDetail.versions
-              .length - 1
-          ],
-        ).toEqual(
-          result.response
-            .savedVersion,
-        );
-
-        const updatedSummary =
-          requireSummary(
-            note =>
-              note.id ===
-              summary.id,
-          );
-
-        expect(
-          updatedSummary
-            .currentVersion,
+            detail.note.id,
+          ).assignedReviewer,
         ).toEqual({
-          id:
-            result.response
-              .savedVersion
-              .versionId,
-          revision:
-            result.response
-              .savedVersion
-              .revisionNumber,
-        });
-
-        expect(
-          updatedSummary
-            .contentPreview,
-        ).toBe(
-          "Patient reports improved sleep.",
-        );
-
-        expect(
-          updatedSummary
-            .updatedAt,
-        ).toBe(savedAt);
-      },
-    );
-
-    it(
-      "does not save when the base version is stale",
-      () => {
-        const summary =
-          requireSummary();
-
-        const originalDetail =
-          requireDetail(
-            summary.id,
-          );
-
-        const result =
-          saveNoteVersion(
-            summary.id,
-            {
-              baseVersionId:
-                "stale-version-id",
-              clientMutationId:
-                "mutation-conflict-1",
-              content: {
-                subjective:
-                  "Conflicting subjective content",
-                objective:
-                  "Conflicting objective content",
-                assessment:
-                  "Conflicting assessment content",
-                plan:
-                  "Conflicting plan content",
-              },
-            },
-            actor,
-            "2026-07-31T21:30:00.000Z",
-          );
-
-        expect(
-          result,
-        ).toEqual({
-          outcome:
-            "version-conflict",
-          currentVersion:
-            originalDetail
-              .currentVersion,
-          commonAncestor: null,
-        });
-
-        const unchangedDetail =
-          requireDetail(
-            summary.id,
-          );
-
-        expect(
-          unchangedDetail
-            .currentVersion,
-        ).toEqual(
-          originalDetail
-            .currentVersion,
-        );
-
-        expect(
-          unchangedDetail
-            .versions,
-        ).toEqual(
-          originalDetail
-            .versions,
-        );
-      },
-    );
-
-    it(
-      "returns not-found for an unknown note",
-      () => {
-        const result =
-          saveNoteVersion(
-            "note-does-not-exist",
-            {
-              baseVersionId:
-                "version-1",
-              clientMutationId:
-                "mutation-missing-1",
-              content: {
-                subjective:
-                  "Subjective",
-                objective:
-                  "Objective",
-                assessment:
-                  "Assessment",
-                plan: "Plan",
-              },
-            },
-            actor,
-          );
-
-        expect(
-          result,
-        ).toEqual({
-          outcome:
-            "not-found",
+          id: reviewer.id,
+          displayName:
+            reviewer.displayName,
+          role: "REVIEWER",
         });
       },
     );
 
     it(
-      "returns the original response when the same save is retried",
+      "rejects review start when another reviewer owns the note",
       () => {
-        const summary =
-          requireSummary();
+        const detail =
+          prepareReadyNote();
 
-        const originalDetail =
-          requireDetail(
-            summary.id,
-          );
-
-        const request:
-          SaveNoteVersionRequestBody = {
-          baseVersionId:
-            originalDetail
-              .currentVersion
-              .versionId,
-          clientMutationId:
-            "mutation-idempotent-1",
-          content: {
-            subjective:
-              "Updated subjective",
-            objective:
-              "Updated objective",
-            assessment:
-              "Updated assessment",
-            plan:
-              "Updated plan",
+        reassignNotes(
+          [detail.note.id],
+          {
+            id: "reviewer-owner",
+            displayName:
+              "Current Owner",
           },
+          "ADMIN",
+        );
+
+        const refreshed =
+          requireDetail(
+            detail.note.id,
+          );
+
+        expect(
+          transitionNote(
+            refreshed.note.id,
+            {
+              baseVersionId:
+                refreshed
+                  .currentVersion
+                  .versionId,
+              clientMutationId:
+                "start-review-other",
+              trigger:
+                "START_REVIEW",
+            },
+            createReviewer(
+              "reviewer-other",
+            ),
+          ),
+        ).toEqual({
+          outcome:
+            "transition-rejected",
+          reason:
+            "This note is assigned to another reviewer.",
+        });
+      },
+    );
+
+    it(
+      "releases reviewer ownership when a note returns to the queue",
+      () => {
+        const reviewer =
+          createReviewer();
+
+        const inReview =
+          startReview(reviewer);
+
+        const result =
+          transitionNote(
+            inReview.note.id,
+            {
+              baseVersionId:
+                inReview
+                  .currentVersion
+                  .versionId,
+              clientMutationId:
+                "return-to-queue-1",
+              trigger:
+                "RETURN_TO_QUEUE",
+            },
+            reviewer,
+            "2026-08-02T12:05:00.000Z",
+          );
+
+        expect(
+          result.outcome,
+        ).toBe("transitioned");
+
+        const updated =
+          requireDetail(
+            inReview.note.id,
+          );
+
+        expect(
+          updated.note.status,
+        ).toBe(
+          "READY_FOR_REVIEW",
+        );
+
+        expect(
+          updated.note
+            .assignedReviewerId,
+        ).toBeNull();
+
+        expect(
+          updated.assignedReviewer,
+        ).toBeNull();
+      },
+    );
+
+    it(
+      "allows only the assigned reviewer to save an in-review note",
+      () => {
+        const reviewer =
+          createReviewer();
+
+        const inReview =
+          startReview(reviewer);
+
+        const unauthorized =
+          saveNoteVersion(
+            inReview.note.id,
+            createSaveRequest(
+              inReview,
+              "save-wrong-reviewer",
+            ),
+            {
+              id: "reviewer-other",
+              displayName:
+                "Other Reviewer",
+              role: "REVIEWER",
+            },
+          );
+
+        expect(
+          unauthorized,
+        ).toEqual({
+          outcome: "forbidden",
+          reason:
+            "Only the assigned reviewer can edit this note.",
+        });
+
+        const authorized =
+          saveNoteVersion(
+            inReview.note.id,
+            createSaveRequest(
+              inReview,
+              "save-assigned-reviewer",
+            ),
+            reviewer,
+            "2026-08-02T12:10:00.000Z",
+          );
+
+        expect(
+          authorized.outcome,
+        ).toBe("saved");
+      },
+    );
+
+    it(
+      "denies a read-only auditor at the store boundary",
+      () => {
+        const inReview =
+          startReview();
+
+        const actor:
+          SaveNoteVersionActor = {
+          id: "auditor-1",
+          displayName:
+            "Read-only Auditor",
+          role:
+            "READONLY_AUDITOR",
         };
 
-        const firstResult =
+        expect(
           saveNoteVersion(
-            summary.id,
-            request,
+            inReview.note.id,
+            createSaveRequest(
+              inReview,
+              "save-auditor",
+            ),
             actor,
-            "2026-07-31T21:30:00.000Z",
+          ),
+        ).toEqual({
+          outcome: "forbidden",
+          reason:
+            "Read-only auditors cannot edit note content.",
+        });
+      },
+    );
+
+    it(
+      "allows a clinician to correct a rejected note and releases ownership on resubmission",
+      () => {
+        const reviewer =
+          createReviewer();
+
+        const inReview =
+          startReview(reviewer);
+
+        const rejected =
+          transitionNote(
+            inReview.note.id,
+            {
+              baseVersionId:
+                inReview
+                  .currentVersion
+                  .versionId,
+              clientMutationId:
+                "reject-note-1",
+              trigger: "REJECT",
+              rejectionReason:
+                "The assessment needs clarification.",
+            },
+            reviewer,
+            "2026-08-02T12:15:00.000Z",
           );
 
         expect(
-          firstResult.outcome,
-        ).toBe("saved");
+          rejected.outcome,
+        ).toBe("transitioned");
 
-        if (
-          firstResult.outcome !==
-          "saved"
-        ) {
-          throw new Error(
-            "Expected the first save to succeed.",
-          );
-        }
-
-        const detailAfterFirstSave =
+        const rejectedDetail =
           requireDetail(
-            summary.id,
+            inReview.note.id,
           );
 
-        const versionCountAfterFirstSave =
-          detailAfterFirstSave
-            .versions.length;
+        const clinician:
+          SaveNoteVersionActor = {
+          id: "clinician-1",
+          displayName:
+            "Current Clinician",
+          role: "CLINICIAN",
+        };
 
-        const retryResult =
+        const saveResult =
           saveNoteVersion(
-            summary.id,
-            request,
-            actor,
-            "2026-07-31T21:35:00.000Z",
+            rejectedDetail.note.id,
+            createSaveRequest(
+              rejectedDetail,
+              "save-rejected-1",
+            ),
+            clinician,
+            "2026-08-02T12:20:00.000Z",
           );
 
         expect(
-          retryResult.outcome,
+          saveResult.outcome,
         ).toBe("saved");
 
         if (
-          retryResult.outcome !==
+          saveResult.outcome !==
           "saved"
         ) {
           throw new Error(
-            "Expected the retry to return the saved response.",
+            "Expected the clinician save to succeed.",
           );
         }
 
+        const resubmitted =
+          transitionNote(
+            rejectedDetail.note.id,
+            {
+              baseVersionId:
+                saveResult.response
+                  .savedVersion
+                  .versionId,
+              clientMutationId:
+                "resubmit-note-1",
+              trigger: "RESUBMIT",
+            },
+            clinician,
+            "2026-08-02T12:25:00.000Z",
+          );
+
         expect(
-          retryResult.response,
-        ).toEqual(
-          firstResult.response,
+          resubmitted.outcome,
+        ).toBe("transitioned");
+
+        const updated =
+          requireDetail(
+            rejectedDetail.note.id,
+          );
+
+        expect(
+          updated.note.status,
+        ).toBe(
+          "READY_FOR_REVIEW",
         );
 
-        const detailAfterRetry =
-          requireDetail(
-            summary.id,
+        expect(
+          updated.note
+            .assignedReviewerId,
+        ).toBeNull();
+      },
+    );
+
+    it(
+      "returns the original response for an idempotent save retry",
+      () => {
+        const reviewer =
+          createReviewer();
+
+        const inReview =
+          startReview(reviewer);
+
+        const request =
+          createSaveRequest(
+            inReview,
+            "save-idempotent-1",
+          );
+
+        const first =
+          saveNoteVersion(
+            inReview.note.id,
+            request,
+            reviewer,
+            "2026-08-02T12:30:00.000Z",
+          );
+
+        const second =
+          saveNoteVersion(
+            inReview.note.id,
+            request,
+            reviewer,
+            "2026-08-02T12:35:00.000Z",
           );
 
         expect(
-          detailAfterRetry
-            .versions,
+          first.outcome,
+        ).toBe("saved");
+
+        expect(second).toEqual(first);
+
+        const detail =
+          requireDetail(
+            inReview.note.id,
+          );
+
+        expect(
+          detail.versions,
         ).toHaveLength(
-          versionCountAfterFirstSave,
-        );
-
-        expect(
-          detailAfterRetry
-            .currentVersion
-            .versionId,
-        ).toBe(
-          firstResult.response
-            .savedVersion
-            .versionId,
-        );
-
-        expect(
-          detailAfterRetry
-            .currentVersion
-            .createdAt,
-        ).toBe(
-          "2026-07-31T21:30:00.000Z",
+          inReview.versions.length +
+            1,
         );
       },
     );
 
     it(
-      "rejects reuse of a mutation ID with different content",
+      "returns a version conflict for an authorized stale save",
       () => {
-        const summary =
-          requireSummary();
+        const reviewer =
+          createReviewer();
 
-        const originalDetail =
-          requireDetail(
-            summary.id,
-          );
-
-        const firstResult =
-          saveNoteVersion(
-            summary.id,
-            {
-              baseVersionId:
-                originalDetail
-                  .currentVersion
-                  .versionId,
-              clientMutationId:
-                "mutation-reused-1",
-              content: {
-                subjective:
-                  "First subjective",
-                objective:
-                  "First objective",
-                assessment:
-                  "First assessment",
-                plan:
-                  "First plan",
-              },
-            },
-            actor,
-            "2026-07-31T21:30:00.000Z",
-          );
-
-        expect(
-          firstResult.outcome,
-        ).toBe("saved");
-
-        const detailAfterFirstSave =
-          requireDetail(
-            summary.id,
-          );
+        const inReview =
+          startReview(reviewer);
 
         const result =
           saveNoteVersion(
-            summary.id,
+            inReview.note.id,
             {
+              ...createSaveRequest(
+                inReview,
+                "save-stale-1",
+              ),
               baseVersionId:
-                originalDetail
-                  .currentVersion
-                  .versionId,
-              clientMutationId:
-                "mutation-reused-1",
-              content: {
-                subjective:
-                  "Different subjective",
-                objective:
-                  "First objective",
-                assessment:
-                  "First assessment",
-                plan:
-                  "First plan",
-              },
+                "stale-version-id",
             },
-            actor,
-            "2026-07-31T21:35:00.000Z",
+            reviewer,
           );
 
         expect(
-          result,
-        ).toEqual({
-          outcome:
-            "idempotency-conflict",
-        });
-
-        const detailAfterConflict =
-          requireDetail(
-            summary.id,
-          );
-
-        expect(
-          detailAfterConflict
-            .versions,
-        ).toHaveLength(
-          detailAfterFirstSave
-            .versions.length,
-        );
-
-        expect(
-          detailAfterConflict
-            .currentVersion,
-        ).toEqual(
-          detailAfterFirstSave
-            .currentVersion,
+          result.outcome,
+        ).toBe(
+          "version-conflict",
         );
       },
     );

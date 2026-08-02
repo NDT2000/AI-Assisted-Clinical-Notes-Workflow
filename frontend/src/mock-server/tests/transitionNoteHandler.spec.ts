@@ -1,43 +1,76 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, } from "vitest";
-import { setupServer } from "msw/node";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  setupServer,
+} from "msw/node";
 
-import type { TransitionNoteRequestBody, TransitionNoteResponse, TransitionNoteStandardErrorResponse, } from "../../domain/noteTransition";
-import type { NoteSummary } from "../../domain/noteSummary";
+import type {
+  TransitionNoteRequestBody,
+  TransitionNoteResponse,
+  TransitionNoteStandardErrorResponse,
+} from "../../domain/noteTransition";
+import type {
+  NoteSummary,
+} from "../../domain/noteSummary";
 
-vi.mock("../mockNetwork", async () => {
-  const actual =
-    await vi.importActual<
-      typeof import("../mockNetwork")
-    >("../mockNetwork");
+vi.mock(
+  "../mockNetwork",
+  async () => {
+    const actual =
+      await vi.importActual<
+        typeof import("../mockNetwork")
+      >("../mockNetwork");
 
-  return {
-    ...actual,
-    simulateNetwork: vi.fn(),
-  };
-});
+    return {
+      ...actual,
+      simulateNetwork:
+        vi.fn(),
+    };
+  },
+);
 
-import { devFailureControls } from "../devFailureControls";
-import { simulateNetwork } from "../mockNetwork";
+import {
+  devFailureControls,
+} from "../devFailureControls";
+import {
+  simulateNetwork,
+} from "../mockNetwork";
 import {
   getNoteDetail,
   getNotes,
+  reassignNotes,
   seedNotes,
 } from "../noteStore";
-import { transitionNoteHandler } from "../transitionNoteHandler";
-
-const server = setupServer(
+import {
   transitionNoteHandler,
-);
+} from "../transitionNoteHandler";
+
+const server =
+  setupServer(
+    transitionNoteHandler,
+  );
 
 const simulateNetworkMock =
-  vi.mocked(simulateNetwork);
-
-function requireReadyForReviewNote(): NoteSummary {
-  const note = getNotes().find(
-    (candidate) =>
-      candidate.status ===
-      "READY_FOR_REVIEW",
+  vi.mocked(
+    simulateNetwork,
   );
+
+function requireReadyForReviewNote():
+  NoteSummary {
+  const note =
+    getNotes().find(
+      candidate =>
+        candidate.status ===
+        "READY_FOR_REVIEW",
+    );
 
   if (!note) {
     throw new Error(
@@ -45,17 +78,40 @@ function requireReadyForReviewNote(): NoteSummary {
     );
   }
 
-  return note;
+  reassignNotes(
+    [note.id],
+    null,
+    "ADMIN",
+  );
+
+  const unassignedNote =
+    getNotes().find(
+      candidate =>
+        candidate.id === note.id,
+    );
+
+  if (!unassignedNote) {
+    throw new Error(
+      "Expected the ready-for-review note to remain available.",
+    );
+  }
+
+  return unassignedNote;
 }
 
-function getActorHeaders(): HeadersInit {
+function getActorHeaders():
+  HeadersInit {
   return {
-    "content-type": "application/json",
-    "x-actor-id": "reviewer-test",
-    "x-actor-role": "REVIEWER",
+    "content-type":
+      "application/json",
+    "x-actor-id":
+      "reviewer-test",
+    "x-actor-role":
+      "REVIEWER",
     "x-actor-display-name":
       "Test Reviewer",
-    "x-mfa-verified": "true",
+    "x-mfa-verified":
+      "true",
   };
 }
 
@@ -63,7 +119,8 @@ function createTransitionRequestBody(
   noteId: string,
   clientMutationId: string,
 ): TransitionNoteRequestBody {
-  const detail = getNoteDetail(noteId);
+  const detail =
+    getNoteDetail(noteId);
 
   if (!detail) {
     throw new Error(
@@ -73,8 +130,10 @@ function createTransitionRequestBody(
 
   return {
     baseVersionId:
-      detail.currentVersion.versionId,
-    trigger: "START_REVIEW",
+      detail.currentVersion
+        .versionId,
+    trigger:
+      "START_REVIEW",
     clientMutationId,
   };
 }
@@ -87,8 +146,10 @@ function postTransition(
     `http://localhost/api/notes/${noteId}/transitions`,
     {
       method: "POST",
-      headers: getActorHeaders(),
-      body: JSON.stringify(body),
+      headers:
+        getActorHeaders(),
+      body:
+        JSON.stringify(body),
     },
   );
 }
@@ -98,7 +159,8 @@ describe(
   () => {
     beforeAll(() => {
       server.listen({
-        onUnhandledRequest: "error",
+        onUnhandledRequest:
+          "error",
       });
     });
 
@@ -106,10 +168,13 @@ describe(
       seedNotes(100, 42);
       devFailureControls.reset();
 
-      simulateNetworkMock.mockReset();
-      simulateNetworkMock.mockResolvedValue(
-        undefined,
-      );
+      simulateNetworkMock
+        .mockReset();
+
+      simulateNetworkMock
+        .mockResolvedValue(
+          undefined,
+        );
     });
 
     afterEach(() => {
@@ -137,7 +202,8 @@ describe(
         }
 
         const originalTimelineLength =
-          originalDetail.timeline.length;
+          originalDetail
+            .timeline.length;
 
         devFailureControls
           .armRejectNextTransition();
@@ -159,7 +225,9 @@ describe(
           (await rejectedResponse.json()) as
             TransitionNoteStandardErrorResponse;
 
-        expect(rejectedBody).toEqual({
+        expect(
+          rejectedBody,
+        ).toEqual({
           error:
             "transition_not_allowed",
           message:
@@ -180,11 +248,15 @@ describe(
           getNoteDetail(note.id);
 
         expect(
-          detailAfterRejection?.note.status,
-        ).toBe("READY_FOR_REVIEW");
+          detailAfterRejection
+            ?.note.status,
+        ).toBe(
+          "READY_FOR_REVIEW",
+        );
 
         expect(
-          detailAfterRejection?.timeline,
+          detailAfterRejection
+            ?.timeline,
         ).toHaveLength(
           originalTimelineLength,
         );
@@ -207,13 +279,16 @@ describe(
             TransitionNoteResponse;
 
         expect(
-          followingBody.note.status,
+          followingBody.note
+            .status,
         ).toBe("IN_REVIEW");
 
         expect(
           followingBody.timelineEvent
             .fromStatus,
-        ).toBe("READY_FOR_REVIEW");
+        ).toBe(
+          "READY_FOR_REVIEW",
+        );
 
         expect(
           followingBody.timelineEvent
@@ -222,7 +297,9 @@ describe(
 
         expect(
           simulateNetworkMock,
-        ).toHaveBeenCalledTimes(1);
+        ).toHaveBeenCalledTimes(
+          1,
+        );
       },
     );
 
