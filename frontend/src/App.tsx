@@ -7,6 +7,9 @@ import {
 import "./App.css";
 
 import {
+  OfflineConnectivityStatus,
+} from "./features/notes/components/offline/OfflineConnectivityStatus";
+import {
   offlineSaveReplayCoordinator,
 } from "./features/notes/offline/offlineSaveReplay";
 import { NoteDetailPage } from "./features/notes/pages/NoteDetailPage";
@@ -28,22 +31,26 @@ function App() {
   }, []);
 
   return (
-    <Routes>
-      <Route
-        path="/"
-        element={<NotesPage />}
-      />
+    <>
+      <OfflineConnectivityStatus />
 
-      <Route
-        path="/notes"
-        element={<NotesPage />}
-      />
+      <Routes>
+        <Route
+          path="/"
+          element={<NotesPage />}
+        />
 
-      <Route
-        path="/notes/:noteId"
-        element={<NoteDetailPage />}
-      />
-    </Routes>
+        <Route
+          path="/notes"
+          element={<NotesPage />}
+        />
+
+        <Route
+          path="/notes/:noteId"
+          element={<NoteDetailPage />}
+        />
+      </Routes>
+    </>
   );
 }
 

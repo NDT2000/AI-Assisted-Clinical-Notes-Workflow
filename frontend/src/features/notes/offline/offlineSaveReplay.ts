@@ -32,6 +32,7 @@ export type OfflineSaveReplayStatus =
 
 export interface OfflineSaveReplaySnapshot {
   status: OfflineSaveReplayStatus;
+  isHydrated: boolean;
   pendingCount: number;
   currentSequence: number | null;
   replayedCount: number;
@@ -293,6 +294,7 @@ export class OfflineSaveReplayCoordinator {
         this.dependencies.isOnline()
           ? "idle"
           : "offline",
+      isHydrated: false,
       pendingCount: 0,
       currentSequence: null,
       replayedCount: 0,
@@ -363,6 +365,15 @@ export class OfflineSaveReplayCoordinator {
 
   notifyQueueChanged(): void {
     this.hydrated = false;
+
+    this.updateSnapshot({
+      isHydrated: false,
+      pendingCount:
+        Math.max(
+          1,
+          this.snapshot.pendingCount,
+        ),
+    });
 
     if (!this.started) {
       return;
@@ -555,7 +566,10 @@ export class OfflineSaveReplayCoordinator {
                 "blocked-conflict",
             ) ?? null;
 
+          this.hydrated = true;
+
           this.updateSnapshot({
+            isHydrated: true,
             pendingCount:
               entries.length,
             blockedConflict,
@@ -568,8 +582,6 @@ export class OfflineSaveReplayCoordinator {
               blockedConflict?.lastError ??
               null,
           });
-
-          this.hydrated = true;
         })
         .finally(() => {
           this.hydrationPromise = null;
