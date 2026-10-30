@@ -1,7 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  BrowserRouter,
+  createBrowserRouter,
+  RouterProvider,
 } from "react-router-dom";
 
 import App from "./App.tsx";
@@ -40,12 +41,19 @@ async function enableMocking(): Promise<void> {
 
 await enableMocking();
 
+// A data router is required for useBlocker (unsaved-changes guard).
+// App keeps its own <Routes>, so it is mounted under a catch-all route.
+const router = createBrowserRouter([
+  {
+    path: "*",
+    element: <App />,
+  },
+]);
+
 createRoot(
   document.getElementById("root")!,
 ).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </StrictMode>,
 );

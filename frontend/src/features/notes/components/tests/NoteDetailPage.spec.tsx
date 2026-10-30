@@ -6,9 +6,8 @@ import {
   within,
 } from "@testing-library/react";
 import {
-  MemoryRouter,
-  Route,
-  Routes,
+  createMemoryRouter,
+  RouterProvider,
 } from "react-router-dom";
 import {
   afterEach,
@@ -183,24 +182,26 @@ function createNoteDetail(): NoteDetail {
 }
 
 function renderPage(): void {
-  render(
-    <MemoryRouter
-      initialEntries={[
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/notes/:noteId",
+        element: <NoteDetailPage />,
+      },
+      {
+        path: "/notes",
+        element: <div>Notes list</div>,
+      },
+    ],
+    {
+      initialEntries: [
         "/notes/note-1",
-      ]}
-    >
-      <Routes>
-        <Route
-          path="/notes/:noteId"
-          element={<NoteDetailPage />}
-        />
+      ],
+    },
+  );
 
-        <Route
-          path="/notes"
-          element={<div>Notes list</div>}
-        />
-      </Routes>
-    </MemoryRouter>,
+  render(
+    <RouterProvider router={router} />,
   );
 }
 

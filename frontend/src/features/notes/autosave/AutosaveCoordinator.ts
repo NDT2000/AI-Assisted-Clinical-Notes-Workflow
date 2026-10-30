@@ -37,6 +37,12 @@ type AutosaveSaveOperationResult =
   | SaveNoteVersionResponse
   | AutosaveSaveResult;
 
+export interface UnsavedAutosaveDraft {
+  request: SaveNoteVersionRequestBody;
+  failureKind: AutosaveFailureKind;
+  error: unknown;
+}
+
 export interface AutosaveCoordinatorOptions {
   initialBaseVersionId: string;
   initialContent: SoapContent;
@@ -60,10 +66,20 @@ export interface AutosaveCoordinatorOptions {
   onSaveSuccess?: (
     result: AutosaveSuccess,
   ) => void;
+
+  /*
+   * Called after detach() for a draft that could not be saved
+   * (failed or conflicted), so it can be kept somewhere durable
+   * instead of being lost with the editor.
+   */
+  onUnsavedAfterDetach?: (
+    draft: UnsavedAutosaveDraft,
+  ) => void;
 }
 
 interface SaveAttempt {
   request: SaveNoteVersionRequestBody;
+  error?: unknown;
 }
 
 const DEFAULT_DEBOUNCE_MS = 500;
@@ -142,6 +158,10 @@ export class AutosaveCoordinator {
     | AutosaveCoordinatorOptions["onSaveSuccess"]
     | undefined;
 
+  private readonly onUnsavedAfterDetach:
+    | AutosaveCoordinatorOptions["onUnsavedAfterDetach"]
+    | undefined;
+
   private baseVersionId: string;
 
   private lastSavedContent: SoapContent;
@@ -169,6 +189,8 @@ export class AutosaveCoordinator {
   private hasDurableQueuedSave = false;
 
   private disposed = false;
+
+  private detached = false;
 
   constructor(
     options: AutosaveCoordinatorOptions,
@@ -199,10 +221,13 @@ export class AutosaveCoordinator {
 
     this.onSaveSuccess =
       options.onSaveSuccess;
+
+    this.onUnsavedAfterDetach =
+      options.onUnsavedAfterDetach;
   }
 
   updateDraft(content: SoapContent): void {
-    if (this.disposed) {
+    if (this.disposed || this.detached) {
       return;
     }
 
@@ -274,6 +299,7 @@ export class AutosaveCoordinator {
   retry(): void {
     if (
       this.disposed ||
+      this.detached ||
       this.inFlightAttempt ||
       !this.failedAttempt
     ) {
@@ -292,6 +318,7 @@ export class AutosaveCoordinator {
   ): void {
     if (
       this.disposed ||
+      this.detached ||
       this.inFlightAttempt ||
       !this.conflictAttempt
     ) {
@@ -338,10 +365,98 @@ export class AutosaveCoordinator {
     };
   }
 
+  /*
+   * Starts a debounced save immediately, e.g. when the tab is
+   * hidden and may be closed before the debounce fires.
+   */
+  flushNow(): void {
+    if (
+      this.disposed ||
+      this.debounceTimer === null
+    ) {
+      return;
+    }
+
+    this.clearDebounceTimer();
+    this.startQueuedSave();
+  }
+
+  /*
+   * Releases the coordinator from its editor without losing work:
+   * pending edits are saved now, an in-flight save is allowed to
+   * finish (including its trailing save), and a failed or
+   * conflicted draft is handed to onUnsavedAfterDetach.
+   * No state or success callbacks fire after this call.
+   */
+  detach(): void {
+    if (this.disposed || this.detached) {
+      return;
+    }
+
+    this.detached = true;
+    this.clearDebounceTimer();
+    this.continueDetached();
+  }
+
   dispose(): void {
     this.disposed = true;
     this.clearDebounceTimer();
     this.queuedContent = null;
+  }
+
+  private continueDetached(): void {
+    if (this.inFlightAttempt) {
+      return;
+    }
+
+    const unsavedAttempt =
+      this.conflictAttempt ??
+      this.failedAttempt;
+
+    if (unsavedAttempt) {
+      const failureKind: AutosaveFailureKind =
+        this.conflictAttempt
+          ? "conflict"
+          : "save-failed";
+
+      const latestContent =
+        this.queuedContent ??
+        unsavedAttempt.request.content;
+
+      const contentChanged =
+        !hasSameContent(
+          latestContent,
+          unsavedAttempt.request.content,
+        );
+
+      this.conflictAttempt = null;
+      this.failedAttempt = null;
+      this.queuedContent = null;
+
+      this.onUnsavedAfterDetach?.({
+        request: {
+          baseVersionId:
+            unsavedAttempt.request
+              .baseVersionId,
+
+          clientMutationId: contentChanged
+            ? this.createClientMutationId()
+            : unsavedAttempt.request
+                .clientMutationId,
+
+          content:
+            cloneContent(latestContent),
+        },
+        failureKind,
+        error: unsavedAttempt.error ?? null,
+      });
+
+      return;
+    }
+
+    if (this.queuedContent) {
+      this.startQueuedSave();
+    }
   }
 
   private scheduleDebouncedSave(): void {
@@ -485,12 +600,14 @@ export class AutosaveCoordinator {
       attempt.request.content,
     );
 
-    this.onSaveSuccess?.({
-      response,
-      savedContent: cloneContent(
-        attempt.request.content,
-      ),
-    });
+    if (!this.detached) {
+      this.onSaveSuccess?.({
+        response,
+        savedContent: cloneContent(
+          attempt.request.content,
+        ),
+      });
+    }
 
     if (
       this.queuedContent &&
@@ -524,17 +641,25 @@ export class AutosaveCoordinator {
     this.inFlightAttempt = null;
     this.error = error;
 
+    const failedAttempt: SaveAttempt = {
+      ...attempt,
+      error,
+    };
+
     const failureKind =
       this.classifyError(error);
 
     if (failureKind === "conflict") {
-      this.conflictAttempt = attempt;
+      this.conflictAttempt = failedAttempt;
       this.setStatus("conflict");
-      return;
+    } else {
+      this.failedAttempt = failedAttempt;
+      this.setStatus("save-failed");
     }
 
-    this.failedAttempt = attempt;
-    this.setStatus("save-failed");
+    if (this.detached) {
+      this.continueDetached();
+    }
   }
 
   private clearDebounceTimer(): void {
@@ -554,6 +679,10 @@ export class AutosaveCoordinator {
   }
 
   private emitState(): void {
+    if (this.detached) {
+      return;
+    }
+
     this.onStateChange?.(
       this.getSnapshot(),
     );

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,7 @@ import type {
   AutosaveSuccess,
 } from "../../autosave/AutosaveCoordinator";
 import {
+  type UnresolvedSave,
   useNoteAutosave,
 } from "../../hooks/useNoteAutosave";
 import {
@@ -75,6 +77,9 @@ import {
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
   actor: TransitionNoteActor;
+  onUnresolvedSaveChange?: (
+    unresolvedSave: UnresolvedSave | null,
+  ) => void;
 }
 
 type DirtySections = Record<
@@ -213,6 +218,7 @@ function AutosaveStatus({
 export function NoteDetailWorkspace({
   detail,
   actor,
+  onUnresolvedSaveChange,
 }: NoteDetailWorkspaceProps) {
   const [
     workspaceDetail,
@@ -718,6 +724,7 @@ export function NoteDetailWorkspace({
       resolveAutosaveConflict,
     adoptServerVersion:
       adoptAutosaveServerVersion,
+    unresolvedSave,
   } = useNoteAutosave({
     noteId: detail.note.id,
     actor,
@@ -731,6 +738,19 @@ export function NoteDetailWorkspace({
     onSaveSuccess:
       handleSaveSuccess,
   });
+
+  useEffect(() => {
+    onUnresolvedSaveChange?.(
+      unresolvedSave,
+    );
+
+    return () => {
+      onUnresolvedSaveChange?.(null);
+    };
+  }, [
+    onUnresolvedSaveChange,
+    unresolvedSave,
+  ]);
 
   const handleConflictResolve =
     useCallback(

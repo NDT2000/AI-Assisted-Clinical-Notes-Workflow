@@ -1,4 +1,7 @@
 import {
+  useState,
+} from "react";
+import {
   Link,
   useParams,
 } from "react-router-dom";
@@ -7,9 +10,15 @@ import {
   useCurrentActor,
 } from "../../../auth/CurrentActorContext";
 import {
+  LeaveNoteGuard,
+} from "../components/note-detail/LeaveNoteGuard";
+import {
   NoteDetailWorkspace,
 } from "../components/note-detail/NoteDetailWorkspace";
 import "../components/css/NoteDetailPage.css";
+import type {
+  UnresolvedSave,
+} from "../hooks/useNoteAutosave";
 import {
   useNoteDetail,
 } from "../hooks/useNoteDetail";
@@ -37,6 +46,13 @@ export function NoteDetailPage() {
   } = useNoteDetail(
     noteId,
     actor.role,
+  );
+
+  const [
+    unresolvedSave,
+    setUnresolvedSave,
+  ] = useState<UnresolvedSave | null>(
+    null,
   );
 
   if (state.status === "loading") {
@@ -171,10 +187,17 @@ export function NoteDetailPage() {
         </section>
       )}
 
+      <LeaveNoteGuard
+        unresolvedSave={unresolvedSave}
+      />
+
       <NoteDetailWorkspace
         key={`${detail.note.id}:${actor.id}`}
         detail={detail}
         actor={actor}
+        onUnresolvedSaveChange={
+          setUnresolvedSave
+        }
       />
     </main>
   );
