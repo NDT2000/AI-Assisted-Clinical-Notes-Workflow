@@ -59,7 +59,7 @@ function createAbortError(): DOMException {
   );
 }
 
-async function queueSave(
+export async function queueNoteVersionSave(
   noteId: string,
   actor: SaveNoteVersionActor,
   request: SaveNoteVersionRequestBody,
@@ -100,7 +100,7 @@ export async function saveNoteVersionWithOfflineQueue(
   }
 
   if (browserReportsOffline()) {
-    return queueSave(
+    return queueNoteVersionSave(
       noteId,
       actor,
       request,
@@ -139,7 +139,7 @@ export async function saveNoteVersionWithOfflineQueue(
       browserReportsOffline() ||
       isNetworkFailure(error)
     ) {
-      return queueSave(
+      return queueNoteVersionSave(
         noteId,
         actor,
         request,

@@ -801,3 +801,27 @@
     border: 1px solid CanvasText;
   }
 }
+
+.leave-note-guard {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--ui-warning-border);
+  border-radius: 8px;
+  background: var(--ui-warning-soft);
+  color: var(--ui-warning);
+}
+
+.leave-note-guard h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.leave-note-guard p {
+  margin: 0 0 12px;
+}
+
+.leave-note-guard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

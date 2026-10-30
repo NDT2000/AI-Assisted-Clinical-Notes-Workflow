@@ -19,6 +19,10 @@ import {
   type PersistedQueuedNoteVersionSave,
 } from "./offlineRepository";
 
+import {
+  isRetryableReplayError,
+} from "./replayErrors";
+
 export const DEFAULT_MAX_REPLAY_RETRIES = 3;
 
 export type OfflineSaveReplayStatus =
@@ -212,26 +216,6 @@ function isVersionConflictError(
       SaveNoteVersionRequestError &&
     error.code === "version_conflict"
   );
-}
-
-function isRetryableReplayError(
-  error: unknown,
-): boolean {
-  if (error instanceof TypeError) {
-    return true;
-  }
-
-  if (
-    error instanceof
-    SaveNoteVersionRequestError
-  ) {
-    return (
-      error.status >= 500 ||
-      error.code === "internal_error"
-    );
-  }
-
-  return false;
 }
 
 function getErrorMessage(
