@@ -1,16 +1,22 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import { waitFor, act, cleanup, renderHook, } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, } from "vitest";
 
-import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteResponse, } from "../../../domain/noteTransition";
-import { transitionNote } from "../api/transitionNote";
-import { useNoteTransition } from "./useNoteTransition";
+import type {
+  TransitionNoteCommand,
+  TransitionNoteResponse,
+} from "../../../../domain/noteTransition";
+import { transitionNote } from "../../api/transitionNote";
+import { useNoteTransition } from "../useNoteTransition";
 
 vi.mock(
-  "../api/transitionNote",
+  "../../api/transitionNote",
   async (importOriginal) => {
     const actual =
       await importOriginal<
-        typeof import("../api/transitionNote")
+        typeof import("../../api/transitionNote")
       >();
 
     return {
@@ -44,7 +50,7 @@ function createDeferred<T>(): Deferred<T> {
   };
 }
 
-const actor: TransitionNoteActor = {
+const actor: Actor = {
   id: "reviewer-1",
   displayName: "Current Reviewer",
   role: "REVIEWER",

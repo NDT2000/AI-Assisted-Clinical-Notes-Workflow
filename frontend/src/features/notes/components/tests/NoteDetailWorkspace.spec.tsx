@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   act,
   cleanup,
@@ -21,7 +24,6 @@ import type {
   NoteVersionDetail,
 } from "../../../../domain/noteDetail";
 import type {
-  TransitionNoteActor,
   TransitionNoteCommand,
   TransitionNoteResponse,
 } from "../../../../domain/noteTransition";
@@ -155,7 +157,7 @@ import {
   NoteDetailWorkspace,
 } from "../note-detail/NoteDetailWorkspace";
 
-const actor: TransitionNoteActor = {
+const actor: Actor = {
   id: "reviewer-1",
   displayName: "Test Reviewer",
   role: "REVIEWER",
@@ -1097,7 +1099,7 @@ describe("NoteDetailWorkspace", () => {
           "button",
           {
             name: new RegExp(
-              `Revision ${savedVersion.revisionNumber}`,
+              `^Revision ${savedVersion.revisionNumber}(?!\\d)`,
               "i",
             ),
           },
@@ -1195,7 +1197,7 @@ describe("NoteDetailWorkspace", () => {
           "button",
           {
             name: new RegExp(
-              `Revision ${historicalVersion.revisionNumber}`,
+              `^Revision ${historicalVersion.revisionNumber}(?!\\d)`,
               "i",
             ),
           },
@@ -1205,7 +1207,7 @@ describe("NoteDetailWorkspace", () => {
       expect(
         screen.getByText(
           new RegExp(
-            `Viewing revision ${historicalVersion.revisionNumber}`,
+            `Viewing revision ${historicalVersion.revisionNumber}\\. Historical versions are read-only`,
             "i",
           ),
         ),
@@ -1231,7 +1233,7 @@ describe("NoteDetailWorkspace", () => {
           "button",
           {
             name: new RegExp(
-              `Revision ${detail.currentVersion.revisionNumber}`,
+              `^Revision ${detail.currentVersion.revisionNumber}(?!\\d)`,
               "i",
             ),
           },

@@ -1,54 +1,25 @@
 import type {
-  UserRole,
-} from "../../../../domain/noteAttributes";
+  Actor,
+} from "../../../../domain/actor";
 import type {
   NoteDetail,
 } from "../../../../domain/noteDetail";
 import type {
-  TransitionNoteActor,
-} from "../../../../domain/noteTransition";
-import type {
   AvailableNoteAction,
 } from "./noteActionBarModel";
 import "./NotePermissionSummary.css";
+import {
+  formatNoteStatus,
+  formatRole,
+} from "../../../../shared/formatters";
 
 interface NotePermissionSummaryProps {
-  actor: TransitionNoteActor;
+  actor: Actor;
   note: NoteDetail["note"];
   assignedReviewer:
     NoteDetail["assignedReviewer"];
   isEditable: boolean;
   actions: AvailableNoteAction[];
-}
-
-function formatRole(
-  role: UserRole,
-): string {
-  switch (role) {
-    case "CLINICIAN":
-      return "Clinician";
-    case "REVIEWER":
-      return "Reviewer";
-    case "ADMIN":
-      return "Administrator";
-    case "READONLY_AUDITOR":
-      return "Read-only auditor";
-  }
-}
-
-function formatStatus(
-  status:
-    NoteDetail["note"]["status"],
-): string {
-  return status
-    .toLowerCase()
-    .split("_")
-    .map(
-      (part) =>
-        part.charAt(0).toUpperCase() +
-        part.slice(1),
-    )
-    .join(" ");
 }
 
 function getAccessPresentation({
@@ -194,7 +165,7 @@ export function NotePermissionSummary(
         <div>
           <dt>Note status</dt>
           <dd>
-            {formatStatus(
+            {formatNoteStatus(
               note.status,
             )}
           </dd>

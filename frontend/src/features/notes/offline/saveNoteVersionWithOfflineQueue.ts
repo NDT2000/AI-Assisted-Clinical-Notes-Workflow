@@ -1,5 +1,7 @@
 import type {
-  SaveNoteVersionActor,
+  Actor,
+} from "../../../domain/actor";
+import type {
   SaveNoteVersionRequestBody,
   SaveNoteVersionResponse,
 } from "../../../domain/noteSave";
@@ -61,7 +63,7 @@ function createAbortError(): DOMException {
 
 export async function queueNoteVersionSave(
   noteId: string,
-  actor: SaveNoteVersionActor,
+  actor: Actor,
   request: SaveNoteVersionRequestBody,
 ): Promise<OfflineAwareSaveResult> {
   const entry =
@@ -91,7 +93,7 @@ export async function queueNoteVersionSave(
 
 export async function saveNoteVersionWithOfflineQueue(
   noteId: string,
-  actor: SaveNoteVersionActor,
+  actor: Actor,
   request: SaveNoteVersionRequestBody,
   signal?: AbortSignal,
 ): Promise<OfflineAwareSaveResult> {

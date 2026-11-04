@@ -140,6 +140,7 @@ export async function resetOfflineDatabaseForTests(): Promise<void> {
       const database = await existingPromise;
       database.close();
     } catch {
+      // The database failed to open; there is nothing to close.
     }
   }
 

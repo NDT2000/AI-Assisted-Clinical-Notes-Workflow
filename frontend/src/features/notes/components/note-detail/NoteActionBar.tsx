@@ -2,7 +2,7 @@ import type {
   AvailableNoteAction,
   UserActionTrigger,
 } from "./noteActionBarModel";
-import "./css/NoteActionBar.css";
+import "./NoteActionBar.css";
 
 interface NoteActionBarProps {
   actions: AvailableNoteAction[];

@@ -1,28 +1,13 @@
-import type {
-  UserRole,
-} from "../domain/noteAttributes";
 import {
   DEMO_ACTORS,
 } from "./currentActor";
 import {
   useCurrentActor,
-} from "./CurrentActorContext";
+} from "./useCurrentActor";
 import "./CurrentActorSwitcher.css";
-
-function getRoleLabel(
-  role: UserRole,
-): string {
-  switch (role) {
-    case "CLINICIAN":
-      return "Clinician";
-    case "REVIEWER":
-      return "Reviewer";
-    case "ADMIN":
-      return "Administrator";
-    case "READONLY_AUDITOR":
-      return "Read-only auditor";
-  }
-}
+import {
+  formatRole,
+} from "../shared/formatters";
 
 export function CurrentActorSwitcher() {
   const {
@@ -79,7 +64,7 @@ export function CurrentActorSwitcher() {
                 }
                 {" — "}
                 {
-                  getRoleLabel(
+                  formatRole(
                     candidate.role,
                   )
                 }
@@ -99,7 +84,7 @@ export function CurrentActorSwitcher() {
           </strong>
           {" — "}
           {
-            getRoleLabel(
+            formatRole(
               actor.role,
             )
           }

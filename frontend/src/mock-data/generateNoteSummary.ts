@@ -1,5 +1,6 @@
 import { type NoteStatus, NOTE_STATUS } from "../domain/noteAttributes";
 import type { NoteSummary } from "../domain/noteSummary";
+import { REVIEWERS } from "../domain/reviewers";
 
 type RandomFunction = () => number;
 
@@ -48,28 +49,6 @@ const LAST_NAMES = [
   "Sullivan",
 ] as const;
 
-export const REVIEWERS = [
-  {
-    id: "reviewer-1",
-    displayName: "Alex Kim",
-  },
-  {
-    id: "reviewer-2",
-    displayName: "Sam Rivera",
-  },
-  {
-    id: "reviewer-3",
-    displayName: "Drew Patel",
-  },
-  {
-    id: "reviewer-4",
-    displayName: "Robin Chen",
-  },
-  {
-    id: "reviewer-5",
-    displayName: "Jules Martin",
-  },
-] as const;
 
 interface MockPatient {
   id: string;

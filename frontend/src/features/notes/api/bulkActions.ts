@@ -1,6 +1,6 @@
 import type {
-  TransitionNoteActor,
-} from "../../../domain/noteTransition";
+  Actor,
+} from "../../../domain/actor";
 
 interface AssignReviewerResponse {
   updated: string[];
@@ -41,7 +41,7 @@ async function readErrorMessage(
 
 function createActorHeaders(
   actor:
-    TransitionNoteActor,
+    Actor,
 ): Record<string, string> {
   return {
     "content-type":
@@ -63,7 +63,7 @@ export async function postAssignReviewer(
       }
     | null,
   actor:
-    TransitionNoteActor,
+    Actor,
 ): Promise<AssignReviewerResponse> {
   const response = await fetch(
     "/api/notes/bulk/assign-reviewer",
@@ -97,7 +97,7 @@ export async function postAssignReviewer(
 export async function postRequestRegeneration(
   noteIds: string[],
   actor:
-    TransitionNoteActor,
+    Actor,
 ): Promise<RegenerateResponse> {
   const response = await fetch(
     "/api/notes/bulk/regenerate",

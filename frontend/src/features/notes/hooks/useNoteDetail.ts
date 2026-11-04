@@ -65,6 +65,12 @@ const INITIAL_STATE: NoteDetailLoadState = {
   message: null,
 };
 
+const MISSING_NOTE_ID_STATE: NoteDetailLoadState = {
+  status: "not-found",
+  note: null,
+  message: "No note ID was provided.",
+};
+
 export function useNoteDetail(
   noteId: string | undefined,
   actorRole: UserRole,
@@ -87,15 +93,24 @@ export function useNoteDetail(
     );
   }, []);
 
+  // A different note, role or retry shows the loading state again.
+  const requestKey =
+    `${noteId ?? ""}|${actorRole}|${retryToken}`;
+
+  const [
+    previousRequestKey,
+    setPreviousRequestKey,
+  ] = useState(requestKey);
+
+  if (
+    requestKey !== previousRequestKey
+  ) {
+    setPreviousRequestKey(requestKey);
+    setState(INITIAL_STATE);
+  }
+
   useEffect(() => {
     if (!noteId) {
-      setState({
-        status: "not-found",
-        note: null,
-        message:
-          "No note ID was provided.",
-      });
-
       return;
     }
 
@@ -109,12 +124,6 @@ export function useNoteDetail(
 
     latestRequestToken.current =
       requestToken;
-
-    setState({
-      status: "loading",
-      note: null,
-      message: null,
-    });
 
     async function loadNote(): Promise<void> {
       try {
@@ -216,7 +225,9 @@ export function useNoteDetail(
   ]);
 
   return {
-    state,
+    state: noteId
+      ? state
+      : MISSING_NOTE_ID_STATE,
     retry,
   };
 }

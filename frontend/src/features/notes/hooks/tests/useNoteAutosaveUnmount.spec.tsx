@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   act,
   renderHook,
@@ -29,12 +32,12 @@ const idleReplaySnapshot = vi.hoisted(() => ({
 }));
 
 vi.mock(
-  "../offline/saveNoteVersionWithOfflineQueue",
+  "../../offline/saveNoteVersionWithOfflineQueue",
   () => saveMocks,
 );
 
 vi.mock(
-  "../offline/offlineSaveReplay",
+  "../../offline/offlineSaveReplay",
   () => ({
     offlineSaveReplayCoordinator: {
       getSnapshot: () =>
@@ -46,16 +49,15 @@ vi.mock(
   }),
 );
 
-import type { SoapContent } from "../../../domain/noteAttributes";
+import type { SoapContent } from "../../../../domain/noteAttributes";
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionRequestBody,
   SaveNoteVersionResponse,
-} from "../../../domain/noteSave";
-import { SaveNoteVersionRequestError } from "../api/saveNoteVersion";
-import { useNoteAutosave } from "./useNoteAutosave";
+} from "../../../../domain/noteSave";
+import { SaveNoteVersionRequestError } from "../../api/saveNoteVersion";
+import { useNoteAutosave } from "../useNoteAutosave";
 
-const actor: SaveNoteVersionActor = {
+const actor: Actor = {
   id: "reviewer-1",
   displayName: "Reviewer One",
   role: "REVIEWER",
@@ -159,7 +161,7 @@ describe("useNoteAutosave when the editor closes", () => {
       .mockImplementation(
         async (
           _noteId: string,
-          _actor: SaveNoteVersionActor,
+          _actor: Actor,
           request: SaveNoteVersionRequestBody,
         ) => ({
           kind: "saved",

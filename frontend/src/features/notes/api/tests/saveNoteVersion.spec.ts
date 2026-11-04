@@ -1,13 +1,19 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import { afterAll, afterEach, beforeAll, describe, expect, it, } from "vitest";
 import { http, HttpResponse, } from "msw";
 import { setupServer } from "msw/node";
 
-import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../../../../domain/noteSave";
+import type {
+  SaveNoteVersionRequestBody,
+  SaveNoteVersionResponse,
+} from "../../../../domain/noteSave";
 import { classifySaveNoteVersionError, saveNoteVersion, SaveNoteVersionRequestError, } from "../saveNoteVersion";
 
 const server = setupServer();
 
-const actor: SaveNoteVersionActor = {
+const actor: Actor = {
   id: "reviewer-1",
   displayName: "Test Reviewer",
   role: "REVIEWER",

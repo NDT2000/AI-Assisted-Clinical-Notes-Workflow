@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -25,7 +24,15 @@ export function useVisibleNotesRealtime(
     () => [...notes],
   );
 
-  useEffect(() => {
+  // New notes from the list keep any newer real-time version.
+  const [
+    previousNotes,
+    setPreviousNotes,
+  ] = useState(notes);
+
+  if (notes !== previousNotes) {
+    setPreviousNotes(notes);
+
     setRealtimeNotes(
       current =>
         notes.map(note => {
@@ -51,7 +58,7 @@ export function useVisibleNotesRealtime(
           return note;
         }),
     );
-  }, [notes]);
+  }
 
   const stableVisibleIds =
     useMemo(

@@ -345,9 +345,20 @@ describe("NoteDetailPage", () => {
       }),
     ).toBeInTheDocument();
 
+    const noteHeader = screen
+      .getByRole("heading", {
+        name: "Patient One",
+        level: 1,
+      })
+      .closest("header");
+
+    expect(noteHeader).not.toBeNull();
+
     expect(
-      screen.getAllByText("In Review"),
-    ).toHaveLength(2);
+      within(noteHeader!).getByText(
+        "In Review",
+      ),
+    ).toBeInTheDocument();
 
     expect(
       screen.getByRole("status", {
@@ -467,7 +478,7 @@ describe("NoteDetailPage", () => {
       within(
         versionHistorySection!,
       ).getByText(
-        "Dr. Maya Brooks",
+        /^Dr\. Maya Brooks\b/,
       ),
     ).toBeInTheDocument();
 

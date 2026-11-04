@@ -1,8 +1,16 @@
+import type {
+  Actor,
+} from "../../../domain/actor";
 import { useCallback, useEffect, useRef, useState, } from "react";
 
 import type { NoteVersionDetail, } from "../../../domain/noteDetail";
-import type { TransitionNoteActor, TransitionNoteCommand, TransitionNoteErrorCode, TransitionNoteRequestBody, 
-  TransitionNoteResponse, UserNoteActionTrigger, } from "../../../domain/noteTransition";
+import type {
+  TransitionNoteCommand,
+  TransitionNoteErrorCode,
+  TransitionNoteRequestBody,
+  TransitionNoteResponse,
+  UserNoteActionTrigger,
+} from "../../../domain/noteTransition";
 import { transitionNote, TransitionNoteRequestError } from "../api/transitionNote";
 
 export type NoteTransitionState =
@@ -49,7 +57,7 @@ export interface NoteTransitionFailure {
 
 interface UseNoteTransitionOptions {
   noteId: string;
-  actor: TransitionNoteActor;
+  actor: Actor;
   onOptimisticApply?: (
     command: TransitionNoteCommand,
   ) => void;
@@ -186,7 +194,14 @@ export function useNoteTransition({
         const response =
           await transitionNote(
             noteId,
-            actor,
+            {
+              id: actor.id,
+              displayName:
+                actor.displayName,
+              role: actor.role,
+              mfaVerified:
+                actor.mfaVerified,
+            },
             request,
             controller.signal,
           );

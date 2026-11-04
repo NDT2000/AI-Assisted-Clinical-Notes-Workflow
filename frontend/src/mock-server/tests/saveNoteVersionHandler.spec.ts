@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../domain/actor";
 import {
   afterAll,
   afterEach,
@@ -22,9 +25,6 @@ import type {
   SaveNoteVersionRequestBody,
   SaveNoteVersionResponse,
 } from "../../domain/noteSave";
-import type {
-  TransitionNoteActor,
-} from "../../domain/noteTransition";
 
 vi.mock(
   "../mockNetwork",
@@ -59,6 +59,9 @@ import {
 import {
   saveNoteVersionHandler,
 } from "../saveNoteVersionHandler";
+import {
+  mockRealtimeChannel,
+} from "../../features/notes/realtime/mockRealtimeChannel";
 
 const server =
   setupServer(
@@ -77,7 +80,7 @@ interface ErrorResponse {
 
 function getActorHeaders(
   actor:
-    TransitionNoteActor,
+    Actor,
 ): HeadersInit {
   return {
     "content-type":
@@ -124,7 +127,7 @@ function requireDetail(
 
 function createReviewer(
   id = "reviewer-handler-1",
-): TransitionNoteActor {
+): Actor {
   return {
     id,
     displayName:
@@ -136,7 +139,7 @@ function createReviewer(
 
 function prepareInReviewNote(
   reviewer:
-    TransitionNoteActor =
+    Actor =
       createReviewer(),
 ): NoteDetail {
   const ready =
@@ -212,7 +215,7 @@ function postSave(
   body:
     SaveNoteVersionRequestBody,
   actor:
-    TransitionNoteActor,
+    Actor,
 ): Promise<Response> {
   return fetch(
     `http://localhost/api/notes/${noteId}/versions`,
@@ -299,6 +302,66 @@ describe(
           body.savedVersion
             .authorId,
         ).toBe(reviewer.id);
+      },
+    );
+
+    it(
+      "broadcasts a saved version to real-time subscribers, but not a rejected save",
+      async () => {
+        const reviewer =
+          createReviewer();
+
+        const detail =
+          prepareInReviewNote(
+            reviewer,
+          );
+
+        mockRealtimeChannel.reset();
+
+        const events: string[] = [];
+
+        const connection =
+          mockRealtimeChannel.connect({
+            noteIds: [detail.note.id],
+            afterCursor: 0,
+            onEvent: event => {
+              events.push(event.type);
+            },
+            onDisconnect: vi.fn(),
+          });
+
+        const rejected =
+          await postSave(
+            detail.note.id,
+            createSaveBody(
+              detail,
+              "save-handler-broadcast-rejected",
+            ),
+            createReviewer(
+              "reviewer-not-assigned",
+            ),
+          );
+
+        expect(rejected.status).toBe(403);
+        expect(events).toEqual([]);
+
+        const saved =
+          await postSave(
+            detail.note.id,
+            createSaveBody(
+              detail,
+              "save-handler-broadcast",
+            ),
+            reviewer,
+          );
+
+        expect(saved.status).toBe(201);
+        expect(events).toEqual([
+          "note.version_added",
+        ]);
+
+        connection.disconnect();
+        mockRealtimeChannel.reset();
       },
     );
 

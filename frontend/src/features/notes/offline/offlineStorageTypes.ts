@@ -1,10 +1,12 @@
 import type {
+  Actor,
+} from "../../../domain/actor";
+import type {
   NoteDetail,
   NoteVersionDetail,
 } from "../../../domain/noteDetail";
 
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionRequestBody,
 } from "../../../domain/noteSave";
 
@@ -25,7 +27,7 @@ export interface QueuedNoteVersionSave {
 
   noteId: string;
 
-  actor: SaveNoteVersionActor;
+  actor: Actor;
 
   request: SaveNoteVersionRequestBody;
 

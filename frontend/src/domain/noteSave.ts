@@ -1,12 +1,5 @@
-import type { Note, SoapContent, UserRole, } from "./noteAttributes";
+import type { Note, SoapContent, } from "./noteAttributes";
 import type { NoteVersionDetail, } from "./noteDetail";
-
-// The basic template for saving information abou the person handling the version save request
-export interface SaveNoteVersionActor {
-  id: string;
-  displayName: string;
-  role: UserRole;
-}
 
 // The request body for saving a note version.
 export interface SaveNoteVersionRequestBody {

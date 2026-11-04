@@ -1,16 +1,15 @@
 import type { Note, NoteStatus, NoteVersion, Trigger, UserRole, } from "./noteAttributes";
 import { noteTransitions, } from "./noteTransitions";
 
-export interface Actor {
-  id: string;
-  role: UserRole;
-  mfaVerified?: boolean;
-}
+import type { Actor } from "./actor";
+
+/* Guards only need to know who is acting and how they authenticated. */
+export type GuardActor = Pick<Actor, "id" | "role" | "mfaVerified">;
 
 export interface Guard {
   note: Note;
   version: NoteVersion;
-  actor: Actor;
+  actor: GuardActor;
   action: Trigger;
   rejectionReason?: string;
   now: string;
@@ -93,7 +92,7 @@ export function canAssignReviewer(
 
 export function canEditNoteContent(
   note: Note,
-  actor: Actor,
+  actor: GuardActor,
 ): PermissionResult {
   if (
     actor.role ===

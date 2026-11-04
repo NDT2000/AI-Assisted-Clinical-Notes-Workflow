@@ -1,8 +1,10 @@
 import type {
+  Actor,
+} from "../../../domain/actor";
+import type {
   NoteVersionDetail,
 } from "../../../domain/noteDetail";
 import type {
-  TransitionNoteActor,
   TransitionNoteErrorCode,
   TransitionNoteRequestBody,
   TransitionNoteResponse,
@@ -10,9 +12,6 @@ import type {
 import {
   track,
 } from "../../../telemetry/telemetry";
-import {
-  mockRealtimeChannel,
-} from "../realtime/mockRealtimeChannel";
 
 interface TransitionNoteRequestErrorOptions {
   status: number;
@@ -163,7 +162,7 @@ function createRequestError(
 
 export async function transitionNote(
   noteId: string,
-  actor: TransitionNoteActor,
+  actor: Actor,
   body: TransitionNoteRequestBody,
   signal?: AbortSignal,
 ): Promise<TransitionNoteResponse> {
@@ -275,14 +274,6 @@ export async function transitionNote(
         "The server returned an invalid transition response.",
     });
   }
-
-  mockRealtimeChannel.publish({
-    type:
-      "note.status_changed",
-    noteId,
-    trigger: body.trigger,
-    response: responseBody,
-  });
 
   track(
     "note.status_transition",

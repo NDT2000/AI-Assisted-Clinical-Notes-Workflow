@@ -33,17 +33,22 @@ export function useRealtimeSubscription({
     onEventRef.current = onEvent;
   }, [onEvent]);
 
+  // Subscribe by the set of ids, not the array identity, so callers
+  // can pass a fresh array each render.
+  const noteIdsKey = [
+    ...new Set(noteIds),
+  ]
+    .sort()
+    .join("\u0000");
+
   const normalizedNoteIds =
     useMemo(
       () =>
-        [
-          ...new Set(noteIds),
-        ].sort(),
-      [noteIds],
+        noteIdsKey === ""
+          ? []
+          : noteIdsKey.split("\u0000"),
+      [noteIdsKey],
     );
-
-  const noteIdsKey =
-    normalizedNoteIds.join("\u0000");
 
   useEffect(() => {
     if (
@@ -65,6 +70,6 @@ export function useRealtimeSubscription({
     };
   }, [
     manager,
-    noteIdsKey,
+    normalizedNoteIds,
   ]);
 }

@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   afterEach,
   beforeEach,
@@ -7,9 +10,6 @@ import {
   vi,
 } from "vitest";
 
-import type {
-  TransitionNoteActor,
-} from "../../../../domain/noteTransition";
 import {
   RealtimeConnectionManager,
 } from "../RealtimeConnectionManager";
@@ -114,14 +114,14 @@ class InMemoryBroadcastPort
   }
 }
 
-const ALEX: TransitionNoteActor = {
+const ALEX: Actor = {
   id: "reviewer-1",
   displayName: "Alex Kim",
   role: "REVIEWER",
   mfaVerified: true,
 };
 
-const MAYA: TransitionNoteActor = {
+const MAYA: Actor = {
   id: "clinician-1",
   displayName: "Dr. Maya Brooks",
   role: "CLINICIAN",

@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../domain/actor";
 import {
   beforeEach,
   describe,
@@ -12,12 +15,8 @@ import type {
   NoteSummary,
 } from "../../domain/noteSummary";
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionRequestBody,
 } from "../../domain/noteSave";
-import type {
-  TransitionNoteActor,
-} from "../../domain/noteTransition";
 import {
   getNoteDetail,
   getNotes,
@@ -62,7 +61,7 @@ function requireDetail(
 
 function createReviewer(
   id = "reviewer-authorization-1",
-): TransitionNoteActor {
+): Actor {
   return {
     id,
     displayName:
@@ -116,7 +115,7 @@ function prepareReadyNote():
 
 function startReview(
   reviewer:
-    TransitionNoteActor =
+    Actor =
       createReviewer(),
 ): NoteDetail {
   const detail =
@@ -515,7 +514,7 @@ describe(
           startReview();
 
         const actor:
-          SaveNoteVersionActor = {
+          Actor = {
           id: "auditor-1",
           displayName:
             "Read-only Auditor",
@@ -577,7 +576,7 @@ describe(
           );
 
         const clinician:
-          SaveNoteVersionActor = {
+          Actor = {
           id: "clinician-1",
           displayName:
             "Current Clinician",

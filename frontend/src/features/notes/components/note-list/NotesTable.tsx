@@ -19,14 +19,18 @@ import type {
 import {
   useVisibleNotesRealtime,
 } from "../../realtime/useVisibleNotesRealtime";
-import "./NoteTable.css";
+import "./NotesTable.css";
+import {
+  formatDateTime,
+  formatNoteStatus,
+} from "../../../../shared/formatters";
 
 interface NotesTableProps {
   notes: NoteSummary[];
   hasMore: boolean;
   isLoadingMore: boolean;
   onLoadMore: () => void;
-  selectedIds: Set<string>;
+  selectedIds: ReadonlySet<string>;
   onToggleRow: (
     noteId: string,
   ) => void;
@@ -59,28 +63,6 @@ const COLUMNS = [
   "Action",
 ];
 
-function formatStatus(
-  status: NoteStatus,
-): string {
-  return status
-    .toLowerCase()
-    .split("_")
-    .map(
-      (part) =>
-        part.charAt(0).toUpperCase() +
-        part.slice(1),
-    )
-    .join(" ");
-}
-
-function formatDateTime(
-  value: string,
-): string {
-  return new Date(
-    value,
-  ).toLocaleString();
-}
-
 function getStatusClassName(
   status: NoteStatus,
 ): string {
@@ -109,6 +91,9 @@ export function NotesTable({
     );
 
   const rowVirtualizer =
+    // TanStack Virtual returns functions that can't be memoized safely,
+    // so the React Compiler skips this component; that is expected.
+    // eslint-disable-next-line react-hooks/incompatible-library
     useVirtualizer({
       count: notes.length,
       getScrollElement: () =>
@@ -324,7 +309,6 @@ export function NotesTable({
                       ?.displayName ??
                     "Unassigned";
 
-
                   const createdAtLabel =
                     formatDateTime(
                       note.createdAt,
@@ -410,7 +394,7 @@ export function NotesTable({
                           title={note.status}
                         >
                           {
-                            formatStatus(
+                            formatNoteStatus(
                               note.status,
                             )
                           }
@@ -427,7 +411,6 @@ export function NotesTable({
                       >
                         {reviewerName}
                       </div>
-
 
                       <div
                         className="notes-table-cell notes-table-revision"

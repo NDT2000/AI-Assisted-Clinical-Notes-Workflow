@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../domain/actor";
 import {
   http,
   HttpResponse,
@@ -8,7 +11,6 @@ import type {
   UserRole,
 } from "../domain/noteAttributes";
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionRequestBody,
 } from "../domain/noteSave";
 import {
@@ -21,6 +23,9 @@ import {
 import {
   saveNoteVersion,
 } from "./noteStore";
+import {
+  mockRealtimeChannel,
+} from "../features/notes/realtime/mockRealtimeChannel";
 
 const EDITING_ROLES:
   readonly UserRole[] = [
@@ -91,7 +96,7 @@ function isSaveNoteVersionRequestBody(
 
 function getSaveActor(
   request: Request,
-): SaveNoteVersionActor | null {
+): Actor | null {
   const id = request.headers
     .get("x-actor-id")
     ?.trim();
@@ -340,6 +345,14 @@ export const saveNoteVersionHandler =
           );
 
         case "saved":
+          // The server, not the client, broadcasts the new version
+          // to other sessions.
+          mockRealtimeChannel.publish({
+            type: "note.version_added",
+            noteId,
+            response: result.response,
+          });
+
           return HttpResponse.json(
             result.response,
             {

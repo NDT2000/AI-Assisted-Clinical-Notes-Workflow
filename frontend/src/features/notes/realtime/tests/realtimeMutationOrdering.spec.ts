@@ -110,23 +110,29 @@ describe(
             savedVersion,
           };
 
+        // Like the mock server: broadcast the new version, then respond.
         vi.stubGlobal(
           "fetch",
-          vi.fn(
-            async () =>
-              new Response(
-                JSON.stringify(
-                  response,
-                ),
-                {
-                  status: 200,
-                  headers: {
-                    "content-type":
-                      "application/json",
-                  },
-                },
+          vi.fn(async () => {
+            mockRealtimeChannel.publish({
+              type: "note.version_added",
+              noteId: "note-1",
+              response,
+            });
+
+            return new Response(
+              JSON.stringify(
+                response,
               ),
-          ),
+              {
+                status: 200,
+                headers: {
+                  "content-type":
+                    "application/json",
+                },
+              },
+            );
+          }),
         );
 
         const order:
@@ -211,23 +217,30 @@ describe(
             currentVersion,
           };
 
+        // Like the mock server: broadcast the status change, then respond.
         vi.stubGlobal(
           "fetch",
-          vi.fn(
-            async () =>
-              new Response(
-                JSON.stringify(
-                  response,
-                ),
-                {
-                  status: 200,
-                  headers: {
-                    "content-type":
-                      "application/json",
-                  },
-                },
+          vi.fn(async () => {
+            mockRealtimeChannel.publish({
+              type: "note.status_changed",
+              noteId: "note-1",
+              trigger: "START_REVIEW",
+              response,
+            });
+
+            return new Response(
+              JSON.stringify(
+                response,
               ),
-          ),
+              {
+                status: 200,
+                headers: {
+                  "content-type":
+                    "application/json",
+                },
+              },
+            );
+          }),
         );
 
         const order:

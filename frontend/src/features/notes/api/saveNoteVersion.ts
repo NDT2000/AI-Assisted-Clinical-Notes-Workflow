@@ -1,8 +1,10 @@
 import type {
+  Actor,
+} from "../../../domain/actor";
+import type {
   NoteVersionDetail,
 } from "../../../domain/noteDetail";
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionErrorCode,
   SaveNoteVersionRequestBody,
   SaveNoteVersionResponse,
@@ -10,9 +12,6 @@ import type {
 import {
   track,
 } from "../../../telemetry/telemetry";
-import {
-  mockRealtimeChannel,
-} from "../realtime/mockRealtimeChannel";
 
 interface SaveNoteVersionRequestErrorOptions {
   status: number;
@@ -177,7 +176,7 @@ function createRequestError(
 
 export async function saveNoteVersion(
   noteId: string,
-  actor: SaveNoteVersionActor,
+  actor: Actor,
   body: SaveNoteVersionRequestBody,
   signal?: AbortSignal,
 ): Promise<SaveNoteVersionResponse> {
@@ -278,13 +277,6 @@ export async function saveNoteVersion(
         "The server returned an invalid save response.",
     });
   }
-
-  mockRealtimeChannel.publish({
-    type:
-      "note.version_added",
-    noteId,
-    response: responseBody,
-  });
 
   track(
     "note.version_save",
