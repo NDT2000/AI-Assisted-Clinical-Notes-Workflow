@@ -1,0 +1,27 @@
+# Local development services. Start with: docker compose up -d
+# Values come from .env (copy .env.example); the defaults below match it.
+name: clinical-notes
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clinical}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clinical}
+      POSTGRES_DB: ${POSTGRES_DB:-clinical_notes}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
