@@ -114,6 +114,7 @@ export async function readNoteDetail(
     try {
       await cacheNoteDetail(note);
     } catch {
+      // Caching is best effort: the fresh note is still returned.
     }
 
     return {

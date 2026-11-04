@@ -40,7 +40,12 @@ export function useCrossTabPresenceSession({
     const sessionHandle =
       service.openNote(
         noteId,
-        actor,
+        {
+          id: actor.id,
+          displayName:
+            actor.displayName,
+          role: actor.role,
+        },
       );
 
     sessionHandleRef.current =

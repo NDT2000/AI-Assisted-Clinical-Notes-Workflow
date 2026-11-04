@@ -208,8 +208,15 @@ export function useNoteAutosave({
       noteId,
       baseVersionId:
         initialBaseVersionId,
-      content:
-        cloneContent(initialContent),
+      content: {
+        subjective:
+          initialContent.subjective,
+        objective:
+          initialContent.objective,
+        assessment:
+          initialContent.assessment,
+        plan: initialContent.plan,
+      },
       debounceMs,
     };
   }, [

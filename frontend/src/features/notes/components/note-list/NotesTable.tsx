@@ -91,6 +91,9 @@ export function NotesTable({
     );
 
   const rowVirtualizer =
+    // TanStack Virtual returns functions that can't be memoized safely,
+    // so the React Compiler skips this component; that is expected.
+    // eslint-disable-next-line react-hooks/incompatible-library
     useVirtualizer({
       count: notes.length,
       getScrollElement: () =>

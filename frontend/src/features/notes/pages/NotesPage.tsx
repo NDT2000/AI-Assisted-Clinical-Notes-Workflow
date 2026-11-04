@@ -4,7 +4,7 @@ import type {
 
 import {
   useCurrentActor,
-} from "../../../auth/CurrentActorContext";
+} from "../../../auth/useCurrentActor";
 import {
   BulkActionBar,
 } from "../components/note-list/BulkActionBar";

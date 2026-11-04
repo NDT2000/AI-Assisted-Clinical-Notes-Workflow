@@ -194,7 +194,14 @@ export function useNoteTransition({
         const response =
           await transitionNote(
             noteId,
-            actor,
+            {
+              id: actor.id,
+              displayName:
+                actor.displayName,
+              role: actor.role,
+              mfaVerified:
+                actor.mfaVerified,
+            },
             request,
             controller.signal,
           );

@@ -1,39 +1,22 @@
-import type {
-  Actor,
-} from "../domain/actor";
 import {
-  createContext,
-  useContext,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 
+import type {
+  Actor,
+} from "../domain/actor";
 import {
   CURRENT_ACTOR,
   getDemoActorById,
 } from "./currentActor";
+import {
+  CurrentActorContext,
+} from "./useCurrentActor";
 
 const SESSION_STORAGE_KEY =
   "clinical-notes-demo-actor-id";
-
-interface CurrentActorContextValue {
-  actor: Actor;
-  setActorById: (
-    actorId: string,
-  ) => void;
-}
-
-const CurrentActorContext =
-  createContext<
-    CurrentActorContextValue | null
-  >(null);
-
-const FALLBACK_CONTEXT:
-  CurrentActorContextValue = {
-    actor: CURRENT_ACTOR,
-    setActorById() {},
-  };
 
 function getInitialActor():
   Actor {
@@ -107,18 +90,5 @@ export function CurrentActorProvider({
     >
       {children}
     </CurrentActorContext.Provider>
-  );
-}
-
-export function useCurrentActor():
-  CurrentActorContextValue {
-  const context =
-    useContext(
-      CurrentActorContext,
-    );
-
-  return (
-    context ??
-    FALLBACK_CONTEXT
   );
 }

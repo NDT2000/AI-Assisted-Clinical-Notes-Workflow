@@ -3,7 +3,7 @@ import {
 } from "./currentActor";
 import {
   useCurrentActor,
-} from "./CurrentActorContext";
+} from "./useCurrentActor";
 import "./CurrentActorSwitcher.css";
 import {
   formatRole,

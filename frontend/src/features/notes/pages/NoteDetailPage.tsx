@@ -8,7 +8,7 @@ import {
 
 import {
   useCurrentActor,
-} from "../../../auth/CurrentActorContext";
+} from "../../../auth/useCurrentActor";
 import {
   LeaveNoteGuard,
 } from "../components/note-detail/LeaveNoteGuard";
