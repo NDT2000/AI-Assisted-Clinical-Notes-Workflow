@@ -1,6 +1,3 @@
-import type {
-  Actor,
-} from "../../../../domain/actor";
 import {
   useCallback,
   useEffect,
@@ -10,24 +7,22 @@ import {
 } from "react";
 
 import type {
+  Actor,
+} from "../../../../domain/actor";
+import type {
   SoapContent,
 } from "../../../../domain/noteAttributes";
 import {
   canEditNoteContent,
-  canTransition,
 } from "../../../../domain/noteGuards";
 import type {
   NoteDetail,
-  ReviewTimelineEvent,
   UserSummary,
 } from "../../../../domain/noteDetail";
 import type {
-  TransitionNoteCommand,
-  TransitionNoteResponse,
   UserNoteActionTrigger,
 } from "../../../../domain/noteTransition";
 import type {
-  AutosaveSnapshot,
   AutosaveSuccess,
 } from "../../autosave/AutosaveCoordinator";
 import {
@@ -35,14 +30,20 @@ import {
   useNoteAutosave,
 } from "../../hooks/useNoteAutosave";
 import {
-  useNoteTransition,
-} from "../../hooks/useNoteTransition";
+  useOptimisticNoteTransition,
+} from "../../hooks/useOptimisticNoteTransition";
+import {
+  useVersionComparison,
+} from "../../hooks/useVersionComparison";
 import {
   applyRealtimeEventToNoteDetail,
 } from "../../realtime/realtimeReconciliation";
 import {
-  useRealtimeSubscription,
-} from "../../realtime/useRealtimeSubscription";
+  useNoteDetailRealtime,
+} from "../../realtime/useNoteDetailRealtime";
+import {
+  AutosaveStatus,
+} from "./AutosaveStatus";
 import {
   NoteActionBar,
 } from "./NoteActionBar";
@@ -74,7 +75,6 @@ import {
 } from "./SoapEditor";
 import {
   VersionHistorySidebar,
-  type VersionComparisonStatus,
 } from "./VersionHistorySidebar";
 import {
   VersionConflictResolver,
@@ -99,10 +99,6 @@ type DirtySections = Record<
   boolean
 >;
 
-interface AutosaveStatusProps {
-  snapshot: AutosaveSnapshot;
-  onRetry: () => void;
-}
 
 function copySoapContent(
   content: SoapContent,
@@ -143,90 +139,6 @@ const CLEAN_SECTIONS:
     plan: false,
   };
 
-function getAutosaveStatusMessage(
-  snapshot: AutosaveSnapshot,
-): string {
-  switch (snapshot.status) {
-    case "idle":
-      return "All changes saved";
-    case "changes-pending":
-      return "Unsaved changes";
-    case "saving":
-      return "Saving changes";
-    case "queued":
-      return "Offline — changes queued";
-    case "save-failed":
-      return "Save failed";
-    case "conflict":
-      return "Conflict requires attention";
-  }
-}
-
-function AutosaveStatus({
-  snapshot,
-  onRetry,
-}: AutosaveStatusProps) {
-  const className = [
-    "note-autosave-status",
-    `note-autosave-status--${snapshot.status}`,
-  ].join(" ");
-
-  if (
-    snapshot.status ===
-    "save-failed"
-  ) {
-    return (
-      <div
-        className={className}
-        role="alert"
-        aria-label="Autosave status"
-      >
-        <span>Save failed.</span>
-
-        <button
-          type="button"
-          onClick={onRetry}
-        >
-          Try again
-        </button>
-      </div>
-    );
-  }
-
-  if (
-    snapshot.status ===
-    "conflict"
-  ) {
-    return (
-      <p
-        className={className}
-        role="alert"
-        aria-label="Autosave status"
-      >
-        Conflict requires attention.
-        This note was updated
-        elsewhere.
-      </p>
-    );
-  }
-
-  return (
-    <p
-      className={className}
-      role="status"
-      aria-label="Autosave status"
-      aria-live="polite"
-      aria-atomic="true"
-    >
-      {
-        getAutosaveStatusMessage(
-          snapshot,
-        )
-      }
-    </p>
-  );
-}
-
 export function NoteDetailWorkspace({
   detail,
   actor,
@@ -239,13 +151,16 @@ export function NoteDetailWorkspace({
     () => detail,
   );
 
+  // Latest committed detail, for event callbacks such as real-time.
   const workspaceDetailRef =
     useRef<NoteDetail>(
       detail,
     );
 
-  workspaceDetailRef.current =
-    workspaceDetail;
+  useEffect(() => {
+    workspaceDetailRef.current =
+      workspaceDetail;
+  }, [workspaceDetail]);
 
   const [
     savedContent,
@@ -270,39 +185,34 @@ export function NoteDetailWorkspace({
     initialDraftContent,
   );
 
-  const [
-    historicalVersionId,
-    setHistoricalVersionId,
-  ] = useState<string | null>(
-    null,
-  );
-
-  const [
-    comparisonStatus,
-    setComparisonStatus,
-  ] =
-    useState<VersionComparisonStatus>(
-      "closed",
+  const comparison =
+    useVersionComparison(
+      workspaceDetail.versions,
+      workspaceDetail.currentVersion,
     );
 
-  const [
+  const {
+    historicalVersion,
+    historicalVersionId,
+    comparisonStatus,
     compareFromVersionId,
-    setCompareFromVersionId,
-  ] = useState<string | null>(
-    null,
-  );
-
-  const [
     compareToVersionId,
-    setCompareToVersionId,
-  ] = useState<string | null>(
-    null,
-  );
+    compareFromVersion,
+    compareToVersion,
+    isComparisonOpen,
+    isComparingVersions,
+    returnToCurrentVersion,
+  } = comparison;
 
   const [
     rejectionReason,
     setRejectionReason,
   ] = useState("");
+
+  const clearRejectionReason =
+    useCallback(() => {
+      setRejectionReason("");
+    }, []);
 
   const [
     realtimeNotice,
@@ -311,91 +221,9 @@ export function NoteDetailWorkspace({
     null,
   );
 
-  const historicalVersion =
-    useMemo(() => {
-      if (
-        historicalVersionId ===
-        null
-      ) {
-        return null;
-      }
-
-      return (
-        workspaceDetail.versions.find(
-          version =>
-            version.versionId ===
-            historicalVersionId,
-        ) ?? null
-      );
-    }, [
-      historicalVersionId,
-      workspaceDetail.versions,
-    ]);
-
-  const compareFromVersion =
-    useMemo(() => {
-      if (
-        compareFromVersionId ===
-        null
-      ) {
-        return null;
-      }
-
-      return (
-        workspaceDetail.versions.find(
-          version =>
-            version.versionId ===
-            compareFromVersionId,
-        ) ?? null
-      );
-    }, [
-      compareFromVersionId,
-      workspaceDetail.versions,
-    ]);
-
-  const compareToVersion =
-    useMemo(() => {
-      if (
-        compareToVersionId ===
-        null
-      ) {
-        return null;
-      }
-
-      return (
-        workspaceDetail.versions.find(
-          version =>
-            version.versionId ===
-            compareToVersionId,
-        ) ?? null
-      );
-    }, [
-      compareToVersionId,
-      workspaceDetail.versions,
-    ]);
-
-  const isComparisonOpen =
-    comparisonStatus !== "closed";
-
-  const isComparingVersions =
-    comparisonStatus ===
-      "active" &&
-    compareFromVersion !== null &&
-    compareToVersion !== null;
-
   const draftContentRef =
     useRef<SoapContent>(
       initialDraftContent,
-    );
-
-  const optimisticSnapshotRef =
-    useRef<NoteDetail | null>(
-      null,
-    );
-
-  const optimisticTimelineEventIdRef =
-    useRef<string | null>(
-      null,
     );
 
   const dirtySections =
@@ -470,263 +298,6 @@ export function NoteDetailWorkspace({
       [],
     );
 
-  const handleOptimisticApply =
-    useCallback(
-      (
-        command:
-          TransitionNoteCommand,
-      ): void => {
-        const occurredAt =
-          new Date().toISOString();
-
-        setWorkspaceDetail(
-          currentDetail => {
-            const transitionResult =
-              canTransition({
-                note:
-                  currentDetail.note,
-                version:
-                  currentDetail
-                    .currentVersion,
-                actor,
-                action:
-                  command.trigger,
-                now: occurredAt,
-                ...(command
-                  .rejectionReason !==
-                undefined
-                  ? {
-                      rejectionReason:
-                        command
-                          .rejectionReason,
-                    }
-                  : {}),
-              });
-
-            if (
-              !transitionResult.allowed
-            ) {
-              return currentDetail;
-            }
-
-            optimisticSnapshotRef.current =
-              currentDetail;
-
-            const optimisticEventId =
-              [
-                "optimistic-transition",
-                Date.now(),
-                Math.random()
-                  .toString(36)
-                  .slice(2),
-              ].join("-");
-
-            optimisticTimelineEventIdRef.current =
-              optimisticEventId;
-
-            const optimisticTimelineEvent:
-              ReviewTimelineEvent = {
-              eventId:
-                optimisticEventId,
-              noteId:
-                currentDetail.note.id,
-              versionId:
-                currentDetail
-                  .currentVersion
-                  .versionId,
-              fromStatus:
-                currentDetail.note
-                  .status,
-              toStatus:
-                transitionResult
-                  .nextStatus,
-              actorId: actor.id,
-              actorRole: actor.role,
-              actorDisplayName:
-                actor.displayName,
-              occurredAt,
-              ...(command.trigger ===
-                "REJECT" &&
-              command.rejectionReason
-                ?.trim()
-                ? {
-                    reason:
-                      command
-                        .rejectionReason
-                        .trim(),
-                  }
-                : {}),
-            };
-
-            const shouldAssignReviewer =
-              command.trigger ===
-              "START_REVIEW";
-
-            const shouldReleaseReviewer =
-              command.trigger ===
-                "RETURN_TO_QUEUE" ||
-              command.trigger ===
-                "RESUBMIT" ||
-              command.trigger ===
-                "AMEND" ||
-              command.trigger ===
-                "REGENERATE";
-
-            const nextAssignedReviewer =
-              shouldAssignReviewer
-                ? {
-                    id: actor.id,
-                    displayName:
-                      actor.displayName,
-                    role: actor.role,
-                  }
-                : shouldReleaseReviewer
-                ? null
-                : currentDetail
-                    .assignedReviewer;
-
-            return {
-              ...currentDetail,
-              note: {
-                ...currentDetail.note,
-                status:
-                  transitionResult
-                    .nextStatus,
-                assignedReviewerId:
-                  nextAssignedReviewer
-                    ?.id ?? null,
-                updatedAt:
-                  occurredAt,
-                ...(transitionResult
-                  .nextStatus ===
-                "APPROVED"
-                  ? {
-                      approvedAt:
-                        occurredAt,
-                    }
-                  : {}),
-              },
-              assignedReviewer:
-                nextAssignedReviewer,
-              timeline: [
-                ...currentDetail.timeline,
-                optimisticTimelineEvent,
-              ],
-            };
-          },
-        );
-      },
-      [actor],
-    );
-
-  const handleTransitionSuccess =
-    useCallback(
-      (
-        response:
-          TransitionNoteResponse,
-      ): void => {
-        const optimisticEventId =
-          optimisticTimelineEventIdRef
-            .current;
-
-        setWorkspaceDetail(
-          currentDetail => {
-            const timelineWithoutOptimistic =
-              currentDetail.timeline.filter(
-                event =>
-                  event.eventId !==
-                  optimisticEventId,
-              );
-
-            const authoritativeExists =
-              timelineWithoutOptimistic.some(
-                event =>
-                  event.eventId ===
-                  response.timelineEvent
-                    .eventId,
-              );
-
-            const assignedReviewerId =
-              response.note
-                .assignedReviewerId;
-
-            const nextAssignedReviewer =
-              assignedReviewerId ===
-              null
-                ? null
-                : currentDetail
-                    .assignedReviewer
-                    ?.id ===
-                  assignedReviewerId
-                ? currentDetail
-                    .assignedReviewer
-                : response.timelineEvent
-                    .actorId ===
-                  assignedReviewerId
-                ? {
-                    id:
-                      response
-                        .timelineEvent
-                        .actorId,
-                    displayName:
-                      response
-                        .timelineEvent
-                        .actorDisplayName,
-                    role:
-                      response
-                        .timelineEvent
-                        .actorRole,
-                  }
-                : currentDetail
-                    .assignedReviewer;
-
-            return {
-              ...currentDetail,
-              note: response.note,
-              assignedReviewer:
-                nextAssignedReviewer,
-              currentVersion:
-                response.currentVersion,
-              timeline:
-                authoritativeExists
-                  ? timelineWithoutOptimistic
-                  : [
-                      ...timelineWithoutOptimistic,
-                      response.timelineEvent,
-                    ],
-            };
-          },
-        );
-
-        optimisticSnapshotRef.current =
-          null;
-
-        optimisticTimelineEventIdRef.current =
-          null;
-
-        setRejectionReason("");
-      },
-      [],
-    );
-
-  const handleTransitionFailure =
-    useCallback((): void => {
-      const snapshot =
-        optimisticSnapshotRef.current;
-
-      if (snapshot !== null) {
-        setWorkspaceDetail(
-          snapshot,
-        );
-      }
-
-      optimisticSnapshotRef.current =
-        null;
-
-      optimisticTimelineEventIdRef.current =
-        null;
-    }, []);
-
   const {
     snapshot: autosaveSnapshot,
     conflict: autosaveConflict,
@@ -788,9 +359,7 @@ export function NoteDetailWorkspace({
           nextContent,
         );
 
-        setHistoricalVersionId(
-          null,
-        );
+        returnToCurrentVersion();
 
         setWorkspaceDetail(
           currentDetail => {
@@ -832,145 +401,27 @@ export function NoteDetailWorkspace({
       [
         autosaveConflict,
         resolveAutosaveConflict,
+        returnToCurrentVersion,
       ],
     );
 
   const {
-    state: transitionState,
-    execute: executeTransition,
-  } = useNoteTransition({
-    noteId:
-      workspaceDetail.note.id,
+    transitionState,
+    actionSourceDetail,
+    runAction,
+  } = useOptimisticNoteTransition({
     actor,
-    onOptimisticApply:
-      handleOptimisticApply,
-    onSuccess:
-      handleTransitionSuccess,
-    onFailure:
-      handleTransitionFailure,
+    detail: workspaceDetail,
+    setDetail: setWorkspaceDetail,
+    onSucceeded: clearRejectionReason,
   });
 
-  useRealtimeSubscription({
-    noteIds: [
-      workspaceDetail.note.id,
-    ],
 
-    onEvent: event => {
-      if (
-        event.type ===
-        "note.status_changed"
-      ) {
-        const isOwnOptimisticEcho =
-          workspaceDetailRef.current
-            .timeline.some(
-              timelineEvent =>
-                timelineEvent.eventId
-                  .startsWith(
-                    "optimistic-transition",
-                  ) &&
-                timelineEvent.fromStatus ===
-                  event.response
-                    .timelineEvent
-                    .fromStatus &&
-                timelineEvent.toStatus ===
-                  event.response
-                    .timelineEvent
-                    .toStatus,
-            );
-
-        if (!isOwnOptimisticEcho) {
-          setRealtimeNotice(
-            "This note changed in another session. The latest server status has been applied.",
-          );
-        }
-
-        setWorkspaceDetail(
-          currentDetail => {
-            const nextDetail =
-              applyRealtimeEventToNoteDetail(
-                currentDetail,
-                event,
-              );
-
-            workspaceDetailRef.current =
-              nextDetail;
-
-            return nextDetail;
-          },
-        );
-
-        return;
-      }
-
-      if (
-        event.type ===
-        "note.version_added"
-      ) {
-        const hasUnacknowledgedLocalWork =
-          autosaveSnapshot.status !==
-            "idle" ||
-          hasDirtySections;
-
-        if (
-          autosaveSnapshot.status !==
-            "saving" &&
-          hasUnacknowledgedLocalWork
-        ) {
-          setRealtimeNotice(
-            "A newer version arrived while local edits were pending. Saving will use the normal conflict-resolution flow.",
-          );
-        }
-
-        setWorkspaceDetail(
-          currentDetail => {
-            const nextDetail =
-              applyRealtimeEventToNoteDetail(
-                currentDetail,
-                event,
-              );
-
-            workspaceDetailRef.current =
-              nextDetail;
-
-            return nextDetail;
-          },
-        );
-
-        if (
-          !hasUnacknowledgedLocalWork
-        ) {
-          const nextContent =
-            copySoapContent(
-              event.response
-                .savedVersion
-                .content,
-            );
-
-          const adopted =
-            adoptAutosaveServerVersion(
-              event.response
-                .savedVersion
-                .versionId,
-              nextContent,
-            );
-
-          if (adopted) {
-            setSavedContent(
-              nextContent,
-            );
-
-            setDraftContent(
-              nextContent,
-            );
-
-            draftContentRef.current =
-              nextContent;
-          }
-        }
-
-        return;
-      }
-
+  useNoteDetailRealtime({
+    noteId: workspaceDetail.note.id,
+    getDetail: () =>
+      workspaceDetailRef.current,
+    applyEvent: event => {
       setWorkspaceDetail(
         currentDetail => {
           const nextDetail =
@@ -986,6 +437,17 @@ export function NoteDetailWorkspace({
         },
       );
     },
+    autosaveStatus:
+      autosaveSnapshot.status,
+    hasDirtySections,
+    adoptServerVersion:
+      adoptAutosaveServerVersion,
+    onServerContentAdopted: content => {
+      setSavedContent(content);
+      setDraftContent(content);
+      draftContentRef.current = content;
+    },
+    onNotice: setRealtimeNotice,
   });
 
   const editPermission =
@@ -1139,14 +601,6 @@ export function NoteDetailWorkspace({
       return {};
     }, [transitionState]);
 
-  const actionSourceDetail =
-    transitionState.status ===
-      "pending" &&
-    optimisticSnapshotRef.current !==
-      null
-      ? optimisticSnapshotRef.current
-      : workspaceDetail;
-
   const availableActions =
     useMemo(
       () =>
@@ -1205,18 +659,10 @@ export function NoteDetailWorkspace({
     trigger:
       UserNoteActionTrigger,
   ): void {
-    void executeTransition({
-      baseVersionId:
-        workspaceDetail
-          .currentVersion
-          .versionId,
+    runAction(
       trigger,
-      ...(trigger === "REJECT"
-        ? {
-            rejectionReason,
-          }
-        : {}),
-    });
+      rejectionReason,
+    );
   }
 
   function handleReviewerAssigned(
@@ -1232,110 +678,6 @@ export function NoteDetailWorkspace({
             reviewer?.id ?? null,
         },
       }),
-    );
-  }
-
-  function handleStartComparison(): void {
-    const currentVersion =
-      workspaceDetail.currentVersion;
-
-    const previousVersion = [
-      ...workspaceDetail.versions,
-    ]
-      .filter(
-        version =>
-          version.versionId !==
-          currentVersion.versionId,
-      )
-      .sort(
-        (
-          firstVersion,
-          secondVersion,
-        ) =>
-          secondVersion
-            .revisionNumber -
-          firstVersion
-            .revisionNumber,
-      )[0];
-
-    if (
-      previousVersion ===
-      undefined
-    ) {
-      return;
-    }
-
-    setHistoricalVersionId(
-      null,
-    );
-
-    setCompareFromVersionId(
-      previousVersion.versionId,
-    );
-
-    setCompareToVersionId(
-      currentVersion.versionId,
-    );
-
-    setComparisonStatus(
-      "selecting",
-    );
-  }
-
-  function handleShowComparison(): void {
-    if (
-      compareFromVersion ===
-        null ||
-      compareToVersion ===
-        null ||
-      compareFromVersion
-        .versionId ===
-        compareToVersion
-          .versionId
-    ) {
-      return;
-    }
-
-    setHistoricalVersionId(
-      null,
-    );
-
-    setComparisonStatus(
-      "active",
-    );
-  }
-
-  function handleExitComparison(): void {
-    setComparisonStatus(
-      "closed",
-    );
-
-    setCompareFromVersionId(
-      null,
-    );
-
-    setCompareToVersionId(
-      null,
-    );
-  }
-
-  function handleVersionSelect(
-    versionId: string,
-  ): void {
-    if (isComparisonOpen) {
-      return;
-    }
-
-    const isCurrentVersion =
-      versionId ===
-      workspaceDetail
-        .currentVersion
-        .versionId;
-
-    setHistoricalVersionId(
-      isCurrentVersion
-        ? null
-        : versionId,
     );
   }
 
@@ -1513,7 +855,9 @@ export function NoteDetailWorkspace({
                 handleConflictResolve
               }
             />
-          ) : isComparingVersions ? (
+          ) : isComparingVersions &&
+            compareFromVersion !== null &&
+            compareToVersion !== null ? (
             <VersionDiffViewer
               fromVersion={
                 compareFromVersion
@@ -1522,7 +866,7 @@ export function NoteDetailWorkspace({
                 compareToVersion
               }
               onClose={
-                handleExitComparison
+                comparison.exitComparison
               }
             />
           ) : (
@@ -1617,22 +961,22 @@ export function NoteDetailWorkspace({
               compareToVersionId
             }
             onSelectVersion={
-              handleVersionSelect
+              comparison.selectVersion
             }
             onStartComparison={
-              handleStartComparison
+              comparison.startComparison
             }
             onCompareFromVersionChange={
-              setCompareFromVersionId
+              comparison.setCompareFromVersionId
             }
             onCompareToVersionChange={
-              setCompareToVersionId
+              comparison.setCompareToVersionId
             }
             onShowComparison={
-              handleShowComparison
+              comparison.showComparison
             }
             onExitComparison={
-              handleExitComparison
+              comparison.exitComparison
             }
           />
         </aside>
