@@ -10,7 +10,7 @@ import type {
 import type {
   AvailableNoteAction,
 } from "./noteActionBarModel";
-import "./NotePermissionSummary.css";
+import "./css/NotePermissionSummary.css";
 
 interface NotePermissionSummaryProps {
   actor: TransitionNoteActor;

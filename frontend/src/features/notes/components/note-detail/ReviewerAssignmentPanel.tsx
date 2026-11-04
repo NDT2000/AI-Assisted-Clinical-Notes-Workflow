@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -7,6 +6,9 @@ import {
 import type {
   NoteStatus,
 } from "../../../../domain/noteAttributes";
+import type {
+  UserSummary,
+} from "../../../../domain/noteDetail";
 import type {
   TransitionNoteActor,
 } from "../../../../domain/noteTransition";
@@ -16,7 +18,7 @@ import {
 import {
   postAssignReviewer,
 } from "../../api/bulkActions";
-import "./ReviewerAssignmentPanel.css";
+import "./css/ReviewerAssignmentPanel.css";
 
 export interface ReviewerAssignmentValue {
   id: string;
@@ -24,12 +26,15 @@ export interface ReviewerAssignmentValue {
   role: "REVIEWER";
 }
 
+/*
+ * The selection starts from assignedReviewer; render this panel
+ * with key={assignedReviewer?.id} so it resets when that changes.
+ */
 interface ReviewerAssignmentPanelProps {
   noteId: string;
   status: NoteStatus;
   actor: TransitionNoteActor;
-  assignedReviewer:
-    ReviewerAssignmentValue | null;
+  assignedReviewer: UserSummary | null;
   onAssigned: (
     reviewer:
       ReviewerAssignmentValue | null,
@@ -86,12 +91,6 @@ export function ReviewerAssignmentPanel({
 
   const [error, setError] =
     useState<string | null>(null);
-
-  useEffect(() => {
-    setSelectedReviewerId(
-      assignedReviewer?.id ?? "",
-    );
-  }, [assignedReviewer]);
 
   const disabledReason =
     getDisabledReason(status);

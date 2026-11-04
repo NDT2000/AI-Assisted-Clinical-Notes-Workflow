@@ -16,6 +16,7 @@ import {
 import type {
   NoteDetail,
   ReviewTimelineEvent,
+  UserSummary,
 } from "../../../../domain/noteDetail";
 import type {
   TransitionNoteActor,
@@ -51,11 +52,17 @@ import {
   NoteDetailHeader,
 } from "./NoteDetailHeader";
 import {
+  NotePermissionSummary,
+} from "./NotePermissionSummary";
+import {
   PatientSessionCard,
 } from "./PatientSessionCard";
 import {
   PresencePanel,
 } from "./PresencePanel";
+import {
+  ReviewerAssignmentPanel,
+} from "./ReviewerAssignmentPanel";
 import {
   ReviewTimeline,
 } from "./ReviewTimeline";
@@ -73,6 +80,9 @@ import {
 import {
   VersionDiffViewer,
 } from "./VersionDiffViewer";
+import {
+  WorkflowStatusGuidance,
+} from "./WorkflowStatusGuidance";
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
@@ -1207,6 +1217,22 @@ export function NoteDetailWorkspace({
     });
   }
 
+  function handleReviewerAssigned(
+    reviewer: UserSummary | null,
+  ): void {
+    setWorkspaceDetail(
+      currentDetail => ({
+        ...currentDetail,
+        assignedReviewer: reviewer,
+        note: {
+          ...currentDetail.note,
+          assignedReviewerId:
+            reviewer?.id ?? null,
+        },
+      }),
+    );
+  }
+
   function handleStartComparison(): void {
     const currentVersion =
       workspaceDetail.currentVersion;
@@ -1379,6 +1405,34 @@ export function NoteDetailWorkspace({
             />
           ) : null}
 
+          <NotePermissionSummary
+            actor={actor}
+            note={workspaceDetail.note}
+            assignedReviewer={
+              workspaceDetail
+                .assignedReviewer
+            }
+            isEditable={isEditable}
+            actions={availableActions}
+          />
+
+          <WorkflowStatusGuidance
+            status={
+              workspaceDetail.note
+                .status
+            }
+            actor={actor}
+            assignedReviewer={
+              workspaceDetail
+                .assignedReviewer
+            }
+            assignedReviewerId={
+              workspaceDetail.note
+                .assignedReviewerId
+            }
+            actions={availableActions}
+          />
+
           <NoteActionBar
             actions={
               availableActions
@@ -1509,6 +1563,29 @@ export function NoteDetailWorkspace({
             presence={
               workspaceDetail
                 .presence
+            }
+          />
+
+          <ReviewerAssignmentPanel
+            key={
+              workspaceDetail
+                .assignedReviewer?.id ??
+              "unassigned"
+            }
+            noteId={
+              workspaceDetail.note.id
+            }
+            status={
+              workspaceDetail.note
+                .status
+            }
+            actor={actor}
+            assignedReviewer={
+              workspaceDetail
+                .assignedReviewer
+            }
+            onAssigned={
+              handleReviewerAssigned
             }
           />
 
