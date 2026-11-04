@@ -101,21 +101,39 @@ export function useNotesList(
       return controller.signal;
     }, []);
 
-  const loadFirstPage =
-    useCallback(async () => {
-      const requestToken =
-        ++requestTokenRef.current;
+  function resetToFirstPage() {
+    setItems([]);
+    setNextCursor(null);
+    setHasMore(false);
+    setTotal(0);
+    setIsLoading(true);
+    setError(null);
+    setLoadMoreError(null);
+  }
 
-      const signal = startNewRequest();
+  // New filters start over from an empty first page.
+  const [
+    previousFilters,
+    setPreviousFilters,
+  ] = useState(filters);
 
-      setItems([]);
-      setNextCursor(null);
-      setHasMore(false);
-      setTotal(0);
-      setIsLoading(true);
-      setError(null);
-      setLoadMoreError(null);
+  if (filters !== previousFilters) {
+    setPreviousFilters(filters);
+    resetToFirstPage();
+  }
 
+  // Bumped by reload() to fetch page one again for the same filters.
+  const [reloadCount, setReloadCount] =
+    useState(0);
+
+  useEffect(() => {
+    const requestToken =
+      ++requestTokenRef.current;
+
+    const signal = startNewRequest();
+
+    // State changes only after the response arrives.
+    async function fetchFirstPage() {
       try {
         const response = await getNotes(
           filters,
@@ -159,7 +177,10 @@ export function useNotesList(
           setIsLoading(false);
         }
       }
-    }, [filters, startNewRequest]);
+    }
+
+    void fetchFirstPage();
+  }, [filters, reloadCount, startNewRequest]);
 
   const loadMore = useCallback(
     async (
@@ -257,18 +278,15 @@ export function useNotesList(
   );
 
   useEffect(() => {
-    void loadFirstPage();
-  }, [loadFirstPage]);
-
-  useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
     };
   }, []);
 
-  const reload = useCallback(() => {
-    void loadFirstPage();
-  }, [loadFirstPage]);
+  function reload() {
+    resetToFirstPage();
+    setReloadCount(count => count + 1);
+  }
 
   const requestMore = useCallback(
     (forceRetry?: boolean) => {
