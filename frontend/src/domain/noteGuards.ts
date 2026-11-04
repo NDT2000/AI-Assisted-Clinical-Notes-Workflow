@@ -1,7 +1,17 @@
 import type { Note, NoteStatus, NoteVersion, Trigger, UserRole, } from "./noteAttributes";
 import { noteTransitions, } from "./noteTransitions";
+import {
+  formatWorkflowMessage,
+  noteWorkflow,
+  type WorkflowGuard,
+} from "./noteWorkflow";
 
 import type { Actor } from "./actor";
+
+/*
+ * The workflow rules. What they allow, and every message, comes from
+ * contract/note-workflow.json, shared with the backend.
+ */
 
 /* Guards only need to know who is acting and how they authenticated. */
 export type GuardActor = Pick<Actor, "id" | "role" | "mfaVerified">;
@@ -41,23 +51,116 @@ export type GuardFunction = (
 export type TransitionResult =
   GuardResult;
 
+const HOUR_MS = 60 * 60 * 1000;
+
+function deny(
+  reason: string | undefined,
+): { allowed: false; reason: string } {
+  return {
+    allowed: false,
+    reason: reason ?? "This action is not allowed.",
+  };
+}
+
+function hasCompleteContent(
+  version: NoteVersion,
+): boolean {
+  const {
+    subjective,
+    objective,
+    assessment,
+    plan,
+  } = version.content;
+
+  return [
+    subjective,
+    objective,
+    assessment,
+    plan,
+  ].every(section => section.trim().length > 0);
+}
+
+/*
+ * Runs one trigger's guard: role first, then reviewer ownership, then
+ * the trigger's own conditions, in the order the contract lists them.
+ */
+function checkGuard(
+  guard: WorkflowGuard,
+  {
+    note,
+    version,
+    actor,
+    rejectionReason,
+    now,
+  }: Guard,
+): PermissionResult {
+  const { messages } = guard;
+
+  if (!guard.roles.includes(actor.role)) {
+    return deny(messages.role);
+  }
+
+  if (
+    guard.reviewer === "assigned" &&
+    note.assignedReviewerId !== actor.id
+  ) {
+    return deny(messages.reviewer);
+  }
+
+  if (
+    guard.reviewer === "unassignedOrAssigned" &&
+    note.assignedReviewerId !== null &&
+    note.assignedReviewerId !== actor.id
+  ) {
+    return deny(messages.reviewer);
+  }
+
+  if (guard.requireMfa && !actor.mfaVerified) {
+    return deny(messages.mfa);
+  }
+
+  if (
+    guard.requireRejectionReason &&
+    (!rejectionReason ||
+      rejectionReason.trim().length === 0)
+  ) {
+    return deny(messages.rejectionReason);
+  }
+
+  if (
+    guard.requireCompleteContent &&
+    !hasCompleteContent(version)
+  ) {
+    return deny(messages.content);
+  }
+
+  if (guard.withinHoursOfApproval !== undefined) {
+    if (!note.approvedAt) {
+      return deny(messages.approvalMissing);
+    }
+
+    const deadline =
+      new Date(note.approvedAt).getTime() +
+      guard.withinHoursOfApproval * HOUR_MS;
+
+    if (new Date(now).getTime() > deadline) {
+      return deny(messages.approvalWindow);
+    }
+  }
+
+  return { allowed: true };
+}
+
 export function canManageReviewerAssignments(
   actorRole: UserRole,
 ): PermissionResult {
-  if (
-    actorRole !== "CLINICIAN" &&
-    actorRole !== "ADMIN"
-  ) {
-    return {
-      allowed: false,
-      reason:
-        "Only a Clinician or an Administrator can assign reviewers.",
-    };
+  const rule = noteWorkflow.reviewerAssignment;
+
+  if (!rule.roles.includes(actorRole)) {
+    return deny(rule.roleMessage);
   }
 
-  return {
-    allowed: true,
-  };
+  return { allowed: true };
 }
 
 export function canAssignReviewer(
@@ -65,422 +168,87 @@ export function canAssignReviewer(
   actorRole: UserRole,
 ): PermissionResult {
   const rolePermission =
-    canManageReviewerAssignments(
-      actorRole,
-    );
+    canManageReviewerAssignments(actorRole);
 
   if (!rolePermission.allowed) {
     return rolePermission;
   }
 
-  if (
-    status !==
-      "READY_FOR_REVIEW" &&
-    status !== "AMENDED"
-  ) {
-    return {
-      allowed: false,
-      reason:
-        "Reviewer assignment is available only for notes that are ready for review or amended.",
-    };
+  const rule = noteWorkflow.reviewerAssignment;
+
+  if (!rule.statuses.includes(status)) {
+    return deny(rule.statusMessage);
   }
 
-  return {
-    allowed: true,
-  };
+  return { allowed: true };
 }
 
 export function canEditNoteContent(
   note: Note,
   actor: GuardActor,
 ): PermissionResult {
+  const rules = noteWorkflow.contentEditing;
+
+  const deniedRoleMessage =
+    rules.deniedRoles[actor.role];
+
+  if (deniedRoleMessage !== undefined) {
+    return deny(deniedRoleMessage);
+  }
+
+  if (note.status === noteWorkflow.lockedStatus) {
+    return deny(rules.lockedMessage);
+  }
+
+  const rule = rules.byRole[actor.role];
+
+  if (rule === undefined) {
+    return deny(rules.defaultMessage);
+  }
+
+  if (!rule.statuses.includes(note.status)) {
+    return deny(rule.statusMessage);
+  }
+
   if (
-    actor.role ===
-    "READONLY_AUDITOR"
+    rule.assignedReviewerOnly &&
+    note.assignedReviewerId !== actor.id
   ) {
-    return {
-      allowed: false,
-      reason:
-        "Read-only auditors cannot edit note content.",
-    };
+    return deny(rule.assignedReviewerMessage);
   }
 
-  if (note.status === "LOCKED") {
-    return {
-      allowed: false,
-      reason:
-        "Locked notes are read-only.",
-    };
-  }
-
-  if (actor.role === "REVIEWER") {
-    if (
-      note.status !==
-      "IN_REVIEW"
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Reviewers can edit only notes that are in review.",
-      };
-    }
-
-    if (
-      note.assignedReviewerId !==
-      actor.id
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only the assigned reviewer can edit this note.",
-      };
-    }
-
-    return {
-      allowed: true,
-    };
-  }
-
-  if (actor.role === "CLINICIAN") {
-    if (
-      note.status !==
-        "REJECTED" &&
-      note.status !==
-        "AMENDED"
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Clinicians can edit rejected or amended notes.",
-      };
-    }
-
-    return {
-      allowed: true,
-    };
-  }
-
-  if (actor.role === "ADMIN") {
-    if (
-      note.status !==
-        "IN_REVIEW" &&
-      note.status !==
-        "REJECTED" &&
-      note.status !==
-        "AMENDED"
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Administrators can edit only active review, rejected, or amended notes.",
-      };
-    }
-
-    return {
-      allowed: true,
-    };
-  }
-
-  return {
-    allowed: false,
-    reason:
-      "You are not authorized to edit this note.",
-  };
+  return { allowed: true };
 }
 
+/* For bulk regeneration, where only the status and role are known. */
 export function canRequestRegeneration(
   status: NoteStatus,
   actorRole: UserRole,
 ): GuardResult {
-  if (status !== "FAILED") {
-    return {
-      allowed: false,
-      reason:
-        "Only failed notes can be regenerated.",
-    };
+  const { trigger, statusMessage } =
+    noteWorkflow.regeneration;
+
+  const nextStatus =
+    noteTransitions[status][trigger];
+
+  if (nextStatus === undefined) {
+    return deny(statusMessage);
   }
 
-  const isAllowedRole =
-    actorRole === "CLINICIAN" ||
-    actorRole === "ADMIN";
+  const guard = noteWorkflow.guards[trigger];
 
-  if (!isAllowedRole) {
-    return {
-      allowed: false,
-      reason:
-        "Only a Clinician or an Administrator can regenerate a note.",
-    };
+  if (
+    guard !== undefined &&
+    !guard.roles.includes(actorRole)
+  ) {
+    return deny(guard.messages.role);
   }
 
   return {
     allowed: true,
-    nextStatus: "GENERATING",
+    nextStatus,
   };
 }
-
-export const canRegenerate:
-  GuardFunction = ({
-    note,
-    actor,
-  }) =>
-    canRequestRegeneration(
-      note.status,
-      actor.role,
-    );
-
-export const canStartReview:
-  GuardFunction = ({
-    note,
-    actor,
-  }) => {
-    if (
-      actor.role !== "REVIEWER"
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only a Reviewer can start a review.",
-      };
-    }
-
-    if (
-      note.assignedReviewerId !==
-        null &&
-      note.assignedReviewerId !==
-        actor.id
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "This note is assigned to another reviewer.",
-      };
-    }
-
-    return {
-      allowed: true,
-      nextStatus: "IN_REVIEW",
-    };
-  };
-
-export const canApprove:
-  GuardFunction = ({
-    note,
-    actor,
-  }) => {
-    if (
-      actor.role !== "REVIEWER"
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only a Reviewer can approve a note.",
-      };
-    }
-
-    if (
-      note.assignedReviewerId !==
-      actor.id
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only the assigned reviewer can approve this note.",
-      };
-    }
-
-    if (!actor.mfaVerified) {
-      return {
-        allowed: false,
-        reason:
-          "MFA re-authentication is required to approve this note.",
-      };
-    }
-
-    return {
-      allowed: true,
-      nextStatus: "APPROVED",
-    };
-  };
-
-export const canReject:
-  GuardFunction = ({
-    note,
-    actor,
-    rejectionReason,
-  }) => {
-    if (
-      actor.role !== "REVIEWER"
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only a Reviewer can reject a note.",
-      };
-    }
-
-    if (
-      note.assignedReviewerId !==
-      actor.id
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only the assigned reviewer can reject this note.",
-      };
-    }
-
-    if (
-      !rejectionReason ||
-      rejectionReason.trim()
-        .length === 0
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "A rejection reason is required.",
-      };
-    }
-
-    return {
-      allowed: true,
-      nextStatus: "REJECTED",
-    };
-  };
-
-export const canResubmit:
-  GuardFunction = ({
-    version,
-    actor,
-  }) => {
-    if (
-      actor.role !== "CLINICIAN"
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only a Clinician can resubmit a note.",
-      };
-    }
-
-    const {
-      subjective,
-      objective,
-      assessment,
-      plan,
-    } = version.content;
-
-    const hasValidContent =
-      subjective.trim().length >
-        0 &&
-      objective.trim().length >
-        0 &&
-      assessment.trim().length >
-        0 &&
-      plan.trim().length > 0;
-
-    if (!hasValidContent) {
-      return {
-        allowed: false,
-        reason:
-          "All SOAP content must be completed before resubmission.",
-      };
-    }
-
-    return {
-      allowed: true,
-      nextStatus:
-        "READY_FOR_REVIEW",
-    };
-  };
-
-export const canAmend:
-  GuardFunction = ({
-    note,
-    actor,
-    now,
-  }) => {
-    const isAllowedRole =
-      actor.role ===
-        "CLINICIAN" ||
-      actor.role === "ADMIN";
-
-    if (!isAllowedRole) {
-      return {
-        allowed: false,
-        reason:
-          "Only a Clinician or an Administrator can amend an approved note.",
-      };
-    }
-
-    if (!note.approvedAt) {
-      return {
-        allowed: false,
-        reason:
-          "The note does not have an approval timestamp.",
-      };
-    }
-
-    const approvedTime =
-      new Date(
-        note.approvedAt,
-      ).getTime();
-
-    const currentTime =
-      new Date(now).getTime();
-
-    const amendmentDeadline =
-      approvedTime +
-      24 * 60 * 60 * 1000;
-
-    if (
-      currentTime >
-      amendmentDeadline
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "The 24-hour amendment window has expired.",
-      };
-    }
-
-    return {
-      allowed: true,
-      nextStatus: "AMENDED",
-    };
-  };
-
-export const canReturnToQueue:
-  GuardFunction = ({
-    note,
-    actor,
-  }) => {
-    if (
-      actor.role !== "REVIEWER"
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only a Reviewer can return a note to the queue.",
-      };
-    }
-
-    if (
-      note.assignedReviewerId !==
-      actor.id
-    ) {
-      return {
-        allowed: false,
-        reason:
-          "Only the assigned reviewer can return this note.",
-      };
-    }
-
-    return {
-      allowed: true,
-      nextStatus:
-        "READY_FOR_REVIEW",
-    };
-  };
 
 export function canTransition(
   context: Guard,
@@ -490,33 +258,32 @@ export function canTransition(
     action,
   } = context;
 
-  if (note.status === "LOCKED") {
-    return {
-      allowed: false,
-      reason:
-        "Locked notes cannot be transitioned.",
-    };
+  if (note.status === noteWorkflow.lockedStatus) {
+    return deny(noteWorkflow.messages.locked);
   }
 
   const nextStatus =
-    noteTransitions[note.status][
-      action
-    ];
+    noteTransitions[note.status][action];
 
   if (!nextStatus) {
-    return {
-      allowed: false,
-      reason:
-        `${action} is not allowed while the note is ${note.status}.`,
-    };
+    return deny(
+      formatWorkflowMessage(
+        noteWorkflow.messages.notAllowed,
+        {
+          trigger: action,
+          status: note.status,
+        },
+      ),
+    );
   }
 
-  const guard =
-    guards[action];
+  const guard = noteWorkflow.guards[action];
 
   if (guard) {
-    const guardResult =
-      guard(context);
+    const guardResult = checkGuard(
+      guard,
+      context,
+    );
 
     if (!guardResult.allowed) {
       return guardResult;
@@ -528,18 +295,3 @@ export function canTransition(
     nextStatus,
   };
 }
-
-export const guards: Partial<
-  Record<
-    Trigger,
-    GuardFunction
-  >
-> = {
-  REGENERATE: canRegenerate,
-  START_REVIEW: canStartReview,
-  RETURN_TO_QUEUE: canReturnToQueue,
-  APPROVE: canApprove,
-  REJECT: canReject,
-  RESUBMIT: canResubmit,
-  AMEND: canAmend,
-};
