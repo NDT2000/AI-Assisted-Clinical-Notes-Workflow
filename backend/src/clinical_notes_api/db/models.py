@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import Literal, get_args
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -56,6 +58,13 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(200))
     role: Mapped[UserRole] = mapped_column(String(32))
+    # Argon2 hash; null means the user cannot log in.
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    # Stand-in for a real second factor: approving a note requires it.
+    mfa_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        server_default=false(),
+    )
 
     __table_args__ = (CheckConstraint(_one_of("role", USER_ROLES), name="role"),)
 

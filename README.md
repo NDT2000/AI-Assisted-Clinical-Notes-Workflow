@@ -13,7 +13,7 @@ All patient and note data in this repository is synthetic.
 | Part | State |
 | --- | --- |
 | Frontend (React) | Complete; runs against an in-browser mock backend (MSW) |
-| Backend (FastAPI) | Project, database schema, migrations and seed data in place; note endpoints in progress |
+| Backend (FastAPI) | Database, seed data and login (JWT) in place; note endpoints in progress |
 | Database (Postgres + pgvector) | Runs locally with Docker Compose |
 | AI note generation (RAG) | Planned |
 
@@ -116,6 +116,10 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │   ├── src/clinical_notes_api/
 │   │   ├── config.py        Settings from environment variables
 │   │   ├── main.py          App factory and routes
+│   │   ├── auth.py          Login and the signed-in user
+│   │   ├── security.py      Password hashing and access tokens
+│   │   ├── dependencies.py  Database session and current-user dependencies
+│   │   ├── errors.py        Error responses ({"error", "message"})
 │   │   ├── workflow.py      Workflow rules, read from the contract
 │   │   ├── openapi.py       Writes contract/openapi.json
 │   │   ├── db/              SQLAlchemy models and sessions
@@ -178,6 +182,16 @@ uv run clinical-notes-api        # start the API
 The API runs at <http://127.0.0.1:8000>, with interactive docs at `/docs` and
 a health check at `GET /api/health`.
 
+Every seeded user signs in with the password in `DEMO_USER_PASSWORD`
+(`demo-password` by default) and their id as the username — `clinician-1`,
+`reviewer-1` to `reviewer-5`, `admin-1` or `auditor-1`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "reviewer-1", "password": "demo-password"}'
+```
+
 ### Checks
 
 Frontend, from `frontend/`:
@@ -208,6 +222,9 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `ENVIRONMENT` | `development` | `development`, `test` or `production` |
 | `DATABASE_URL` | the Compose database | SQLAlchemy URL the API connects to |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Browser origins allowed to call the API |
+| `JWT_SECRET` | a development-only value | Signs access tokens; required in production, 32+ characters |
+| `ACCESS_TOKEN_MINUTES` | `60` | How long an access token stays valid |
+| `DEMO_USER_PASSWORD` | `demo-password` | Password the seed gives every demo user |
 
 Environment variables take precedence over `.env`. The frontend needs no
 configuration yet.
@@ -427,6 +444,24 @@ on the role, the note's status and reviewer ownership. For example:
 Client-side checks shape the experience; the server validates every mutation
 independently.
 
+### Authentication
+
+`POST /api/auth/login` exchanges a username and password for a signed access
+token (JWT, HS256); clients send it as `Authorization: Bearer <token>`, and
+`GET /api/auth/me` returns the signed-in user.
+
+- Passwords are stored as Argon2 hashes. A wrong password and an unknown user
+  get the same answer and take the same time, so usernames cannot be probed.
+- On every request the user is read again from the database: removing a user
+  revokes access at once, and the role always comes from the database, never
+  from the token.
+- Errors use one shape, `{"error": "...", "message": "..."}`. A `401` means
+  "sign in"; a `403` carries the workflow rule's own reason.
+- A test checks that every route that changes data requires a signed-in user,
+  so a new endpoint cannot ship unprotected by accident.
+- The API refuses to start in production with the development `JWT_SECRET` or
+  one shorter than 32 characters.
+
 ## Performance and scale
 
 The notes list is built for large datasets. Pagination uses cursors and loads
@@ -458,10 +493,12 @@ deduplication and reconnection, server-side authorization, telemetry batching
 and accessibility behavior.
 
 **Backend** (pytest) — settings and the health endpoint; parity between the
-Python seed generator and the TypeScript one; and, against a throwaway
-`clinical_notes_test` database, that migrations match the models and
-round-trip, constraints and immutability triggers hold, and seeded rows match
-the generator. Database tests are skipped when Postgres is not running.
+Python seed generator and the TypeScript one; every workflow decision in the
+shared contract; and, against a throwaway `clinical_notes_test` database, that
+migrations match the models and round-trip, constraints and immutability
+triggers hold, seeded rows match the generator, and login, token expiry,
+forged tokens and revoked users behave correctly. Database tests are skipped
+when Postgres is not running.
 
 The main risks tested are lost edits, duplicate writes, stale responses,
 invalid transitions, unauthorized mutations, replay ordering, duplicate
@@ -470,10 +507,14 @@ browser-driven end-to-end suite yet.
 
 ## Assumptions and limitations
 
-- **Mock backend and authentication.** The frontend still runs against MSW,
-  with identities passed as demo actor headers; trusted server-side sessions
-  arrive with the API. MSW does not share data between devices.
-- **MFA** is represented by a flag, not a real authentication flow.
+- **The frontend still uses the mock backend.** It runs against MSW, with
+  identities passed as demo actor headers; it moves to the API and its access
+  tokens once the note endpoints are ready. MSW does not share data between
+  devices.
+- **Demo accounts share one password** (`DEMO_USER_PASSWORD`), which suits a
+  demonstration with synthetic data, not real users.
+- **MFA** is a per-user flag (on for reviewers and the admin), not a real
+  second factor.
 - **Three-way merge instead of a CRDT** — it fits the immutable version model
   without the complexity of real-time co-editing.
 - **IndexedDB** is assumed available; a production build would also need

@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
                 count=arguments.count,
                 seed=arguments.seed,
                 reset=arguments.reset,
+                demo_password=settings.demo_user_password.get_secret_value(),
             )
     except SeedError as error:
         print(f"{error} Use --reset to replace the existing data.", file=sys.stderr)

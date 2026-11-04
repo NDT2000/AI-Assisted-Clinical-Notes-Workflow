@@ -12,12 +12,19 @@ def test_environment_variables_override_defaults(
         "postgresql+psycopg://user:secret@db:5432/notes",
     )
     monkeypatch.setenv("CORS_ORIGINS", '["https://notes.example.com"]')
+    monkeypatch.setenv("JWT_SECRET", "a-production-secret-that-is-long-enough")
+    monkeypatch.setenv("ACCESS_TOKEN_MINUTES", "30")
 
     settings = Settings(_env_file=None)
 
     assert settings.environment == "production"
     assert settings.database_url == "postgresql+psycopg://user:secret@db:5432/notes"
     assert settings.cors_origins == ["https://notes.example.com"]
+    assert (
+        settings.jwt_secret.get_secret_value()
+        == "a-production-secret-that-is-long-enough"
+    )
+    assert settings.access_token_minutes == 30
 
 
 def test_defaults_point_at_the_local_compose_database(

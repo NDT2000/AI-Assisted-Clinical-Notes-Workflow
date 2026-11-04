@@ -15,6 +15,7 @@ from clinical_notes_api.db import (
     ReviewEvent,
     User,
 )
+from clinical_notes_api.security import hash_password
 from clinical_notes_api.seed.mock_data import (
     CLINICIANS,
     REVIEWERS,
@@ -33,6 +34,11 @@ SEED_USERS: tuple[Json, ...] = (
     {"id": "admin-1", "displayName": "Jordan Lee", "role": "ADMIN"},
     {"id": "auditor-1", "displayName": "Taylor Morgan", "role": "READONLY_AUDITOR"},
 )
+
+# As in the frontend's demo identities: reviewers and the admin have MFA.
+MFA_ROLES = frozenset({"REVIEWER", "ADMIN"})
+
+DEFAULT_DEMO_PASSWORD = "demo-password"  # noqa: S105 - synthetic demo accounts
 
 TABLES_IN_DEPENDENCY_ORDER = (
     "review_events",
@@ -82,8 +88,12 @@ def seed_database(
     count: int = 5_000,
     seed: int = 42,
     reset: bool = False,
+    demo_password: str = DEFAULT_DEMO_PASSWORD,
 ) -> SeedResult:
-    """Insert `count` synthetic notes; the caller commits."""
+    """Insert `count` synthetic notes and the demo users; the caller commits.
+
+    Every demo user can log in with `demo_password`.
+    """
     if reset:
         clear_all(session)
     elif session.scalar(select(func.count()).select_from(Note)):
@@ -95,7 +105,14 @@ def seed_database(
     ]
 
     users = [
-        {"id": user["id"], "display_name": user["displayName"], "role": user["role"]}
+        {
+            "id": user["id"],
+            "display_name": user["displayName"],
+            "role": user["role"],
+            # Hashed per user, so each gets its own salt.
+            "password_hash": hash_password(demo_password),
+            "mfa_enabled": user["role"] in MFA_ROLES,
+        }
         for user in SEED_USERS
     ]
 
