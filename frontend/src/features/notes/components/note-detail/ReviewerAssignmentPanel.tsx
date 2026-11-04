@@ -18,7 +18,7 @@ import {
 import {
   postAssignReviewer,
 } from "../../api/bulkActions";
-import "./css/ReviewerAssignmentPanel.css";
+import "./ReviewerAssignmentPanel.css";
 
 export interface ReviewerAssignmentValue {
   id: string;

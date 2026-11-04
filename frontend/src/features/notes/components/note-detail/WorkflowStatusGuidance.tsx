@@ -10,7 +10,7 @@ import type {
 import type {
   AvailableNoteAction,
 } from "./noteActionBarModel";
-import "./css/WorkflowStatusGuidance.css";
+import "./WorkflowStatusGuidance.css";
 
 interface WorkflowStatusGuidanceProps {
   status: NoteStatus;

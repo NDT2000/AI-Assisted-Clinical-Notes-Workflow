@@ -4,7 +4,7 @@ import type {
 import {
   formatRole,
 } from "../../../../shared/formatters";
-import "../note-detail/css/VersionHistorySidebar.css"
+import "./VersionHistorySidebar.css";
 
 export type VersionComparisonStatus =
   | "closed"

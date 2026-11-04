@@ -7,7 +7,7 @@ import type {
 import type {
   AvailableNoteAction,
 } from "./noteActionBarModel";
-import "./css/NotePermissionSummary.css";
+import "./NotePermissionSummary.css";
 import {
   formatNoteStatus,
   formatRole,

@@ -1,4 +1,4 @@
-import "../css/NotesTableSkeleton.css";
+import "./NotesTableSkeleton.css";
 
 const SKELETON_ROW_COUNT = 6;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { generateNoteSummaries } from "./generateNoteSummary";
+import { generateNoteSummaries } from "../generateNoteSummary";
 
 describe("generateNoteSummaries", () => {
   it("generates the requested number of notes", () => {

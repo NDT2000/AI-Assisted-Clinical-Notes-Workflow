@@ -15,7 +15,8 @@ import {
 import {
   NoteDetailWorkspace,
 } from "../components/note-detail/NoteDetailWorkspace";
-import "../components/css/NoteDetailPage.css";
+import "./NoteDetailPage.css";
+import "./NoteDetailPolish.css";
 import type {
   UnresolvedSave,
 } from "../hooks/useNoteAutosave";

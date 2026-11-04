@@ -1,7 +1,7 @@
 import type {
   PresenceUser,
 } from "../../../../domain/noteDetail";
-import "./css/PresencePanel.css";
+import "./PresencePanel.css";
 
 interface PresencePanelProps {
   presence: PresenceUser[];

@@ -1,6 +1,6 @@
 import type {
   Actor,
-} from "../../../domain/actor";
+} from "../../../../domain/actor";
 import {
   act,
   renderHook,
@@ -35,7 +35,7 @@ const replayMocks = vi.hoisted(() => ({
 }));
 
 vi.mock(
-  "../offline/offlineSaveReplay",
+  "../../offline/offlineSaveReplay",
   () => ({
     offlineSaveReplayCoordinator: {
       getSnapshot: () =>
@@ -66,15 +66,15 @@ vi.mock(
   }),
 );
 
-import type { SoapContent } from "../../../domain/noteAttributes";
-import type { NoteVersionDetail } from "../../../domain/noteDetail";
+import type { SoapContent } from "../../../../domain/noteAttributes";
+import type { NoteVersionDetail } from "../../../../domain/noteDetail";
 import type {
   SaveNoteVersionResponse,
-} from "../../../domain/noteSave";
+} from "../../../../domain/noteSave";
 import type {
   PersistedQueuedNoteVersionSave,
-} from "../offline/offlineRepository";
-import { useNoteAutosave } from "./useNoteAutosave";
+} from "../../offline/offlineRepository";
+import { useNoteAutosave } from "../useNoteAutosave";
 
 const actor: Actor = {
   id: "reviewer-1",

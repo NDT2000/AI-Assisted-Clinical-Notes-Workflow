@@ -1,22 +1,22 @@
 import type {
   Actor,
-} from "../../../domain/actor";
+} from "../../../../domain/actor";
 import { waitFor, act, cleanup, renderHook, } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, } from "vitest";
 
 import type {
   TransitionNoteCommand,
   TransitionNoteResponse,
-} from "../../../domain/noteTransition";
-import { transitionNote } from "../api/transitionNote";
-import { useNoteTransition } from "./useNoteTransition";
+} from "../../../../domain/noteTransition";
+import { transitionNote } from "../../api/transitionNote";
+import { useNoteTransition } from "../useNoteTransition";
 
 vi.mock(
-  "../api/transitionNote",
+  "../../api/transitionNote",
   async (importOriginal) => {
     const actual =
       await importOriginal<
-        typeof import("../api/transitionNote")
+        typeof import("../../api/transitionNote")
       >();
 
     return {

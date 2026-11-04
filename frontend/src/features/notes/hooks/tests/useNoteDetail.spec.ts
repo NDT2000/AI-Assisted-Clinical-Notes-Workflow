@@ -15,30 +15,30 @@ import {
 import type {
   NoteDetail,
   NoteVersionDetail,
-} from "../../../domain/noteDetail";
+} from "../../../../domain/noteDetail";
 
 import {
   NoteDetailRequestError,
-} from "../api/getNoteDetail";
+} from "../../api/getNoteDetail";
 
 import {
   readNoteDetail,
   type NoteDetailReadResult,
-} from "../offline/readNoteDetail";
+} from "../../offline/readNoteDetail";
 
 import {
   useNoteDetail,
-} from "./useNoteDetail";
+} from "../useNoteDetail";
 
 vi.mock(
-  "../offline/readNoteDetail",
+  "../../offline/readNoteDetail",
   async () => {
     const actual =
       await vi.importActual<
         typeof import(
-          "../offline/readNoteDetail"
+          "../../offline/readNoteDetail"
         )
-      >("../offline/readNoteDetail");
+      >("../../offline/readNoteDetail");
 
     return {
       ...actual,

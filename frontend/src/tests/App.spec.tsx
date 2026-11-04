@@ -4,7 +4,7 @@ import {
   RouterProvider,
 } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import App from "./App";
+import App from "../App";
 
 function renderAppAt(path: string) {
   const router = createMemoryRouter(

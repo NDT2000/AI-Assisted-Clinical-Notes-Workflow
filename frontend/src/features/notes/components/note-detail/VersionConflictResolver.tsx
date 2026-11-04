@@ -17,7 +17,7 @@ import {
   type SoapConflictSectionKey,
   type SoapSectionComparisonStatus,
 } from "../../autosave/noteConflictResolution";
-import "./css/VersionConflictResolver.css";
+import "./VersionConflictResolver.css";
 
 interface VersionConflictResolverProps {
   ancestorContent: SoapContent;
