@@ -1,413 +1,449 @@
-# AI-Assisted-Clinical-Notes-Workflow
+# AI-Assisted Clinical Notes Workflow
 
-## Project Overview
+A review workflow for AI-generated clinical notes. Clinicians, reviewers,
+administrators and auditors move each SOAP note through a controlled
+lifecycle — from generation to review, approval, amendment and lock — without
+losing edits, overwriting each other's work, or taking actions the workflow
+does not allow.
 
-Clinical Notes Workflow is an application developed to manage AI-generated clinical notes created from clinician-patient sessions. Each note moves through different workflow stages, such as Generating, Ready for Review, In Review, Approved, Rejected, Amended, or Locked.
-The application is used by clinicians, reviewers, administrators, and read-only auditors. Reviewers can examine and refine the generated SOAP note, while the workflow determines whether the note can be approved, rejected, returned for correction, or amended.
-Correctness is especially important because these notes may eventually become part of the patient’s medical record. They contain information about the patient’s reported symptoms, observed findings, clinical assessment, and treatment plan. The application must therefore prevent edits from being lost, avoid invalid workflow actions, and clearly show whether changes have been saved.
+All patient and note data in this repository is synthetic.
 
-The project also handles difficult situations such as temporary network loss, multiple edits made before an autosave completes, and two users saving changes based on the same earlier version. Offline changes are queued and replayed after reconnection, autosave removes the need to save manually after every edit, and version conflicts are surfaced through a resolution interface instead of silently overwriting another user’s work.
+## Project status
 
-## Key Capabilities
+| Part | State |
+| --- | --- |
+| Frontend (React) | Complete; runs against an in-browser mock backend (MSW) |
+| Backend (FastAPI) | Project, database schema, migrations and seed data in place; note endpoints in progress |
+| Database (Postgres + pgvector) | Runs locally with Docker Compose |
+| AI note generation (RAG) | Planned |
 
-- **Cursor-paginated and virtualized notes list** — Notes are loaded in smaller pages using cursors, while only the rows currently visible on the screen are rendered. This keeps the interface responsive even when the dataset contains thousands of notes.
-- **URL-persisted filters, sorting, and search** — Status, reviewer, patient, date, search, and sorting options are stored in the URL. This allows the same view to survive refreshes, browser navigation, and shared links.
-- **Structured SOAP editor** — Clinical note content is divided into Subjective, Objective, Assessment, and Plan sections. Each section is independently tracked for unsaved changes.
-- **Debounced and coalesced autosave** — The application waits briefly after the user stops typing before saving. Multiple quick edits are combined into one request, and only one save request is allowed to be active for a note at a time.
-- **Immutable version history** — Every successful save creates a new note version instead of modifying an earlier version. This preserves the complete history of the clinical note.
-- **Word-level version comparison** — Users can compare any two saved versions and see which words were added or removed in each SOAP section.
-- **Three-way conflict resolution** — When another user saves a newer version, the application compares the user’s local draft, the latest server version, and their common ancestor. Conflicting sections can then be resolved without losing either user’s work.
-- **Optimistic workflow transitions with rollback** — Workflow actions are shown immediately in the interface while the request is processed. If the server rejects the action, the previous state is restored and the rejection reason is displayed.
-- **Offline reads and persistent write queue** — Recently opened notes remain available while offline. Saves are stored in IndexedDB and replayed in order when the connection returns, even after a page reload.
-- **Real-time status, version, and presence updates** — The application receives live updates when another user changes a note’s status, creates a version, or opens the same note.
-- **Role- and ownership-based authorization** — Available actions depend on the user’s role, the note’s current status, and reviewer ownership. The mock server validates the same permissions so client-side controls cannot bypass the rules.
-- **Resilient telemetry with PII redaction** — Telemetry events are batched, retried, and stored temporarily after repeated failures. Patient information and clinical free text are removed before any telemetry data is transmitted.
-- **Keyboard and screen-reader accessibility** — Filters, actions, editors, conflict resolution, and version comparison support keyboard navigation, visible focus, accessible labels, and live announcements for important status changes.
+## Contents
 
-## Technology Stack
+- [Overview](#overview)
+- [Key capabilities](#key-capabilities)
+- [Technology stack](#technology-stack)
+- [Repository structure](#repository-structure)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Domain model](#domain-model)
+- [Note lifecycle and state machine](#note-lifecycle-and-state-machine)
+- [Frontend design](#frontend-design)
+- [Backend design](#backend-design)
+- [Authorization model](#authorization-model)
+- [Performance and scale](#performance-and-scale)
+- [Accessibility](#accessibility)
+- [Testing](#testing)
+- [Assumptions and limitations](#assumptions-and-limitations)
+- [License](#license)
 
-- **React** for the user interface.
-- **TypeScript** for domain modelling and compile-time safety.
-- **Vite** for local development and production builds.
-- **React Router** for routing and URL-persisted filters.
-- **TanStack Virtual** for efficiently rendering large note lists.
-- **MSW** for the mock REST backend.
-- **IndexedDB** for offline caching, queued mutations, and telemetry persistence.
-- **Vitest and React Testing Library** for unit and integration testing.
+## Overview
 
-## Getting Started
+Each note moves through workflow stages such as Generating, Ready for Review,
+In Review, Approved, Rejected, Amended and Locked. Reviewers examine and refine
+the generated SOAP note (Subjective, Objective, Assessment, Plan), and the
+workflow decides whether it can be approved, rejected, returned for correction
+or amended.
+
+Correctness matters because these notes may become part of a patient's
+medical record. The application therefore prevents edits from being lost,
+blocks invalid workflow actions, and always shows whether changes are saved.
+
+It also handles the hard cases: temporary network loss, several edits made
+before an autosave completes, and two users saving changes based on the same
+earlier version. Offline changes are queued and replayed after reconnection,
+and version conflicts open a resolution screen instead of silently overwriting
+another user's work.
+
+## Key capabilities
+
+- **Cursor-paginated, virtualized notes list** — notes load a page at a time,
+  and only the rows on screen are rendered, so thousands of notes stay fast.
+- **URL-persisted filters, sorting and search** — status, reviewer, patient,
+  dates, search and sort live in the URL, so a view survives refreshes,
+  navigation and shared links.
+- **Structured SOAP editor** — each of the four sections tracks its own unsaved
+  changes.
+- **Debounced, coalesced autosave** — quick edits are combined into one save,
+  only one save per note runs at a time, and pending edits are saved when the
+  editor closes.
+- **Immutable version history** — every save creates a new version; earlier
+  versions are never modified (enforced by the database).
+- **Word-level version comparison** — compare any two versions section by
+  section.
+- **Three-way conflict resolution** — local draft, latest server version and
+  their common ancestor are compared; non-overlapping changes merge
+  automatically.
+- **Optimistic workflow transitions with rollback** — actions show
+  immediately and are rolled back, with the reason, if the server rejects them.
+- **Offline reads and a persistent write queue** — recently opened notes stay
+  readable offline; saves are queued in IndexedDB and replayed in order after
+  reconnecting, even across reloads.
+- **Real-time updates** — live status changes, new versions and presence for
+  the visible notes.
+- **Role- and ownership-based authorization** — checked in the UI and again on
+  the server.
+- **Resilient, privacy-safe telemetry** — batched and retried, with patient
+  information and clinical text removed before sending.
+- **Keyboard and screen-reader accessibility** throughout.
+
+## Technology stack
+
+**Frontend:** React, TypeScript, Vite, React Router, TanStack Virtual,
+IndexedDB (`idb`), MSW for the mock backend, Vitest and React Testing Library.
+
+**Backend:** Python 3.13, FastAPI, SQLAlchemy 2, Alembic, psycopg 3,
+pydantic-settings; managed with uv, linted with ruff, tested with pytest.
+
+**Data and infrastructure:** PostgreSQL 16 with pgvector, Docker Compose.
+
+## Repository structure
+
+```text
+.
+├── frontend/                React application
+│   └── src/
+│       ├── auth/            Demo identities and the current-actor context
+│       ├── domain/          Models, state machine, guards and pure logic
+│       ├── features/notes/  List, detail, autosave, offline and real-time
+│       ├── mock-data/       Deterministic synthetic data
+│       ├── mock-server/     MSW handlers and the authoritative mock store
+│       ├── shared/          Shared display formatters
+│       ├── telemetry/       Batching, redaction, retry and persistence
+│       └── test/            Test setup
+├── backend/                 FastAPI service
+│   ├── src/clinical_notes_api/
+│   │   ├── config.py        Settings from environment variables
+│   │   ├── main.py          App factory and routes
+│   │   ├── db/              SQLAlchemy models and sessions
+│   │   └── seed/            Synthetic data generator and loader
+│   ├── migrations/          Alembic migrations
+│   ├── db/init/             SQL run when the database is first created
+│   └── tests/               pytest suite
+├── docker-compose.yml       Local Postgres + pgvector
+└── .env.example             Every configuration variable, documented
+```
+
+Tests sit in a `tests/` folder beside the code they cover.
+
+## Getting started
 
 ### Prerequisites
 
-- A current LTS version of Node.js
-- npm
+- Node.js (current LTS) and npm — for the frontend
+- [uv](https://docs.astral.sh/uv/) — for the backend; it installs Python 3.13
+- Docker — for the database
 
-### Installation
+### Frontend only (no setup beyond npm)
+
+The frontend runs on its own: its mock backend starts in the browser.
 
 ```bash
 cd frontend
 npm install
-```
-
-### Start the application
-
-```bash
 npm run dev
 ```
 
-The application is normally available at:
+Open <http://localhost:5173>. Switch between demo users (clinician, reviewers,
+admin, auditor) from the bar at the top to see how permissions change.
 
-```text
-http://localhost:5173
-```
+### Backend and database
 
-The mock backend starts automatically through MSW. No external backend or environment variables are required.
-
-### Run the test suite
+From the repository root:
 
 ```bash
+cp .env.example .env
+docker compose up -d postgres
+```
+
+The database listens on host port **5433**, so it does not clash with a
+locally installed Postgres on 5432.
+
+Then, from `backend/`:
+
+```bash
+uv sync
+uv run alembic upgrade head      # create the tables
+uv run clinical-notes-seed       # load 5,000 synthetic notes
+uv run clinical-notes-api        # start the API
+```
+
+The API runs at <http://127.0.0.1:8000>, with interactive docs at `/docs` and
+a health check at `GET /api/health`.
+
+### Checks
+
+Frontend, from `frontend/`:
+
+```bash
+npm run lint
 npm test -- --run
-```
-
-### Create a production build
-
-```bash
 npm run build
 ```
 
-## Domain Model
+Backend, from `backend/`:
 
-The application is based on three main domain concepts.
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
+```
 
-### Note
+## Configuration
 
-A `Note` is the workflow container. It stores the current status, assigned reviewer, patient and session references, and the ID of the current version.
+The backend and Docker Compose read the same `.env` file at the repository
+root. `.env.example` lists every variable; `.env` is git-ignored.
 
-### NoteVersion
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `clinical`, `clinical`, `clinical_notes` | Database created by Compose |
+| `POSTGRES_PORT` | `5433` | Host port for the database |
+| `ENVIRONMENT` | `development` | `development`, `test` or `production` |
+| `DATABASE_URL` | the Compose database | SQLAlchemy URL the API connects to |
+| `CORS_ORIGINS` | `["http://localhost:5173"]` | Browser origins allowed to call the API |
 
-A `NoteVersion` is an immutable snapshot of the SOAP content. Every successful save creates a new version instead of modifying an existing one. The `parentVersionId` connects versions and supports history, comparisons, conflict detection, and amendment branches.
+Environment variables take precedence over `.env`. The frontend needs no
+configuration yet.
 
-### ReviewEvent
+## Architecture
 
-A `ReviewEvent` is an append-only record of a workflow transition. The review timeline is derived from these events.
-
-The `Note` stores the current workflow state, `NoteVersion` stores clinical content history, and `ReviewEvent` stores workflow history.
-
-## Architecture Overview
-
-The project is divided into the following layers:
+The frontend is layered so that business rules never depend on React:
 
 ```text
 React components
         ↓
 Feature hooks and coordinators
         ↓
-Domain models, guards, and pure logic
+Domain models, guards and pure logic
         ↓
-API, offline, real-time, and telemetry adapters
+API, offline, real-time and telemetry adapters
         ↓
-MSW handlers and the authoritative mock store
+Backend: MSW mock server today, FastAPI next
 ```
 
-The domain layer contains the state machine, authorization rules, version graph logic, diffing, and conflict resolution. It does not depend on React.
+- The **domain** layer holds the state machine, authorization rules, version
+  graph, diffing and conflict resolution.
+- The **feature** layer holds the notes list, detail workspace, autosave,
+  offline replay and real-time subscriptions.
+- The **backend** is authoritative: it validates every mutation again, because
+  the client is treated as untrusted.
 
-The feature layer contains the notes list, detail workspace, autosave, offline replay, real-time subscriptions, and related hooks.
+State is kept close to the layer that owns it:
 
-The mock-server layer validates mutations again and acts as the authoritative backend.
+- **URL:** filters, search, dates, reviewer, patient and sort.
+- **Server:** note summaries and details, status, versions and review events.
+- **Local UI:** the SOAP draft, dirty sections, rejection reason, selected
+  version and conflict choices.
+- **Persistent client:** offline cache, queued saves, replay state, real-time
+  cursor and parked telemetry.
+- **Derived:** edit permission, available actions, dirty status and disabled
+  reasons.
 
-## State Topology
+## Domain model
 
-State is kept close to the layer that owns it.
+| Concept | Purpose | Table |
+| --- | --- | --- |
+| **Note** | The workflow container: status, assigned reviewer, patient and session, and the current version | `notes` |
+| **NoteVersion** | An immutable snapshot of the SOAP content; `parentVersionId` links versions for history, comparison, conflicts and amendments | `note_versions` |
+| **ReviewEvent** | An append-only record of one workflow transition; the review timeline is built from these | `review_events` |
+| **User** | A clinician, reviewer, administrator or auditor | `users` |
+| **Patient** | A synthetic patient | `patients` |
+| **Session** | The clinician–patient encounter a note documents | `sessions` |
 
-- **URL state:** filters, search, date range, reviewer, patient, and sorting.
-- **Server state:** note summaries, note details, workflow status, versions, and review events.
-- **Local UI state:** SOAP draft, dirty sections, rejection reason, selected version, and conflict choices.
-- **Persistent client state:** offline cache, queued saves, replay state, real-time cursor, and parked telemetry batches.
-- **Derived state:** edit permission, available workflow actions, dirty status, and disabled reasons.
+The note holds the current workflow state, versions hold the content history,
+and review events hold the workflow history.
 
-
-## Note Lifecycle and State Machine
-
-The note lifecycle is modelled as a first-class state machine.
+## Note lifecycle and state machine
 
 ```text
-GENERATING
-  ├── READY_FOR_REVIEW
-  └── FAILED
-
-FAILED
-  └── GENERATING
-
-READY_FOR_REVIEW
-  └── IN_REVIEW
-
-IN_REVIEW
-  ├── READY_FOR_REVIEW
-  ├── APPROVED
-  └── REJECTED
-
-REJECTED
-  └── READY_FOR_REVIEW
-
-APPROVED
-  ├── AMENDED
-  └── LOCKED
-
-AMENDED
-  └── IN_REVIEW
+GENERATING        → READY_FOR_REVIEW, FAILED
+FAILED            → GENERATING
+READY_FOR_REVIEW  → IN_REVIEW
+IN_REVIEW         → READY_FOR_REVIEW, APPROVED, REJECTED
+REJECTED          → READY_FOR_REVIEW
+APPROVED          → AMENDED, LOCKED
+AMENDED           → IN_REVIEW
 ```
 
-Each transition defines its source state, trigger, next state, role requirements, ownership requirements, and additional guards such as MFA or rejection reason.
+Each transition defines its trigger, required role, ownership rules and extra
+guards such as MFA or a rejection reason. The UI derives the available actions
+from this state machine, and the server runs the same checks before accepting a
+transition. Source: `frontend/src/domain/noteTransitions.ts` and
+`noteGuards.ts`.
 
-The UI derives available actions from the state machine. The mock server runs the same validation again before accepting a transition.
+## Frontend design
 
-The main source files are:
+### Optimistic updates
 
 ```text
-src/domain/noteTransitions.ts
-src/domain/noteGuards.ts
+Snapshot the current state → apply the expected transition → send the request
+    success: reconcile with the server's response
+    failure: restore the snapshot and show the reason
 ```
 
-## Optimistic Updates
+Duplicate actions are blocked while a request is pending.
 
-Workflow transitions are applied optimistically to keep the interface responsive.
-
-```text
-Snapshot current state
-        ↓
-Apply the expected transition
-        ↓
-Send the request
-        ↓
-Success: reconcile with the server
-Failure: restore the snapshot and show the reason
-```
-
-Duplicate actions are blocked while a request is pending. The server remains authoritative, and rejected transitions are rolled back cleanly.
-
-## Autosave
-
-The editor uses debounced and coalesced autosave.
+### Autosave
 
 The autosave coordinator guarantees that:
 
-- Rapid edits are combined into one save.
-- Only one save request is active at a time.
-- Edits made during an active request create one trailing save.
-- The trailing save contains the latest complete draft.
-- Retries reuse the same `clientMutationId`.
-- Every save includes `baseVersionId`.
-- A save is not shown as complete when newer edits still exist.
-- Timers and requests are cleaned up when the note changes or the component unmounts.
+- rapid edits are combined into one save, and only one save is active at a time;
+- edits made during a save produce one trailing save with the latest draft;
+- retries reuse the same `clientMutationId`, and every save sends its
+  `baseVersionId`;
+- a save is not shown as complete while newer edits exist;
+- closing the editor saves pending edits instead of dropping them, and closing
+  the tab with unsaved work shows a warning.
 
-## Concurrency and Conflict Resolution
+### Concurrency and conflict resolution
 
-Every save includes the version that the user edited from through `baseVersionId`.
+Every save says which version it was based on (`baseVersionId`). If the
+server's latest version has moved on, the save is rejected as a conflict
+instead of overwriting it. The resolver then compares the common ancestor, the
+local draft and the server version: sections changed on only one side merge
+automatically; for sections both sides changed, the user keeps theirs, takes
+the server's, or merges by hand.
 
-If the server head has changed, the save is rejected with a version conflict instead of overwriting the newer version.
+### Offline operation
 
-The conflict resolver compares:
-
-- The common ancestor.
-- The local unsaved draft.
-- The current server version.
-
-Sections changed by only one side are resolved automatically. When both sides change the same section differently, the user can keep the local version, use the server version, or merge the content manually.
-
-## Offline Operation and Resumability
-
-Recently opened note details are cached and remain available while offline.
-
-Saves made while offline are stored in an IndexedDB mutation queue. The queue survives a full page reload.
-
-When the connection returns, mutations are replayed one at a time in FIFO order.
+Recently opened notes are cached and readable offline. Offline saves go into an
+IndexedDB queue that survives reloads and is replayed in order after
+reconnecting:
 
 ```text
-Reconnect
-   ↓
-Read queued mutations
-   ↓
-Replay in sequence order
-   ↓
-Success: remove from queue
-Failure: retry with backoff
-Conflict: pause and open the conflict resolver
+Reconnect → read the queue → replay in order
+    success: remove from the queue
+    failure: retry with backoff
+    conflict: pause and open the conflict resolver
 ```
 
-The application displays clear states such as Offline, Changes queued, Reconnecting, Conflict requires attention, and All changes saved.
+The UI shows clear states: Offline, Changes queued, Reconnecting, Conflict
+requires attention, All changes saved.
 
-## Real-Time Updates
+### Real-time updates
 
-The mock real-time channel emits:
+Status changes, new versions and presence are pushed for the visible list rows
+and the open note only; subscriptions end when rows scroll away or components
+unmount. Duplicate, dropped and out-of-order events are handled with event-id
+deduplication, cursor replay, idempotent reconciliation and reconnect backoff
+with jitter. Events are reconciled with local optimistic state, not applied
+blindly.
 
-- Status changes.
-- New versions.
-- Presence changes.
+### Telemetry and privacy
 
-The application subscribes only to visible list rows and the currently open detail note. Subscriptions are removed when rows leave the viewport or components unmount.
-
-The client handles duplicate, dropped, and out-of-order events through event ID deduplication, cursor replay, idempotent reconciliation, and exponential reconnect backoff with jitter.
-
-Real-time events are reconciled with local optimistic state instead of being applied blindly.
-
-## Telemetry and Privacy
-
-Components use a central telemetry abstraction:
+Components call one function:
 
 ```ts
-track(name, properties, {
-  important?: boolean,
-});
+track(name, properties, { important?: boolean });
 ```
 
-Telemetry events are flushed when:
+Events are batched and flushed on size, on a timer, on route changes, when the
+tab is hidden and on unload (via `sendBeacon` or a keepalive request). Failed
+batches retry with backoff and are parked in IndexedDB after repeated failures.
+A redaction pass runs before every send: SOAP content, patient information and
+clinical free text never leave the browser.
 
-- The batch reaches a size threshold.
-- A time threshold expires.
-- The route changes.
-- The tab becomes hidden.
-- The page unloads.
+## Backend design
 
-Failed batches retry with backoff. After repeated failures, they are stored in IndexedDB and retried later.
+### Database
 
-Unload delivery uses `sendBeacon` or a keepalive fetch.
+Postgres tables mirror the frontend's domain types and keep the same string ids
+(for example `note-002614`), so URLs and payloads do not change when the
+frontend moves from the mock server to the API. Statuses and roles are checked
+by constraints, revision numbers are unique per note, and only revision 1 may
+have no parent. A trigger rejects any `UPDATE` or `DELETE` on `note_versions`
+and `review_events`: history cannot be rewritten.
 
-A PII redaction pass runs before every send. SOAP content, patient information, and clinical free text are not allowed in telemetry.
+### Migrations
 
-## Authorization Model
+Models live in `backend/src/clinical_notes_api/db/models.py` and migrations in
+`backend/migrations/versions/`. After changing a model:
 
-The supported roles are:
+```bash
+uv run alembic revision --autogenerate -m "describe the change"
+uv run alembic upgrade head
+```
 
-- `CLINICIAN`
-- `REVIEWER`
-- `ADMIN`
-- `READONLY_AUDITOR`
+Review every generated migration before committing it.
 
-Permissions depend on the user role, note status, and reviewer ownership.
+### Seed data
 
-Examples include:
+`clinical-notes-seed` loads the same 5,000 synthetic notes as the frontend's
+mock server, so a note id means the same note in both. Use `--reset` to replace
+existing data and `--count` to change the number of notes; it refuses to run
+when `ENVIRONMENT=production`. The generator is a Python port of
+`frontend/src/mock-data`; a test compares it with a sample exported from the
+TypeScript code (`backend/tests/fixtures/export_mock_sample.ts`).
 
-- Only the assigned reviewer can edit an `IN_REVIEW` note.
-- Clinicians can correct rejected or amended notes.
-- Auditors are read-only.
-- Locked notes cannot be edited.
-- Reviewer assignment and regeneration are restricted.
+## Authorization model
 
-Client-side checks control the user experience, but the mock server validates every mutation independently because the client is treated as potentially hostile.
+Roles: `CLINICIAN`, `REVIEWER`, `ADMIN`, `READONLY_AUDITOR`. Permissions depend
+on the role, the note's status and reviewer ownership. For example:
 
-## Performance and Scale
+- only the assigned reviewer can edit an `IN_REVIEW` note;
+- clinicians correct rejected and amended notes;
+- auditors are read-only, and locked notes cannot be edited;
+- reviewer assignment and regeneration are restricted.
 
-The notes list is designed for datasets containing 100,000 or more notes.
+Client-side checks shape the experience; the server validates every mutation
+independently.
 
-Cursor pagination loads one result page at a time. Filtering, sorting, and search are performed by the mock server.
+## Performance and scale
 
-TanStack Virtual renders only the rows currently visible in the scroll area, plus a small overscan buffer. A large dataset therefore does not create a large number of DOM elements.
-
-Additional protections include:
-
-- Debounced server-side search.
-- Cancellation of stale requests.
-- Stable secondary sorting.
-- Scoped real-time subscriptions.
-- Cleanup of timers and listeners.
-- Diff calculation only when comparison is requested.
+The notes list is built for large datasets. Pagination uses cursors and loads
+one page at a time; filtering, sorting and search happen on the server.
+TanStack Virtual renders only the visible rows plus a small buffer. Other
+safeguards: debounced search, cancellation of stale requests, stable secondary
+sorting, scoped real-time subscriptions, timer and listener cleanup, and
+diffing only when a comparison is requested. The database indexes notes by
+status, reviewer, patient and `(sort column, id)` for keyset pagination.
 
 ## Accessibility
 
-The application was designed toward WCAG 2.2 AA, although no formal third-party accessibility audit was performed.
+Designed toward WCAG 2.2 AA (no formal third-party audit has been done):
+keyboard-accessible actions and filters, arrow-key navigation for patient
+suggestions, visible focus, labelled editor fields and checkboxes, live regions
+for saves, connectivity, presence and errors, disabled-action reasons linked to
+their buttons, focus management in the conflict resolver and version
+comparison, semantic added and removed text in diffs, reduced-motion support,
+and clear read-only explanations.
 
-Accessibility support includes:
+## Testing
 
-- Keyboard-accessible actions and filters.
-- Arrow-key navigation for patient suggestions.
-- Visible focus indicators.
-- Accessible labels for editor fields and checkboxes.
-- Live regions for saves, connectivity, presence, and errors.
-- Disabled action reasons associated with their buttons.
-- Focus management for conflict resolution and version comparison.
-- Semantic added and removed text in version diffs.
-- Reduced-motion support.
-- Clear read-only explanations.
+**Frontend** (Vitest and React Testing Library) — unit tests for state-machine
+guards, authorization, transition eligibility, version-graph traversal,
+word-level diffing, three-way merge, telemetry redaction and URL parsing;
+integration tests for autosave and trailing saves, save idempotency, optimistic
+rollback, offline queue persistence and replay, replay conflicts, real-time
+deduplication and reconnection, server-side authorization, telemetry batching
+and accessibility behavior.
 
-## Testing Strategy
+**Backend** (pytest) — settings and the health endpoint; parity between the
+Python seed generator and the TypeScript one; and, against a throwaway
+`clinical_notes_test` database, that migrations match the models and
+round-trip, constraints and immutability triggers hold, and seeded rows match
+the generator. Database tests are skipped when Postgres is not running.
 
-### Unit Tests
+The main risks tested are lost edits, duplicate writes, stale responses,
+invalid transitions, unauthorized mutations, replay ordering, duplicate
+real-time events and clinical data leaking into telemetry. There is no
+browser-driven end-to-end suite yet.
 
-Unit tests cover:
+## Assumptions and limitations
 
-- State-machine guards.
-- Authorization rules.
-- Transition eligibility.
-- Version graph traversal.
-- Word-level diffing.
-- Three-way conflict resolution.
-- Telemetry redaction.
-- URL parameter parsing.
+- **Mock backend and authentication.** The frontend still runs against MSW,
+  with identities passed as demo actor headers; trusted server-side sessions
+  arrive with the API. MSW does not share data between devices.
+- **MFA** is represented by a flag, not a real authentication flow.
+- **Three-way merge instead of a CRDT** — it fits the immutable version model
+  without the complexity of real-time co-editing.
+- **IndexedDB** is assumed available; a production build would also need
+  client-side schema migrations and cross-tab coordination.
+- **Diffing runs on the main thread**, which is enough for notes of this size;
+  very large documents could move it to a Web Worker.
+- **Only recently opened notes** are cached offline, not the whole dataset.
+- **All data is synthetic.**
 
-### Integration Tests
+## License
 
-Integration tests cover:
-
-- Autosave debounce and trailing saves.
-- Save idempotency.
-- Optimistic transition rollback.
-- Offline queue persistence and replay.
-- Replay conflict handling.
-- Real-time deduplication and reconnection.
-- Server-side authorization.
-- Telemetry batching and lifecycle flushing.
-- Accessibility behavior.
-
-The repository does not include a full Playwright or Cypress suite. Critical user journeys are covered through React Testing Library and MSW-backed integration tests.
-
-The main risks tested were lost edits, duplicate writes, stale responses, invalid transitions, unauthorized mutations, replay ordering, duplicate real-time events, and clinical data leaking into telemetry.
-
-## Assumptions
-
-- Authentication is simulated through mock actor headers.
-- One current demo actor is used at a time.
-- The backend is simulated in the browser through MSW.
-- IndexedDB is available in the browser.
-- Recently opened notes are cached rather than the full dataset.
-- The real-time channel is a mock implementation.
-- MFA is represented by a boolean rather than a real authentication flow.
-- All generated patient and note data is synthetic.
-
-## Trade-offs and Known Limitations
-
-### MSW Backend
-
-MSW keeps the project easy to run locally and allows realistic server validation. It does not represent a shared production backend across independent devices.
-
-### Mock Authentication
-
-Actor headers make role and ownership scenarios testable, but production authentication would require trusted server-side session validation.
-
-### Three-Way Merge Instead of a CRDT
-
-Three-way merge directly supports the immutable version model without adding the complexity of real-time collaborative editing.
-
-### IndexedDB Persistence
-
-IndexedDB provides durable offline behavior. A production implementation would also require schema migrations and cross-tab coordination.
-
-### No Browser-Driven End-to-End Suite
-
-The project prioritizes deterministic domain and integration tests. A production extension would add Playwright coverage for the main review, offline recovery, and conflict-resolution flows.
-
-### Main-Thread Version Diffing
-
-Word-level comparison is sufficient for the current note size. Very large documents could move diff calculation to a Web Worker.
-
-## Repository Structure
-
-```text
-src/
-├── auth/             Mock actor and identity
-├── domain/           Models, state machine, guards, and pure logic
-├── features/notes/   List, detail, autosave, offline, and real-time features
-├── mock-data/        Deterministic generated data
-├── mock-server/      MSW handlers and authoritative mock store
-├── telemetry/        Batching, redaction, retry, and persistence
-└── test/             Shared test configuration and helpers
-```
+[MIT](LICENSE)

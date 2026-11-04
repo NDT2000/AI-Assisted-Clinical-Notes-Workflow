@@ -2,7 +2,6 @@
 name = "clinical-notes-api"
 version = "0.1.0"
 description = "Backend API for the Clinical Notes Workflow"
-readme = "README.md"
 authors = [
     { name = "NDT2000", email = "nayan200000@gmail.com" }
 ]
