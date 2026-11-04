@@ -29,7 +29,7 @@ def test_defaults_point_at_the_local_compose_database(
     settings = Settings(_env_file=None)
 
     assert settings.environment == "development"
-    assert settings.database_url.endswith("@localhost:5432/clinical_notes")
+    assert settings.database_url.endswith("@localhost:5433/clinical_notes")
     assert settings.cors_origins == ["http://localhost:5173"]
 
 

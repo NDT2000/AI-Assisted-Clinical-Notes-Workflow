@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
 
     database_url: str = Field(
-        default="postgresql+psycopg://clinical:clinical@localhost:5432/clinical_notes",
+        default="postgresql+psycopg://clinical:clinical@localhost:5433/clinical_notes",
         description="SQLAlchemy URL for the Postgres database.",
     )
 
