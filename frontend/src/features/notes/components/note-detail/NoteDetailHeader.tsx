@@ -1,23 +1,14 @@
 import type { Note, } from "../../../../domain/noteAttributes";
 import type { PatientInformation, UserSummary, } from "../../../../domain/noteDetail";
+import {
+  formatNoteStatus,
+} from "../../../../shared/formatters";
 
 interface NoteDetailHeaderProps {
   note: Note;
   patient: PatientInformation;
   assignedReviewer: UserSummary | null;
   revisionNumber: number;
-}
-
-function formatStatus(status: string): string {
-  return status
-    .toLowerCase()
-    .split("_")
-    .map(
-      (word) =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1),
-    )
-    .join(" ");
 }
 
 export function NoteDetailHeader({
@@ -48,7 +39,7 @@ export function NoteDetailHeader({
 
       <div className="note-detail-status-area">
         <span className="note-status-badge">
-          {formatStatus(note.status)}
+          {formatNoteStatus(note.status)}
         </span>
 
         <span>

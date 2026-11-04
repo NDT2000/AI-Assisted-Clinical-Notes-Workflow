@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../domain/actor";
 import {
   useCallback,
   useEffect,
@@ -9,9 +12,6 @@ import {
 import type {
   SoapContent,
 } from "../../../domain/noteAttributes";
-import type {
-  SaveNoteVersionActor,
-} from "../../../domain/noteSave";
 import {
   AutosaveCoordinator,
   type AutosaveSnapshot,
@@ -39,7 +39,7 @@ import {
 
 interface UseNoteAutosaveOptions {
   noteId: string;
-  actor: SaveNoteVersionActor;
+  actor: Actor;
   initialBaseVersionId: string;
   initialContent: SoapContent;
   debounceMs?: number;
@@ -162,7 +162,7 @@ export function useNoteAutosave({
     );
 
   const actorRef =
-    useRef<SaveNoteVersionActor>(
+    useRef<Actor>(
       actor,
     );
 

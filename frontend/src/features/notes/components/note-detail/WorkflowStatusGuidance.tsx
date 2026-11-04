@@ -1,12 +1,12 @@
 import type {
+  Actor,
+} from "../../../../domain/actor";
+import type {
   NoteStatus,
 } from "../../../../domain/noteAttributes";
 import type {
   NoteDetail,
 } from "../../../../domain/noteDetail";
-import type {
-  TransitionNoteActor,
-} from "../../../../domain/noteTransition";
 import type {
   AvailableNoteAction,
 } from "./noteActionBarModel";
@@ -14,7 +14,7 @@ import "./css/WorkflowStatusGuidance.css";
 
 interface WorkflowStatusGuidanceProps {
   status: NoteStatus;
-  actor: TransitionNoteActor;
+  actor: Actor;
   assignedReviewer:
     NoteDetail["assignedReviewer"];
   assignedReviewerId:

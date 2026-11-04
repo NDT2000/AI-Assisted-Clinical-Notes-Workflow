@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../domain/actor";
 import {
   http,
   HttpResponse,
@@ -10,9 +13,6 @@ import {
   canManageReviewerAssignments,
   canRequestRegeneration,
 } from "../domain/noteGuards";
-import type {
-  TransitionNoteActor,
-} from "../domain/noteTransition";
 import {
   reassignNotes,
   regenerateNotes,
@@ -116,7 +116,7 @@ function isRegenerateBody(
 
 function getActor(
   request: Request,
-): TransitionNoteActor | null {
+): Actor | null {
   const id =
     request.headers
       .get("x-actor-id")

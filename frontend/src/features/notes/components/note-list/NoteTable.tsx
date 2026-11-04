@@ -20,6 +20,10 @@ import {
   useVisibleNotesRealtime,
 } from "../../realtime/useVisibleNotesRealtime";
 import "./NoteTable.css";
+import {
+  formatDateTime,
+  formatNoteStatus,
+} from "../../../../shared/formatters";
 
 interface NotesTableProps {
   notes: NoteSummary[];
@@ -58,28 +62,6 @@ const COLUMNS = [
   "Updated time",
   "Action",
 ];
-
-function formatStatus(
-  status: NoteStatus,
-): string {
-  return status
-    .toLowerCase()
-    .split("_")
-    .map(
-      (part) =>
-        part.charAt(0).toUpperCase() +
-        part.slice(1),
-    )
-    .join(" ");
-}
-
-function formatDateTime(
-  value: string,
-): string {
-  return new Date(
-    value,
-  ).toLocaleString();
-}
 
 function getStatusClassName(
   status: NoteStatus,
@@ -324,7 +306,6 @@ export function NotesTable({
                       ?.displayName ??
                     "Unassigned";
 
-
                   const createdAtLabel =
                     formatDateTime(
                       note.createdAt,
@@ -410,7 +391,7 @@ export function NotesTable({
                           title={note.status}
                         >
                           {
-                            formatStatus(
+                            formatNoteStatus(
                               note.status,
                             )
                           }
@@ -427,7 +408,6 @@ export function NotesTable({
                       >
                         {reviewerName}
                       </div>
-
 
                       <div
                         className="notes-table-cell notes-table-revision"

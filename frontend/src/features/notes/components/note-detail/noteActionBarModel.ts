@@ -1,5 +1,10 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import type { Trigger } from "../../../../domain/noteAttributes";
-import type { Actor, Guard, } from "../../../../domain/noteGuards";
+import type {
+  Guard,
+} from "../../../../domain/noteGuards";
 import { canTransition } from "../../../../domain/noteGuards";
 import type { UserNoteActionTrigger } from "../../../../domain/noteTransition";
 import { noteTransitions } from "../../../../domain/noteTransitions";

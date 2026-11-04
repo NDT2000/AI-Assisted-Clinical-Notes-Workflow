@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../domain/actor";
 import {
   afterAll,
   afterEach,
@@ -15,9 +18,6 @@ import {
 import type {
   NoteSummary,
 } from "../../domain/noteSummary";
-import type {
-  TransitionNoteActor,
-} from "../../domain/noteTransition";
 
 vi.mock(
   "../mockNetwork",
@@ -84,8 +84,8 @@ function requireSummary(
 
 function createActor(
   role:
-    TransitionNoteActor["role"],
-): TransitionNoteActor {
+    Actor["role"],
+): Actor {
   return {
     id:
       `${role.toLowerCase()}-handler`,
@@ -97,7 +97,7 @@ function createActor(
 
 function getActorHeaders(
   actor:
-    TransitionNoteActor,
+    Actor,
 ): HeadersInit {
   return {
     "content-type":

@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../domain/actor";
 import {
   afterAll,
   afterEach,
@@ -22,9 +25,6 @@ import type {
   SaveNoteVersionRequestBody,
   SaveNoteVersionResponse,
 } from "../../domain/noteSave";
-import type {
-  TransitionNoteActor,
-} from "../../domain/noteTransition";
 
 vi.mock(
   "../mockNetwork",
@@ -80,7 +80,7 @@ interface ErrorResponse {
 
 function getActorHeaders(
   actor:
-    TransitionNoteActor,
+    Actor,
 ): HeadersInit {
   return {
     "content-type":
@@ -127,7 +127,7 @@ function requireDetail(
 
 function createReviewer(
   id = "reviewer-handler-1",
-): TransitionNoteActor {
+): Actor {
   return {
     id,
     displayName:
@@ -139,7 +139,7 @@ function createReviewer(
 
 function prepareInReviewNote(
   reviewer:
-    TransitionNoteActor =
+    Actor =
       createReviewer(),
 ): NoteDetail {
   const ready =
@@ -215,7 +215,7 @@ function postSave(
   body:
     SaveNoteVersionRequestBody,
   actor:
-    TransitionNoteActor,
+    Actor,
 ): Promise<Response> {
   return fetch(
     `http://localhost/api/notes/${noteId}/versions`,

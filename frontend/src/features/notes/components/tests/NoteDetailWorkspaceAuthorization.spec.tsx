@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   cleanup,
   fireEvent,
@@ -17,9 +20,6 @@ import type {
   NoteDetail,
   NoteVersionDetail,
 } from "../../../../domain/noteDetail";
-import type {
-  TransitionNoteActor,
-} from "../../../../domain/noteTransition";
 import type {
   AutosaveSnapshot,
 } from "../../autosave/AutosaveCoordinator";
@@ -96,9 +96,9 @@ import { NoteDetailWorkspace, } from "../note-detail/NoteDetailWorkspace";
 
 function createActor(
   role:
-    TransitionNoteActor["role"],
+    Actor["role"],
   id: string,
-): TransitionNoteActor {
+): Actor {
   return {
     id,
     displayName:

@@ -1,9 +1,9 @@
 import type {
-  UserRole,
-} from "../../../../domain/noteAttributes";
-import type {
   NoteVersionDetail,
 } from "../../../../domain/noteDetail";
+import {
+  formatRole,
+} from "../../../../shared/formatters";
 import "../note-detail/css/VersionHistorySidebar.css"
 
 export type VersionComparisonStatus =
@@ -53,21 +53,6 @@ function formatVersionDate(
       timeStyle: "short",
     },
   ).format(date);
-}
-
-function formatRole(
-  role: UserRole,
-): string {
-  switch (role) {
-    case "CLINICIAN":
-      return "Clinician";
-    case "REVIEWER":
-      return "Reviewer";
-    case "ADMIN":
-      return "Administrator";
-    case "READONLY_AUDITOR":
-      return "Read-only auditor";
-  }
 }
 
 function getVersionOptionLabel(

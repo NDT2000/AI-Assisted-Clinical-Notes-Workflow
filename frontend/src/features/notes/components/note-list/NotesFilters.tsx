@@ -25,6 +25,9 @@ import type {
   SortDirection,
 } from "../../utils/noteListSearchParams";
 import "./NotesFilters.css";
+import {
+  formatNoteStatus,
+} from "../../../../shared/formatters";
 
 interface NotesFiltersProps {
   filters: NoteListFilters;
@@ -78,20 +81,6 @@ const SORT_FIELDS: {
 ];
 
 const DEBOUNCE_MS = 400;
-
-function formatStatus(
-  status: NoteStatus,
-): string {
-  return status
-    .toLowerCase()
-    .split("_")
-    .map(
-      (part) =>
-        part.charAt(0).toUpperCase() +
-        part.slice(1),
-    )
-    .join(" ");
-}
 
 export function NotesFilters({
   filters,
@@ -166,7 +155,7 @@ export function NotesFilters({
                   key={status}
                   value={status}
                 >
-                  {formatStatus(status)}
+                  {formatNoteStatus(status)}
                 </option>
               ),
             )}

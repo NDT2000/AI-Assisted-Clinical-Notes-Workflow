@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   useMemo,
   useState,
@@ -9,9 +12,6 @@ import type {
 import type {
   UserSummary,
 } from "../../../../domain/noteDetail";
-import type {
-  TransitionNoteActor,
-} from "../../../../domain/noteTransition";
 import {
   REVIEWERS,
 } from "../../../../domain/reviewers";
@@ -33,7 +33,7 @@ export interface ReviewerAssignmentValue {
 interface ReviewerAssignmentPanelProps {
   noteId: string;
   status: NoteStatus;
-  actor: TransitionNoteActor;
+  actor: Actor;
   assignedReviewer: UserSummary | null;
   onAssigned: (
     reviewer:

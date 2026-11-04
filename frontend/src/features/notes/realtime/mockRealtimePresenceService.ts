@@ -1,11 +1,11 @@
 import type {
+  Actor,
+} from "../../../domain/actor";
+import type {
   PresenceActivity,
   PresenceUser,
   UserSummary,
 } from "../../../domain/noteDetail";
-import type {
-  TransitionNoteActor,
-} from "../../../domain/noteTransition";
 import type {
   RealtimeConnectionManager,
 } from "./RealtimeConnectionManager";
@@ -234,7 +234,7 @@ function isPresenceBroadcastMessage(
 }
 
 function toUserSummary(
-  actor: TransitionNoteActor,
+  actor: Actor,
 ): UserSummary {
   return {
     id: actor.id,
@@ -458,7 +458,7 @@ export class MockRealtimePresenceService {
 
   openNote(
     noteId: string,
-    actor: TransitionNoteActor,
+    actor: Actor,
   ): PresenceSessionHandle {
     this.start();
 

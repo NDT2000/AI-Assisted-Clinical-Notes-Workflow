@@ -1,12 +1,11 @@
 import type { PatientInformation, SessionInformation, } from "../../../../domain/noteDetail";
+import {
+  formatDateTime,
+} from "../../../../shared/formatters";
 
 interface PatientSessionCardProps {
   patient: PatientInformation;
   session: SessionInformation;
-}
-
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString();
 }
 
 export function PatientSessionCard({

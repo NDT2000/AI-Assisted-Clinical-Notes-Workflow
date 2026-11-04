@@ -1,37 +1,12 @@
 import type { ReviewTimelineEvent, } from "../../../../domain/noteDetail";
+import {
+  formatDateTime,
+  formatNoteStatus,
+  formatRole,
+} from "../../../../shared/formatters";
 
 interface ReviewTimelineProps {
   events: ReviewTimelineEvent[];
-}
-
-function formatStatus(status: string): string {
-  return status
-    .toLowerCase()
-    .split("_")
-    .map(
-      (word) =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1),
-    )
-    .join(" ");
-}
-
-function formatRole(
-  role: ReviewTimelineEvent["actorRole"],
-): string {
-  return role
-    .toLowerCase()
-    .split("_")
-    .map(
-      (word) =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1),
-    )
-    .join(" ");
-}
-
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString();
 }
 
 export function ReviewTimeline({
@@ -88,7 +63,7 @@ export function ReviewTimeline({
               <div className="review-timeline-content">
                 <div className="review-timeline-transition">
                   <strong>
-                    {formatStatus(
+                    {formatNoteStatus(
                       event.fromStatus,
                     )}
                   </strong>
@@ -98,7 +73,7 @@ export function ReviewTimeline({
                   </span>
 
                   <strong>
-                    {formatStatus(
+                    {formatNoteStatus(
                       event.toStatus,
                     )}
                   </strong>

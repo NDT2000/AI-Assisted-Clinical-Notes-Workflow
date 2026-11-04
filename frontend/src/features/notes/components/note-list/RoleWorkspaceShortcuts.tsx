@@ -1,9 +1,9 @@
 import type {
+  Actor,
+} from "../../../../domain/actor";
+import type {
   NoteStatus,
 } from "../../../../domain/noteAttributes";
-import type {
-  TransitionNoteActor,
-} from "../../../../domain/noteTransition";
 import "./RoleWorkspaceShortcuts.css";
 
 interface WorkspaceView {
@@ -15,7 +15,7 @@ interface WorkspaceView {
 }
 
 interface RoleWorkspaceShortcutsProps {
-  actor: TransitionNoteActor;
+  actor: Actor;
   activeStatuses: NoteStatus[];
   activeReviewerId: string;
   onApplyView: (
@@ -25,7 +25,7 @@ interface RoleWorkspaceShortcutsProps {
 }
 
 function getWorkspaceTitle(
-  actor: TransitionNoteActor,
+  actor: Actor,
 ): string {
   switch (actor.role) {
     case "CLINICIAN":
@@ -40,7 +40,7 @@ function getWorkspaceTitle(
 }
 
 function getWorkspaceDescription(
-  actor: TransitionNoteActor,
+  actor: Actor,
 ): string {
   switch (actor.role) {
     case "CLINICIAN":
@@ -55,7 +55,7 @@ function getWorkspaceDescription(
 }
 
 function getWorkspaceViews(
-  actor: TransitionNoteActor,
+  actor: Actor,
 ): WorkspaceView[] {
   switch (actor.role) {
     case "CLINICIAN":

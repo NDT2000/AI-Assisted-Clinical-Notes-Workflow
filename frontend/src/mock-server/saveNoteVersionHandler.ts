@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../domain/actor";
 import {
   http,
   HttpResponse,
@@ -8,7 +11,6 @@ import type {
   UserRole,
 } from "../domain/noteAttributes";
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionRequestBody,
 } from "../domain/noteSave";
 import {
@@ -94,7 +96,7 @@ function isSaveNoteVersionRequestBody(
 
 function getSaveActor(
   request: Request,
-): SaveNoteVersionActor | null {
+): Actor | null {
   const id = request.headers
     .get("x-actor-id")
     ?.trim();

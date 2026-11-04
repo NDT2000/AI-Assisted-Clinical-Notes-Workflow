@@ -1,12 +1,12 @@
+import type {
+  Actor,
+} from "../../../domain/actor";
 import {
   useCallback,
   useEffect,
   useRef,
 } from "react";
 
-import type {
-  TransitionNoteActor,
-} from "../../../domain/noteTransition";
 import {
   mockRealtimePresenceService,
   type MockRealtimePresenceService,
@@ -15,7 +15,7 @@ import {
 
 interface UseCrossTabPresenceSessionOptions {
   noteId: string;
-  actor: TransitionNoteActor;
+  actor: Actor;
   service?:
     MockRealtimePresenceService;
 }

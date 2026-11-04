@@ -1,22 +1,22 @@
 import type {
+  Actor,
+} from "../domain/actor";
+import type {
   UserRole,
 } from "../domain/noteAttributes";
-import type {
-  TransitionNoteActor,
-} from "../domain/noteTransition";
 import {
   REVIEWERS,
 } from "../domain/reviewers";
 
 const CLINICIAN_ACTOR:
-  TransitionNoteActor = {
+  Actor = {
     id: "clinician-1",
     displayName: "Dr. Maya Brooks",
     role: "CLINICIAN",
   };
 
 const REVIEWER_ACTORS:
-  TransitionNoteActor[] =
+  Actor[] =
     REVIEWERS.map((reviewer) => ({
       id: reviewer.id,
       displayName:
@@ -26,7 +26,7 @@ const REVIEWER_ACTORS:
     }));
 
 const DEFAULT_REVIEWER_ACTOR:
-  TransitionNoteActor =
+  Actor =
     REVIEWER_ACTORS.find(
       (actor) =>
         actor.id === "reviewer-1",
@@ -38,7 +38,7 @@ const DEFAULT_REVIEWER_ACTOR:
     };
 
 const ADMIN_ACTOR:
-  TransitionNoteActor = {
+  Actor = {
     id: "admin-1",
     displayName:
       "Jordan Lee",
@@ -47,7 +47,7 @@ const ADMIN_ACTOR:
   };
 
 const AUDITOR_ACTOR:
-  TransitionNoteActor = {
+  Actor = {
     id: "auditor-1",
     displayName:
       "Taylor Morgan",
@@ -56,7 +56,7 @@ const AUDITOR_ACTOR:
   };
 
 export const DEMO_ACTORS:
-  readonly TransitionNoteActor[] = [
+  readonly Actor[] = [
     CLINICIAN_ACTOR,
     ...REVIEWER_ACTORS,
     ADMIN_ACTOR,
@@ -66,7 +66,7 @@ export const DEMO_ACTORS:
 export const MOCK_ACTORS:
   Record<
     UserRole,
-    TransitionNoteActor
+    Actor
   > = {
   CLINICIAN: CLINICIAN_ACTOR,
   REVIEWER:
@@ -81,7 +81,7 @@ export const CURRENT_ACTOR =
 
 export function getDemoActorById(
   actorId: string,
-): TransitionNoteActor | null {
+): Actor | null {
   return (
     DEMO_ACTORS.find(
       (actor) =>

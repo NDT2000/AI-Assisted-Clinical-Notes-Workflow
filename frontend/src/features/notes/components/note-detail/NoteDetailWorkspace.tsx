@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   useCallback,
   useEffect,
@@ -19,7 +22,6 @@ import type {
   UserSummary,
 } from "../../../../domain/noteDetail";
 import type {
-  TransitionNoteActor,
   TransitionNoteCommand,
   TransitionNoteResponse,
   UserNoteActionTrigger,
@@ -86,7 +88,7 @@ import {
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
-  actor: TransitionNoteActor;
+  actor: Actor;
   onUnresolvedSaveChange?: (
     unresolvedSave: UnresolvedSave | null,
   ) => void;

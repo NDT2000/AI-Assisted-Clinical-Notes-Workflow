@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../domain/actor";
 import {
   createContext,
   useContext,
@@ -6,9 +9,6 @@ import {
   type ReactNode,
 } from "react";
 
-import type {
-  TransitionNoteActor,
-} from "../domain/noteTransition";
 import {
   CURRENT_ACTOR,
   getDemoActorById,
@@ -18,7 +18,7 @@ const SESSION_STORAGE_KEY =
   "clinical-notes-demo-actor-id";
 
 interface CurrentActorContextValue {
-  actor: TransitionNoteActor;
+  actor: Actor;
   setActorById: (
     actorId: string,
   ) => void;
@@ -36,7 +36,7 @@ const FALLBACK_CONTEXT:
   };
 
 function getInitialActor():
-  TransitionNoteActor {
+  Actor {
   if (
     typeof sessionStorage ===
     "undefined"
@@ -66,7 +66,7 @@ export function CurrentActorProvider({
   children: ReactNode;
 }) {
   const [actor, setActor] =
-    useState<TransitionNoteActor>(
+    useState<Actor>(
       getInitialActor,
     );
 

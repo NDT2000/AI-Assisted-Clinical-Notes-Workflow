@@ -1,8 +1,10 @@
 import type {
+  Actor,
+} from "../../../domain/actor";
+import type {
   NoteVersionDetail,
 } from "../../../domain/noteDetail";
 import type {
-  TransitionNoteActor,
   TransitionNoteErrorCode,
   TransitionNoteRequestBody,
   TransitionNoteResponse,
@@ -160,7 +162,7 @@ function createRequestError(
 
 export async function transitionNote(
   noteId: string,
-  actor: TransitionNoteActor,
+  actor: Actor,
   body: TransitionNoteRequestBody,
   signal?: AbortSignal,
 ): Promise<TransitionNoteResponse> {

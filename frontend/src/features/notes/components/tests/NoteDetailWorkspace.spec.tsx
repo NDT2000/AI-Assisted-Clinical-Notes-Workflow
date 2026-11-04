@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   act,
   cleanup,
@@ -21,7 +24,6 @@ import type {
   NoteVersionDetail,
 } from "../../../../domain/noteDetail";
 import type {
-  TransitionNoteActor,
   TransitionNoteCommand,
   TransitionNoteResponse,
 } from "../../../../domain/noteTransition";
@@ -155,7 +157,7 @@ import {
   NoteDetailWorkspace,
 } from "../note-detail/NoteDetailWorkspace";
 
-const actor: TransitionNoteActor = {
+const actor: Actor = {
   id: "reviewer-1",
   displayName: "Test Reviewer",
   role: "REVIEWER",

@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../domain/actor";
 import {
   act,
   renderHook,
@@ -66,7 +69,6 @@ vi.mock(
 import type { SoapContent } from "../../../domain/noteAttributes";
 import type { NoteVersionDetail } from "../../../domain/noteDetail";
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionResponse,
 } from "../../../domain/noteSave";
 import type {
@@ -74,7 +76,7 @@ import type {
 } from "../offline/offlineRepository";
 import { useNoteAutosave } from "./useNoteAutosave";
 
-const actor: SaveNoteVersionActor = {
+const actor: Actor = {
   id: "reviewer-1",
   displayName: "Reviewer One",
   role: "REVIEWER",

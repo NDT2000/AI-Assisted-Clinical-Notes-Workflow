@@ -1,8 +1,10 @@
 import type {
+  Actor,
+} from "../../../domain/actor";
+import type {
   NoteVersionDetail,
 } from "../../../domain/noteDetail";
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionErrorCode,
   SaveNoteVersionRequestBody,
   SaveNoteVersionResponse,
@@ -174,7 +176,7 @@ function createRequestError(
 
 export async function saveNoteVersion(
   noteId: string,
-  actor: SaveNoteVersionActor,
+  actor: Actor,
   body: SaveNoteVersionRequestBody,
   signal?: AbortSignal,
 ): Promise<SaveNoteVersionResponse> {

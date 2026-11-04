@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   describe,
   expect,
@@ -8,9 +11,6 @@ import type {
   Note,
   NoteVersion,
 } from "../../../../domain/noteAttributes";
-import type {
-  Actor,
-} from "../../../../domain/noteGuards";
 import {
   deriveAvailableNoteActions,
 } from "../note-detail/noteActionBarModel";
@@ -72,6 +72,7 @@ function createActor(
 ): Actor {
   return {
     id: "reviewer-1",
+    displayName: "Reviewer One",
     role: "REVIEWER",
     mfaVerified: false,
     ...overrides,

@@ -1,3 +1,6 @@
+import type {
+  Actor,
+} from "../../../../domain/actor";
 import {
   beforeEach,
   describe,
@@ -7,7 +10,6 @@ import {
 } from "vitest";
 
 import type {
-  SaveNoteVersionActor,
   SaveNoteVersionRequestBody,
   SaveNoteVersionResponse,
 } from "../../../../domain/noteSave";
@@ -66,7 +68,7 @@ const saveNoteVersionMock =
 const queueLatestSaveForNoteMock =
   vi.mocked(queueLatestSaveForNote);
 
-const actor: SaveNoteVersionActor = {
+const actor: Actor = {
   id: "reviewer-1",
   displayName: "Alex Reviewer",
   role: "REVIEWER",

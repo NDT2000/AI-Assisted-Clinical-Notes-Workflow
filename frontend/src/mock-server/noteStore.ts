@@ -1,11 +1,20 @@
+import type {
+  Actor,
+} from "../domain/actor";
 import { generateNoteSummaries } from "../mock-data/generateNoteSummary";
 import type { NoteSummary } from "../domain/noteSummary";
 import type { SoapContent, UserRole } from "../domain/noteAttributes";
 import { canAssignReviewer, canEditNoteContent, canRequestRegeneration, canTransition } from "../domain/noteGuards";
 import type { NoteDetail, NoteVersionDetail, ReviewTimelineEvent } from "../domain/noteDetail";
 import { generateNoteDetail } from "../mock-data/generateNoteDetail";
-import type { SaveNoteVersionActor, SaveNoteVersionRequestBody, SaveNoteVersionResponse, } from "../domain/noteSave";
-import type { TransitionNoteActor, TransitionNoteRequestBody, TransitionNoteResponse, } from "../domain/noteTransition";
+import type {
+  SaveNoteVersionRequestBody,
+  SaveNoteVersionResponse,
+} from "../domain/noteSave";
+import type {
+  TransitionNoteRequestBody,
+  TransitionNoteResponse,
+} from "../domain/noteTransition";
 import { findCommonAncestor } from "../domain/versionGraph";
 
 const DEFAULT_SEED_COUNT = 5_000;
@@ -181,7 +190,7 @@ function hasSameSoapContent(
 function isSameLogicalSave(
   record: SaveMutationRecord,
   request: SaveNoteVersionRequestBody,
-  actor: SaveNoteVersionActor,
+  actor: Actor,
 ): boolean {
   return (
     record.actorId === actor.id &&
@@ -200,7 +209,7 @@ function isSameLogicalSave(
 export function saveNoteVersion(
   noteId: string,
   request: SaveNoteVersionRequestBody,
-  actor: SaveNoteVersionActor,
+  actor: Actor,
   savedAt: string = new Date().toISOString(),
 ): SaveNoteVersionStoreResult {
   const mutationKey = createSaveMutationKey(
@@ -364,7 +373,7 @@ function getTransitionMutationKey(
 
 function getTransitionRequestSignature(
   request: TransitionNoteRequestBody,
-  actor: TransitionNoteActor,
+  actor: Actor,
 ): string {
   return JSON.stringify({
     baseVersionId:
@@ -381,7 +390,7 @@ function getTransitionRequestSignature(
 export function transitionNote(
   noteId: string,
   request: TransitionNoteRequestBody,
-  actor: TransitionNoteActor,
+  actor: Actor,
   transitionedAt: string = new Date().toISOString(),
 ): TransitionNoteStoreResult {
   const mutationKey =

@@ -1,7 +1,14 @@
+import type {
+  Actor,
+} from "../domain/actor";
 import { http, HttpResponse, } from "msw";
 
 import type { UserRole } from "../domain/noteAttributes";
-import { USER_NOTE_ACTION_TRIGGERS, type TransitionNoteActor, type TransitionNoteRequestBody, type UserNoteActionTrigger, } from "../domain/noteTransition";
+import {
+  USER_NOTE_ACTION_TRIGGERS,
+  type TransitionNoteRequestBody,
+  type UserNoteActionTrigger,
+} from "../domain/noteTransition";
 import { devFailureControls } from "./devFailureControls";
 import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
 import { transitionNote } from "./noteStore";
@@ -61,7 +68,7 @@ function isTransitionNoteRequestBody(
 
 function getTransitionActor(
   request: Request,
-): TransitionNoteActor | null {
+): Actor | null {
   const id = request.headers
     .get("x-actor-id")
     ?.trim();
