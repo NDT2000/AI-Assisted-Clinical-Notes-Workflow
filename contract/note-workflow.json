@@ -1,0 +1,157 @@
+{
+  "$comment": "The note workflow, shared by the frontend and the backend. Both implement these rules from this file and are tested against note-workflow.cases.json. After changing a rule, regenerate the cases (see export-workflow-cases.ts).",
+  "version": 1,
+  "statuses": [
+    "GENERATING",
+    "FAILED",
+    "READY_FOR_REVIEW",
+    "IN_REVIEW",
+    "REJECTED",
+    "APPROVED",
+    "AMENDED",
+    "LOCKED"
+  ],
+  "roles": ["CLINICIAN", "REVIEWER", "ADMIN", "READONLY_AUDITOR"],
+  "triggers": [
+    "GENERATION_COMPLETE",
+    "GENERATION_ERROR",
+    "REGENERATE",
+    "RETURN_TO_QUEUE",
+    "APPROVE",
+    "REJECT",
+    "RESUBMIT",
+    "AMEND",
+    "GRACE_EXPIRED",
+    "START_REVIEW"
+  ],
+  "lockedStatus": "LOCKED",
+  "messages": {
+    "locked": "Locked notes cannot be transitioned.",
+    "notAllowed": "{trigger} is not allowed while the note is {status}."
+  },
+  "transitions": {
+    "GENERATING": {
+      "GENERATION_COMPLETE": "READY_FOR_REVIEW",
+      "GENERATION_ERROR": "FAILED"
+    },
+    "FAILED": {
+      "REGENERATE": "GENERATING"
+    },
+    "READY_FOR_REVIEW": {
+      "START_REVIEW": "IN_REVIEW"
+    },
+    "IN_REVIEW": {
+      "RETURN_TO_QUEUE": "READY_FOR_REVIEW",
+      "APPROVE": "APPROVED",
+      "REJECT": "REJECTED"
+    },
+    "REJECTED": {
+      "RESUBMIT": "READY_FOR_REVIEW"
+    },
+    "APPROVED": {
+      "AMEND": "AMENDED",
+      "GRACE_EXPIRED": "LOCKED"
+    },
+    "AMENDED": {
+      "START_REVIEW": "IN_REVIEW",
+      "GRACE_EXPIRED": "LOCKED"
+    },
+    "LOCKED": {}
+  },
+  "$guardsComment": "Checks run in this order: roles, then reviewer ownership, then the remaining conditions in the order listed. A trigger without a guard (system events) has no extra checks. reviewer: 'assigned' = the actor must be the assigned reviewer; 'unassignedOrAssigned' = no reviewer yet, or the actor.",
+  "guards": {
+    "REGENERATE": {
+      "roles": ["CLINICIAN", "ADMIN"],
+      "messages": {
+        "role": "Only a Clinician or an Administrator can regenerate a note."
+      }
+    },
+    "START_REVIEW": {
+      "roles": ["REVIEWER"],
+      "reviewer": "unassignedOrAssigned",
+      "messages": {
+        "role": "Only a Reviewer can start a review.",
+        "reviewer": "This note is assigned to another reviewer."
+      }
+    },
+    "RETURN_TO_QUEUE": {
+      "roles": ["REVIEWER"],
+      "reviewer": "assigned",
+      "messages": {
+        "role": "Only a Reviewer can return a note to the queue.",
+        "reviewer": "Only the assigned reviewer can return this note."
+      }
+    },
+    "APPROVE": {
+      "roles": ["REVIEWER"],
+      "reviewer": "assigned",
+      "requireMfa": true,
+      "messages": {
+        "role": "Only a Reviewer can approve a note.",
+        "reviewer": "Only the assigned reviewer can approve this note.",
+        "mfa": "MFA re-authentication is required to approve this note."
+      }
+    },
+    "REJECT": {
+      "roles": ["REVIEWER"],
+      "reviewer": "assigned",
+      "requireRejectionReason": true,
+      "messages": {
+        "role": "Only a Reviewer can reject a note.",
+        "reviewer": "Only the assigned reviewer can reject this note.",
+        "rejectionReason": "A rejection reason is required."
+      }
+    },
+    "RESUBMIT": {
+      "roles": ["CLINICIAN"],
+      "requireCompleteContent": true,
+      "messages": {
+        "role": "Only a Clinician can resubmit a note.",
+        "content": "All SOAP content must be completed before resubmission."
+      }
+    },
+    "AMEND": {
+      "roles": ["CLINICIAN", "ADMIN"],
+      "withinHoursOfApproval": 24,
+      "messages": {
+        "role": "Only a Clinician or an Administrator can amend an approved note.",
+        "approvalMissing": "The note does not have an approval timestamp.",
+        "approvalWindow": "The 24-hour amendment window has expired."
+      }
+    }
+  },
+  "$contentEditingComment": "Who may edit SOAP content, checked in this order: denied roles, the locked status, then the actor's role rule. A role with no rule is denied with the default message.",
+  "contentEditing": {
+    "deniedRoles": {
+      "READONLY_AUDITOR": "Read-only auditors cannot edit note content."
+    },
+    "lockedMessage": "Locked notes are read-only.",
+    "byRole": {
+      "REVIEWER": {
+        "statuses": ["IN_REVIEW"],
+        "statusMessage": "Reviewers can edit only notes that are in review.",
+        "assignedReviewerOnly": true,
+        "assignedReviewerMessage": "Only the assigned reviewer can edit this note."
+      },
+      "CLINICIAN": {
+        "statuses": ["REJECTED", "AMENDED"],
+        "statusMessage": "Clinicians can edit rejected or amended notes."
+      },
+      "ADMIN": {
+        "statuses": ["IN_REVIEW", "REJECTED", "AMENDED"],
+        "statusMessage": "Administrators can edit only active review, rejected, or amended notes."
+      }
+    },
+    "defaultMessage": "You are not authorized to edit this note."
+  },
+  "reviewerAssignment": {
+    "roles": ["CLINICIAN", "ADMIN"],
+    "roleMessage": "Only a Clinician or an Administrator can assign reviewers.",
+    "statuses": ["READY_FOR_REVIEW", "AMENDED"],
+    "statusMessage": "Reviewer assignment is available only for notes that are ready for review or amended."
+  },
+  "regeneration": {
+    "trigger": "REGENERATE",
+    "statusMessage": "Only failed notes can be regenerated."
+  }
+}

@@ -104,8 +104,9 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 ├── frontend/                React application
 │   └── src/
 │       ├── auth/            Demo identities and the current-actor context
-│       ├── domain/          Models, state machine, guards and pure logic
+│       ├── domain/          Models, workflow rules and pure logic
 │       ├── features/notes/  List, detail, autosave, offline and real-time
+│       ├── generated/       API types generated from contract/openapi.json
 │       ├── mock-data/       Deterministic synthetic data
 │       ├── mock-server/     MSW handlers and the authoritative mock store
 │       ├── shared/          Shared display formatters
@@ -115,11 +116,17 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │   ├── src/clinical_notes_api/
 │   │   ├── config.py        Settings from environment variables
 │   │   ├── main.py          App factory and routes
+│   │   ├── workflow.py      Workflow rules, read from the contract
+│   │   ├── openapi.py       Writes contract/openapi.json
 │   │   ├── db/              SQLAlchemy models and sessions
 │   │   └── seed/            Synthetic data generator and loader
 │   ├── migrations/          Alembic migrations
 │   ├── db/init/             SQL run when the database is first created
 │   └── tests/               pytest suite
+├── contract/                Shared by frontend and backend
+│   ├── note-workflow.json        The workflow rules and their messages
+│   ├── note-workflow.cases.json  Expected decisions both sides are tested on
+│   └── openapi.json              The API description
 ├── docker-compose.yml       Local Postgres + pgvector
 └── .env.example             Every configuration variable, documented
 ```
@@ -255,21 +262,53 @@ and review events hold the workflow history.
 
 ## Note lifecycle and state machine
 
-```text
-GENERATING        → READY_FOR_REVIEW, FAILED
-FAILED            → GENERATING
-READY_FOR_REVIEW  → IN_REVIEW
-IN_REVIEW         → READY_FOR_REVIEW, APPROVED, REJECTED
-REJECTED          → READY_FOR_REVIEW
-APPROVED          → AMENDED, LOCKED
-AMENDED           → IN_REVIEW
+| From | Action | To | Who may do it |
+| --- | --- | --- | --- |
+| `GENERATING` | Generation completes | `READY_FOR_REVIEW` | System |
+| `GENERATING` | Generation fails | `FAILED` | System |
+| `FAILED` | Regenerate | `GENERATING` | Clinician, admin |
+| `READY_FOR_REVIEW` | Start review | `IN_REVIEW` | A reviewer, if unassigned or assigned to them |
+| `IN_REVIEW` | Return to queue | `READY_FOR_REVIEW` | The assigned reviewer |
+| `IN_REVIEW` | Approve | `APPROVED` | The assigned reviewer, after MFA |
+| `IN_REVIEW` | Reject | `REJECTED` | The assigned reviewer, with a reason |
+| `REJECTED` | Resubmit | `READY_FOR_REVIEW` | Clinician, with all four SOAP sections filled |
+| `APPROVED` | Amend | `AMENDED` | Clinician, admin; within 24 h of approval |
+| `APPROVED`, `AMENDED` | Grace period expires | `LOCKED` | System |
+| `AMENDED` | Start review | `IN_REVIEW` | A reviewer, if unassigned or assigned to them |
+
+`LOCKED` is final.
+
+### One definition, shared by frontend and backend
+
+The rules above — and who may edit content or assign reviewers, with every
+message the user sees — are defined once, in `contract/note-workflow.json`.
+The frontend (`frontend/src/domain/noteGuards.ts`) and the backend
+(`backend/src/clinical_notes_api/workflow.py`) both implement them from that
+file.
+
+`contract/note-workflow.cases.json` records the expected decision for 7,680
+combinations of status, action, role, reviewer ownership, MFA, rejection
+reason, content and time since approval, plus the editing, assignment and
+regeneration rules. Both test suites check every case, so the UI and the server
+cannot drift apart. After an intended rule change, regenerate the cases from
+the repository root and review the diff:
+
+```bash
+npx --prefix frontend vite-node contract/export-workflow-cases.ts
 ```
 
-Each transition defines its trigger, required role, ownership rules and extra
-guards such as MFA or a rejection reason. The UI derives the available actions
-from this state machine, and the server runs the same checks before accepting a
-transition. Source: `frontend/src/domain/noteTransitions.ts` and
-`noteGuards.ts`.
+### Typed API
+
+The backend describes its API in `contract/openapi.json`, and the frontend's
+types in `frontend/src/generated/api-schema.ts` are generated from it. After
+changing a route or response model:
+
+```bash
+cd backend && uv run clinical-notes-openapi
+cd ../frontend && npm run api:types
+```
+
+Tests on both sides fail if either file is out of date.
 
 ## Frontend design
 

@@ -18,6 +18,7 @@ dependencies = [
 [project.scripts]
 clinical-notes-api = "clinical_notes_api:main"
 clinical-notes-seed = "clinical_notes_api.seed.__main__:main"
+clinical-notes-openapi = "clinical_notes_api.openapi:main"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
