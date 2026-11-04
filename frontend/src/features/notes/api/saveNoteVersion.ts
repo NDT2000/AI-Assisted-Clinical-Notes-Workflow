@@ -10,9 +10,6 @@ import type {
 import {
   track,
 } from "../../../telemetry/telemetry";
-import {
-  mockRealtimeChannel,
-} from "../realtime/mockRealtimeChannel";
 
 interface SaveNoteVersionRequestErrorOptions {
   status: number;
@@ -278,13 +275,6 @@ export async function saveNoteVersion(
         "The server returned an invalid save response.",
     });
   }
-
-  mockRealtimeChannel.publish({
-    type:
-      "note.version_added",
-    noteId,
-    response: responseBody,
-  });
 
   track(
     "note.version_save",

@@ -52,6 +52,9 @@ import {
 import {
   transitionNoteHandler,
 } from "../transitionNoteHandler";
+import {
+  mockRealtimeChannel,
+} from "../../features/notes/realtime/mockRealtimeChannel";
 
 const server =
   setupServer(
@@ -185,6 +188,60 @@ describe(
     afterAll(() => {
       server.close();
     });
+
+    it(
+      "broadcasts an applied transition to real-time subscribers, but not a rejected one",
+      async () => {
+        const note =
+          requireReadyForReviewNote();
+
+        mockRealtimeChannel.reset();
+
+        const events: string[] = [];
+
+        const connection =
+          mockRealtimeChannel.connect({
+            noteIds: [note.id],
+            afterCursor: 0,
+            onEvent: event => {
+              events.push(event.type);
+            },
+            onDisconnect: vi.fn(),
+          });
+
+        devFailureControls
+          .armRejectNextTransition();
+
+        const rejected =
+          await postTransition(
+            note.id,
+            createTransitionRequestBody(
+              note.id,
+              "mutation-broadcast-rejected",
+            ),
+          );
+
+        expect(rejected.status).toBe(422);
+        expect(events).toEqual([]);
+
+        const applied =
+          await postTransition(
+            note.id,
+            createTransitionRequestBody(
+              note.id,
+              "mutation-broadcast-applied",
+            ),
+          );
+
+        expect(applied.status).toBe(200);
+        expect(events).toEqual([
+          "note.status_changed",
+        ]);
+
+        connection.disconnect();
+        mockRealtimeChannel.reset();
+      },
+    );
 
     it(
       "rejects only the next valid transition",

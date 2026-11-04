@@ -14,7 +14,7 @@ import type {
 } from "../../../../domain/noteTransition";
 import {
   REVIEWERS,
-} from "../../../../mock-data/generateNoteSummary";
+} from "../../../../domain/reviewers";
 import {
   postAssignReviewer,
 } from "../../api/bulkActions";

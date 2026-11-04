@@ -5,6 +5,7 @@ import { USER_NOTE_ACTION_TRIGGERS, type TransitionNoteActor, type TransitionNot
 import { devFailureControls } from "./devFailureControls";
 import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
 import { transitionNote } from "./noteStore";
+import { mockRealtimeChannel } from "../features/notes/realtime/mockRealtimeChannel";
 
 const USER_ROLES: readonly UserRole[] = [
   "CLINICIAN",
@@ -265,6 +266,15 @@ export const transitionNoteHandler =
           );
 
         case "transitioned":
+          // The server, not the client, broadcasts the change to
+          // other sessions.
+          mockRealtimeChannel.publish({
+            type: "note.status_changed",
+            noteId,
+            trigger: requestBody.trigger,
+            response: result.response,
+          });
+
           return HttpResponse.json(
             result.response,
             {

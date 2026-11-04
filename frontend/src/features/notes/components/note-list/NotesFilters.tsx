@@ -13,7 +13,7 @@ import {
 } from "../../../../domain/noteAttributes";
 import {
   REVIEWERS,
-} from "../../../../mock-data/generateNoteSummary";
+} from "../../../../domain/reviewers";
 import {
   getPatientById,
   getPatients,

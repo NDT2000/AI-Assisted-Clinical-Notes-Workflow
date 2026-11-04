@@ -1,5 +1,5 @@
 import { NOTE_STATUS, type NoteStatus, } from "../../../domain/noteAttributes";
-import { REVIEWERS, } from "../../../mock-data/generateNoteSummary";
+import { REVIEWERS, } from "../../../domain/reviewers";
 
 export type NoteSortField =
   | "createdAt"

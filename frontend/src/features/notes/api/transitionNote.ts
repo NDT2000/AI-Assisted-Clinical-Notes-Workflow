@@ -10,9 +10,6 @@ import type {
 import {
   track,
 } from "../../../telemetry/telemetry";
-import {
-  mockRealtimeChannel,
-} from "../realtime/mockRealtimeChannel";
 
 interface TransitionNoteRequestErrorOptions {
   status: number;
@@ -275,14 +272,6 @@ export async function transitionNote(
         "The server returned an invalid transition response.",
     });
   }
-
-  mockRealtimeChannel.publish({
-    type:
-      "note.status_changed",
-    noteId,
-    trigger: body.trigger,
-    response: responseBody,
-  });
 
   track(
     "note.status_transition",

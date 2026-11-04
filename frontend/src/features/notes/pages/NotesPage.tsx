@@ -23,7 +23,7 @@ import type {
 } from "../../../domain/noteSummary";
 import {
   REVIEWERS,
-} from "../../../mock-data/generateNoteSummary";
+} from "../../../domain/reviewers";
 import {
   getNotes,
 } from "../api/getNotes";

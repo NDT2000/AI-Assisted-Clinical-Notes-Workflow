@@ -59,6 +59,9 @@ import {
 import {
   saveNoteVersionHandler,
 } from "../saveNoteVersionHandler";
+import {
+  mockRealtimeChannel,
+} from "../../features/notes/realtime/mockRealtimeChannel";
 
 const server =
   setupServer(
@@ -299,6 +302,66 @@ describe(
           body.savedVersion
             .authorId,
         ).toBe(reviewer.id);
+      },
+    );
+
+    it(
+      "broadcasts a saved version to real-time subscribers, but not a rejected save",
+      async () => {
+        const reviewer =
+          createReviewer();
+
+        const detail =
+          prepareInReviewNote(
+            reviewer,
+          );
+
+        mockRealtimeChannel.reset();
+
+        const events: string[] = [];
+
+        const connection =
+          mockRealtimeChannel.connect({
+            noteIds: [detail.note.id],
+            afterCursor: 0,
+            onEvent: event => {
+              events.push(event.type);
+            },
+            onDisconnect: vi.fn(),
+          });
+
+        const rejected =
+          await postSave(
+            detail.note.id,
+            createSaveBody(
+              detail,
+              "save-handler-broadcast-rejected",
+            ),
+            createReviewer(
+              "reviewer-not-assigned",
+            ),
+          );
+
+        expect(rejected.status).toBe(403);
+        expect(events).toEqual([]);
+
+        const saved =
+          await postSave(
+            detail.note.id,
+            createSaveBody(
+              detail,
+              "save-handler-broadcast",
+            ),
+            reviewer,
+          );
+
+        expect(saved.status).toBe(201);
+        expect(events).toEqual([
+          "note.version_added",
+        ]);
+
+        connection.disconnect();
+        mockRealtimeChannel.reset();
       },
     );
 

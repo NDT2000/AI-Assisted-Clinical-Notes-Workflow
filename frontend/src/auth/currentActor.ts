@@ -6,7 +6,7 @@ import type {
 } from "../domain/noteTransition";
 import {
   REVIEWERS,
-} from "../mock-data/generateNoteSummary";
+} from "../domain/reviewers";
 
 const CLINICIAN_ACTOR:
   TransitionNoteActor = {

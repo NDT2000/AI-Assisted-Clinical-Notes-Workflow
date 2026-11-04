@@ -21,6 +21,9 @@ import {
 import {
   saveNoteVersion,
 } from "./noteStore";
+import {
+  mockRealtimeChannel,
+} from "../features/notes/realtime/mockRealtimeChannel";
 
 const EDITING_ROLES:
   readonly UserRole[] = [
@@ -340,6 +343,14 @@ export const saveNoteVersionHandler =
           );
 
         case "saved":
+          // The server, not the client, broadcasts the new version
+          // to other sessions.
+          mockRealtimeChannel.publish({
+            type: "note.version_added",
+            noteId,
+            response: result.response,
+          });
+
           return HttpResponse.json(
             result.response,
             {
