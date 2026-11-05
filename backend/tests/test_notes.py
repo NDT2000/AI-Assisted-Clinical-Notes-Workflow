@@ -14,14 +14,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import Connection, Engine, Text, literal, select, update
+from sqlalchemy import Connection, Engine, Text, literal, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from clinical_notes_api.config import Settings
 from clinical_notes_api.db import ClientMutation, Note, NoteVersion, ReviewEvent, User
 from clinical_notes_api.db.session import create_session_factory
 from clinical_notes_api.main import create_app
-from clinical_notes_api.notes.queries import EMPTY_PREVIEW, content_preview_expression
+from clinical_notes_api.notes.queries import (
+    EMPTY_PREVIEW,
+    MAX_SEARCH_TERMS,
+    content_preview_expression,
+    full_text_query,
+    search_terms,
+)
 from clinical_notes_api.security import create_access_token
 from clinical_notes_api.seed.load import clear_all, seed_database
 from clinical_notes_api.seed.mock_data import (
@@ -268,21 +274,120 @@ def test_list_filters_match_the_mock_server(client: TestClient, as_user) -> None
     assert ids(createdFrom=day) == expected(lambda s: s["createdAt"][:10] >= day)
 
 
-def test_search_matches_patient_name_or_preview(client: TestClient, as_user) -> None:
+def search(client: TestClient, headers: dict, q: str) -> set[str]:
+    return {item["id"] for item in all_notes(client, headers, q=q)}
+
+
+def name_words(summary: dict) -> list[str]:
+    return summary["patient"]["displayName"].lower().split()
+
+
+def test_search_matches_names_by_word_prefix(client: TestClient, as_user) -> None:
     headers = as_user("clinician-1")
-    name = SUMMARIES[0]["patient"]["displayName"]
+    first, last = SUMMARIES[0]["patient"]["displayName"].split()
 
-    by_name = {item["id"] for item in all_notes(client, headers, q=name.upper())}
-    by_preview = {item["id"] for item in all_notes(client, headers, q="vitals stable")}
+    full_name = search(client, headers, f"{first.upper()} {last}")
+    prefix = search(client, headers, last[:-2])
 
-    assert by_name == {
-        s["id"] for s in SUMMARIES if s["patient"]["displayName"] == name
+    assert full_name == {
+        s["id"] for s in SUMMARIES if s["patient"]["displayName"] == f"{first} {last}"
     }
-    assert by_preview == {
-        s["id"] for s in SUMMARIES if "vitals stable" in s["contentPreview"].lower()
+    assert prefix == {
+        s["id"]
+        for s in SUMMARIES
+        if any(word.startswith(last[:-2].lower()) for word in name_words(s))
     }
-    # % and _ are searched for literally.
-    assert all_notes(client, headers, q="%") == []
+
+
+@pytest.mark.parametrize(
+    ("q", "fragment_word"),
+    [
+        ("adherence", "adherence"),
+        ("improving", "improvement"),  # stemmed: both become "improv"
+        ("LAB results", "lab"),
+    ],
+)
+def test_search_matches_note_text_with_stemming(
+    client: TestClient,
+    as_user,
+    q: str,
+    fragment_word: str,
+) -> None:
+    found = search(client, as_user("clinician-1"), q)
+
+    expected = {
+        s["id"] for s in SUMMARIES if fragment_word in s["contentPreview"].lower()
+    }
+    assert expected
+    assert found == expected
+
+
+def test_every_search_word_must_match(client: TestClient, as_user) -> None:
+    headers = as_user("clinician-1")
+    first = SUMMARIES[0]["patient"]["displayName"].split()[0]
+
+    found = search(client, headers, f"{first} adherence")
+
+    assert found == search(client, headers, first) & search(
+        client, headers, "adherence"
+    )
+
+
+@pytest.mark.parametrize("q", ["%", "  ", "'&|!:*()"])
+def test_search_without_words_lists_everything(
+    client: TestClient,
+    as_user,
+    q: str,
+) -> None:
+    assert len(search(client, as_user("clinician-1"), q)) == NOTE_COUNT
+
+
+def test_search_follows_the_current_version(client: TestClient, as_user) -> None:
+    headers = as_user("clinician-1")
+    old_word = max(
+        SUMMARIES_BY_ID[REJECTED_NOTE]["contentPreview"].strip(".,").split(),
+        key=len,
+    )
+    assert REJECTED_NOTE in search(client, headers, old_word)
+
+    save(
+        client,
+        headers,
+        REJECTED_NOTE,
+        baseVersionId=current_version_id(client, headers, REJECTED_NOTE),
+        clientMutationId="search-me",
+        content=content(plan="Refer to the zebrafish clinic."),
+    )
+
+    assert search(client, headers, "zebrafish") == {REJECTED_NOTE}
+    assert REJECTED_NOTE not in search(client, headers, old_word)
+
+
+def test_search_terms_are_words_only() -> None:
+    assert search_terms("Avery O'Brien, follow_up 2x!") == [
+        "avery",
+        "o",
+        "brien",
+        "follow",
+        "up",
+        "2x",
+    ]
+    assert len(search_terms(" ".join(["word"] * 50))) == MAX_SEARCH_TERMS
+
+
+def test_search_uses_the_gin_index(db: Session) -> None:
+    db.execute(text("SET LOCAL enable_seqscan = off"))
+    query = select(Note.id).where(
+        Note.search_vector.op("@@")(full_text_query("avery adherence"))
+    )
+    compiled = query.compile(
+        dialect=db.get_bind().dialect,
+        compile_kwargs={"literal_binds": True},
+    )
+
+    plan = db.execute(text(f"EXPLAIN {compiled}")).scalars().all()
+
+    assert any("ix_notes_search_vector" in line for line in plan)
 
 
 def test_list_rejects_unknown_values_and_caps_the_limit(

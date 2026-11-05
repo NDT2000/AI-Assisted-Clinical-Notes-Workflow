@@ -433,7 +433,7 @@ user. Interactive documentation is at `/docs`.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/notes` | One page of notes: filters (`status`, `reviewerId`, `patientId`, `createdFrom`, `createdTo`, `q`), sorting (`sortBy`, `sortOrder`), `limit` (up to 100) and `cursor` |
+| `GET /api/notes` | One page of notes: filters (`status`, `reviewerId`, `patientId`, `createdFrom`, `createdTo`), full-text search (`q`), sorting (`sortBy`, `sortOrder`), `limit` (up to 100) and `cursor` |
 | `GET /api/notes/{noteId}` | A note with its patient, session, reviewer, versions and review history |
 | `POST /api/notes/{noteId}/versions` | Save edited content as a new version |
 | `POST /api/notes/{noteId}/transitions` | Run a workflow action (start review, approve, reject, …) |
@@ -462,6 +462,22 @@ How changes stay safe:
 - **Pagination is keyset-based**: the cursor holds the last row's sort value
   and id, so pages never overlap or skip notes while data changes.
 - Malformed requests get `400 invalid_request` with the problem named.
+
+### Search
+
+The notes list's `q` uses Postgres full-text search. Each note has a
+`search_vector` holding the patient's name and the current version's SOAP
+text, indexed with GIN, so searching stays fast as the number of notes grows.
+
+- Every word typed must match the start of a word, in the name or the note
+  text: `aver` finds "Avery", and `avery adherence` finds Avery's notes that
+  mention adherence.
+- Note text is stemmed in English, so `improving` also finds "improvement";
+  names are matched as written.
+- Only letters and digits count; a search with no words lists every note.
+- A database trigger rebuilds the vector whenever a note gets a new current
+  version, so saves, the seed and any other write keep it current.
+- Results keep the chosen sort order; they are not ranked by relevance.
 
 ### Seed data
 
@@ -541,7 +557,8 @@ triggers hold, seeded rows match the generator, and login, token expiry,
 forged tokens and revoked users behave correctly. The note endpoints are
 checked the same way: list items and note details equal the mock server's for
 every seeded note; cursor pages cover every note exactly once for each sort;
-filters and search match the mock; saves, actions, conflicts, retries,
+filters match the mock; search matches name prefixes and stemmed note text,
+needs every word, follows newly saved versions and uses the GIN index; saves, actions, conflicts, retries,
 editing rules, bulk actions, patient lookup and the telemetry check behave as
 specified. Database tests are skipped when Postgres is not running.
 
@@ -555,8 +572,10 @@ browser-driven end-to-end suite yet.
 - **The frontend still uses the mock backend.** It runs against MSW, with
   identities passed as demo actor headers; switching it to the API and its
   access tokens is the next step. MSW does not share data between devices.
-- **Search is a simple text match** on the patient name and the note preview;
-  Postgres full-text search replaces it next.
+- **Search covers the whole note**, not only the preview the mock server
+  searched, so a word in the synthetic notes' shared wording (such as
+  "symptoms") matches every note. A renamed patient's notes are re-indexed
+  only when they next change.
 - **Presence is always empty** in the API until real-time updates arrive, and
   accepted telemetry is only logged, not stored.
 - **Demo accounts share one password** (`DEMO_USER_PASSWORD`), which suits a
