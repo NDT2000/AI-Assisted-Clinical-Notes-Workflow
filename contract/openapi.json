@@ -1,6 +1,69 @@
 {
   "components": {
     "schemas": {
+      "AssignReviewerRequest": {
+        "properties": {
+          "noteIds": {
+            "items": {
+              "maxLength": 64,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Noteids",
+            "type": "array"
+          },
+          "reviewerDisplayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ignored: the name comes from the user record. Accepted because the frontend sends it.",
+            "title": "Reviewerdisplayname"
+          },
+          "reviewerId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reviewer to assign, or null to unassign.",
+            "title": "Reviewerid"
+          }
+        },
+        "required": [
+          "noteIds",
+          "reviewerId"
+        ],
+        "title": "AssignReviewerRequest",
+        "type": "object"
+      },
+      "AssignReviewerResponse": {
+        "properties": {
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "updated"
+        ],
+        "title": "AssignReviewerResponse",
+        "type": "object"
+      },
       "ErrorResponse": {
         "properties": {
           "error": {
@@ -17,19 +80,6 @@
           "message"
         ],
         "title": "ErrorResponse",
-        "type": "object"
-      },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
         "type": "object"
       },
       "HealthResponse": {
@@ -76,6 +126,826 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "Note": {
+        "properties": {
+          "approvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Left out until the note is approved.",
+            "title": "Approvedat"
+          },
+          "assignedReviewerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignedreviewerid"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "currentVersionId": {
+            "title": "Currentversionid",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "patientId": {
+            "title": "Patientid",
+            "type": "string"
+          },
+          "sessionId": {
+            "title": "Sessionid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "GENERATING",
+              "FAILED",
+              "READY_FOR_REVIEW",
+              "IN_REVIEW",
+              "REJECTED",
+              "APPROVED",
+              "AMENDED",
+              "LOCKED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "patientId",
+          "sessionId",
+          "status",
+          "currentVersionId",
+          "assignedReviewerId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "Note",
+        "type": "object"
+      },
+      "NoteDetail": {
+        "properties": {
+          "assignedReviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "$ref": "#/components/schemas/NoteVersionDetail"
+          },
+          "note": {
+            "$ref": "#/components/schemas/Note"
+          },
+          "patient": {
+            "$ref": "#/components/schemas/PatientInformation"
+          },
+          "presence": {
+            "description": "Who else has the note open. Always empty until real-time presence exists.",
+            "items": {
+              "$ref": "#/components/schemas/PresenceUser"
+            },
+            "title": "Presence",
+            "type": "array"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionInformation"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewTimelineEvent"
+            },
+            "title": "Timeline",
+            "type": "array"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/NoteVersionDetail"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "note",
+          "patient",
+          "session",
+          "assignedReviewer",
+          "currentVersion",
+          "versions",
+          "timeline",
+          "presence"
+        ],
+        "title": "NoteDetail",
+        "type": "object"
+      },
+      "NoteListCursor": {
+        "properties": {
+          "hasMore": {
+            "title": "Hasmore",
+            "type": "boolean"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as `cursor` for the next page.",
+            "title": "Next"
+          }
+        },
+        "required": [
+          "next",
+          "hasMore"
+        ],
+        "title": "NoteListCursor",
+        "type": "object"
+      },
+      "NoteListMeta": {
+        "properties": {
+          "returned": {
+            "title": "Returned",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Notes matching the filters, on all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "returned"
+        ],
+        "title": "NoteListMeta",
+        "type": "object"
+      },
+      "NoteListResponse": {
+        "properties": {
+          "cursor": {
+            "$ref": "#/components/schemas/NoteListCursor"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NoteSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/NoteListMeta"
+          }
+        },
+        "required": [
+          "items",
+          "cursor",
+          "meta"
+        ],
+        "title": "NoteListResponse",
+        "type": "object"
+      },
+      "NoteSummary": {
+        "properties": {
+          "assignedReviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewerRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentPreview": {
+            "title": "Contentpreview",
+            "type": "string"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "currentVersion": {
+            "$ref": "#/components/schemas/VersionRef"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "patient": {
+            "$ref": "#/components/schemas/PatientRef"
+          },
+          "status": {
+            "enum": [
+              "GENERATING",
+              "FAILED",
+              "READY_FOR_REVIEW",
+              "IN_REVIEW",
+              "REJECTED",
+              "APPROVED",
+              "AMENDED",
+              "LOCKED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "patient",
+          "status",
+          "currentVersion",
+          "assignedReviewer",
+          "contentPreview",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "NoteSummary",
+        "type": "object"
+      },
+      "NoteVersionDetail": {
+        "properties": {
+          "authorDisplayName": {
+            "title": "Authordisplayname",
+            "type": "string"
+          },
+          "authorId": {
+            "title": "Authorid",
+            "type": "string"
+          },
+          "authorRole": {
+            "enum": [
+              "CLINICIAN",
+              "REVIEWER",
+              "ADMIN",
+              "READONLY_AUDITOR"
+            ],
+            "title": "Authorrole",
+            "type": "string"
+          },
+          "content": {
+            "$ref": "#/components/schemas/SoapContent"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "noteId": {
+            "title": "Noteid",
+            "type": "string"
+          },
+          "parentVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentversionid"
+          },
+          "revisionNumber": {
+            "title": "Revisionnumber",
+            "type": "integer"
+          },
+          "versionId": {
+            "title": "Versionid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "versionId",
+          "noteId",
+          "revisionNumber",
+          "parentVersionId",
+          "content",
+          "authorId",
+          "authorRole",
+          "authorDisplayName",
+          "createdAt"
+        ],
+        "title": "NoteVersionDetail",
+        "type": "object"
+      },
+      "PatientInformation": {
+        "properties": {
+          "dateOfBirth": {
+            "format": "date",
+            "title": "Dateofbirth",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "medicalRecordNumber": {
+            "title": "Medicalrecordnumber",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "dateOfBirth",
+          "medicalRecordNumber"
+        ],
+        "title": "PatientInformation",
+        "type": "object"
+      },
+      "PatientOption": {
+        "properties": {
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ],
+        "title": "PatientOption",
+        "type": "object"
+      },
+      "PatientRef": {
+        "properties": {
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ],
+        "title": "PatientRef",
+        "type": "object"
+      },
+      "PatientsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PatientOption"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PatientsResponse",
+        "type": "object"
+      },
+      "PresenceUser": {
+        "properties": {
+          "activity": {
+            "enum": [
+              "VIEWING",
+              "EDITING"
+            ],
+            "title": "Activity",
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "title": "Lastseenat",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserSummary"
+          }
+        },
+        "required": [
+          "user",
+          "activity",
+          "lastSeenAt"
+        ],
+        "title": "PresenceUser",
+        "type": "object"
+      },
+      "RegenerateRequest": {
+        "properties": {
+          "noteIds": {
+            "items": {
+              "maxLength": 64,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Noteids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "noteIds"
+        ],
+        "title": "RegenerateRequest",
+        "type": "object"
+      },
+      "RegenerateResponse": {
+        "properties": {
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "updated",
+          "skipped"
+        ],
+        "title": "RegenerateResponse",
+        "type": "object"
+      },
+      "ReviewTimelineEvent": {
+        "properties": {
+          "actorDisplayName": {
+            "title": "Actordisplayname",
+            "type": "string"
+          },
+          "actorId": {
+            "title": "Actorid",
+            "type": "string"
+          },
+          "actorRole": {
+            "enum": [
+              "CLINICIAN",
+              "REVIEWER",
+              "ADMIN",
+              "READONLY_AUDITOR"
+            ],
+            "title": "Actorrole",
+            "type": "string"
+          },
+          "eventId": {
+            "title": "Eventid",
+            "type": "string"
+          },
+          "fromStatus": {
+            "enum": [
+              "GENERATING",
+              "FAILED",
+              "READY_FOR_REVIEW",
+              "IN_REVIEW",
+              "REJECTED",
+              "APPROVED",
+              "AMENDED",
+              "LOCKED"
+            ],
+            "title": "Fromstatus",
+            "type": "string"
+          },
+          "noteId": {
+            "title": "Noteid",
+            "type": "string"
+          },
+          "occurredAt": {
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Left out when empty.",
+            "title": "Reason"
+          },
+          "toStatus": {
+            "enum": [
+              "GENERATING",
+              "FAILED",
+              "READY_FOR_REVIEW",
+              "IN_REVIEW",
+              "REJECTED",
+              "APPROVED",
+              "AMENDED",
+              "LOCKED"
+            ],
+            "title": "Tostatus",
+            "type": "string"
+          },
+          "versionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionid"
+          }
+        },
+        "required": [
+          "eventId",
+          "noteId",
+          "versionId",
+          "fromStatus",
+          "toStatus",
+          "actorId",
+          "actorRole",
+          "actorDisplayName",
+          "occurredAt"
+        ],
+        "title": "ReviewTimelineEvent",
+        "type": "object"
+      },
+      "ReviewerRef": {
+        "properties": {
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ],
+        "title": "ReviewerRef",
+        "type": "object"
+      },
+      "SaveNoteVersionRequest": {
+        "properties": {
+          "baseVersionId": {
+            "description": "The version the edit started from.",
+            "maxLength": 64,
+            "pattern": "\\S",
+            "title": "Baseversionid",
+            "type": "string"
+          },
+          "clientMutationId": {
+            "description": "Retrying with the same id returns the first answer.",
+            "maxLength": 128,
+            "pattern": "\\S",
+            "title": "Clientmutationid",
+            "type": "string"
+          },
+          "content": {
+            "$ref": "#/components/schemas/SoapContent"
+          }
+        },
+        "required": [
+          "baseVersionId",
+          "clientMutationId",
+          "content"
+        ],
+        "title": "SaveNoteVersionRequest",
+        "type": "object"
+      },
+      "SaveNoteVersionResponse": {
+        "properties": {
+          "clientMutationId": {
+            "title": "Clientmutationid",
+            "type": "string"
+          },
+          "note": {
+            "$ref": "#/components/schemas/Note"
+          },
+          "savedVersion": {
+            "$ref": "#/components/schemas/NoteVersionDetail"
+          }
+        },
+        "required": [
+          "clientMutationId",
+          "note",
+          "savedVersion"
+        ],
+        "title": "SaveNoteVersionResponse",
+        "type": "object"
+      },
+      "SaveVersionConflictResponse": {
+        "properties": {
+          "commonAncestor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoteVersionDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "$ref": "#/components/schemas/NoteVersionDetail"
+          },
+          "error": {
+            "const": "version_conflict",
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "currentVersion",
+          "commonAncestor"
+        ],
+        "title": "SaveVersionConflictResponse",
+        "type": "object"
+      },
+      "SessionInformation": {
+        "properties": {
+          "clinician": {
+            "$ref": "#/components/schemas/UserSummary"
+          },
+          "endedAt": {
+            "title": "Endedat",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "startedAt": {
+            "title": "Startedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "endedAt",
+          "clinician"
+        ],
+        "title": "SessionInformation",
+        "type": "object"
+      },
+      "SoapContent": {
+        "properties": {
+          "assessment": {
+            "title": "Assessment",
+            "type": "string"
+          },
+          "objective": {
+            "title": "Objective",
+            "type": "string"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "subjective": {
+            "title": "Subjective",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjective",
+          "objective",
+          "assessment",
+          "plan"
+        ],
+        "title": "SoapContent",
+        "type": "object"
+      },
+      "TelemetryAccepted": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "title": "TelemetryAccepted",
+        "type": "object"
+      },
+      "TelemetryBatch": {
+        "additionalProperties": true,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TelemetryEvent"
+            },
+            "maxItems": 500,
+            "title": "Events",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "sentAt": {
+            "title": "Sentat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "sentAt",
+          "reason",
+          "events"
+        ],
+        "title": "TelemetryBatch",
+        "type": "object"
+      },
+      "TelemetryEvent": {
+        "additionalProperties": true,
+        "properties": {
+          "eventId": {
+            "title": "Eventid",
+            "type": "string"
+          },
+          "important": {
+            "title": "Important",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "occurredAt": {
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "title": "Properties",
+            "type": "object"
+          }
+        },
+        "required": [
+          "eventId",
+          "name",
+          "occurredAt",
+          "important",
+          "properties"
+        ],
+        "title": "TelemetryEvent",
+        "type": "object"
+      },
       "TokenResponse": {
         "properties": {
           "access_token": {
@@ -103,6 +973,102 @@
           "user"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "TransitionConflictResponse": {
+        "properties": {
+          "currentVersion": {
+            "$ref": "#/components/schemas/NoteVersionDetail"
+          },
+          "error": {
+            "const": "version_conflict",
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "currentVersion"
+        ],
+        "title": "TransitionConflictResponse",
+        "type": "object"
+      },
+      "TransitionNoteRequest": {
+        "properties": {
+          "baseVersionId": {
+            "maxLength": 64,
+            "pattern": "\\S",
+            "title": "Baseversionid",
+            "type": "string"
+          },
+          "clientMutationId": {
+            "maxLength": 128,
+            "pattern": "\\S",
+            "title": "Clientmutationid",
+            "type": "string"
+          },
+          "rejectionReason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejectionreason"
+          },
+          "trigger": {
+            "enum": [
+              "REGENERATE",
+              "START_REVIEW",
+              "RETURN_TO_QUEUE",
+              "APPROVE",
+              "REJECT",
+              "RESUBMIT",
+              "AMEND"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "baseVersionId",
+          "clientMutationId",
+          "trigger"
+        ],
+        "title": "TransitionNoteRequest",
+        "type": "object"
+      },
+      "TransitionNoteResponse": {
+        "properties": {
+          "clientMutationId": {
+            "title": "Clientmutationid",
+            "type": "string"
+          },
+          "currentVersion": {
+            "$ref": "#/components/schemas/NoteVersionDetail"
+          },
+          "note": {
+            "$ref": "#/components/schemas/Note"
+          },
+          "timelineEvent": {
+            "$ref": "#/components/schemas/ReviewTimelineEvent"
+          }
+        },
+        "required": [
+          "clientMutationId",
+          "note",
+          "timelineEvent",
+          "currentVersion"
+        ],
+        "title": "TransitionNoteResponse",
         "type": "object"
       },
       "UserResponse": {
@@ -133,44 +1099,51 @@
         "title": "UserResponse",
         "type": "object"
       },
-      "ValidationError": {
+      "UserSummary": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
+          "displayName": {
+            "title": "Displayname",
             "type": "string"
           },
-          "type": {
-            "title": "Error Type",
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "CLINICIAN",
+              "REVIEWER",
+              "ADMIN",
+              "READONLY_AUDITOR"
+            ],
+            "title": "Role",
             "type": "string"
           }
         },
         "required": [
-          "loc",
-          "msg",
-          "type"
+          "id",
+          "displayName",
+          "role"
         ],
-        "title": "ValidationError",
+        "title": "UserSummary",
+        "type": "object"
+      },
+      "VersionRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision"
+        ],
+        "title": "VersionRef",
         "type": "object"
       }
     },
@@ -212,6 +1185,16 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request: the request is malformed."
+          },
           "401": {
             "content": {
               "application/json": {
@@ -221,16 +1204,6 @@
               }
             },
             "description": "Unauthorized"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "Login",
@@ -295,6 +1268,823 @@
         "summary": "Read Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/notes": {
+      "get": {
+        "description": "One page of notes, newest change first unless sorted otherwise.",
+        "operationId": "list_notes_api_notes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "GENERATING",
+                  "FAILED",
+                  "READY_FOR_REVIEW",
+                  "IN_REVIEW",
+                  "REJECTED",
+                  "APPROVED",
+                  "AMENDED",
+                  "LOCKED"
+                ],
+                "type": "string"
+              },
+              "title": "Status",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reviewerId",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Reviewerid",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patientId",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Patientid",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "createdFrom",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Createdfrom"
+            }
+          },
+          {
+            "in": "query",
+            "name": "createdTo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Createdto"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sortBy",
+            "required": false,
+            "schema": {
+              "default": "updatedAt",
+              "enum": [
+                "createdAt",
+                "updatedAt",
+                "patientName",
+                "status"
+              ],
+              "title": "Sortby",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sortOrder",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Sortorder",
+              "type": "string"
+            }
+          },
+          {
+            "description": "At most 100.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "At most 100.",
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request: the request is malformed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Notes",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/notes/bulk/assign-reviewer": {
+      "post": {
+        "description": "Assign a reviewer to several notes; notes in other statuses are left.",
+        "operationId": "assign_reviewer_api_notes_bulk_assign_reviewer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignReviewerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignReviewerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request: the request is malformed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Assign Reviewer",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/notes/bulk/regenerate": {
+      "post": {
+        "description": "Send failed notes back to generation.",
+        "operationId": "regenerate_notes_api_notes_bulk_regenerate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegenerateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request: the request is malformed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Regenerate Notes",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/notes/{note_id}": {
+      "get": {
+        "description": "A note with its patient, session, versions and review history.",
+        "operationId": "read_note_api_notes__note_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request: the request is malformed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Note",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/notes/{note_id}/transitions": {
+      "post": {
+        "description": "Run a workflow action (start review, approve, reject, ...).",
+        "operationId": "transition_note_api_notes__note_id__transitions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionNoteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/TransitionConflictResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ],
+                  "title": "Response 409 Transition Note Api Notes  Note Id  Transitions Post"
+                }
+              }
+            },
+            "description": "version_conflict or idempotency_conflict."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "transition_not_allowed, with the workflow's reason."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Transition Note",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/notes/{note_id}/versions": {
+      "post": {
+        "description": "Save edited content as a new version of the note.",
+        "operationId": "save_note_version_api_notes__note_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveNoteVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveNoteVersionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request: the request is malformed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SaveVersionConflictResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ],
+                  "title": "Response 409 Save Note Version Api Notes  Note Id  Versions Post"
+                }
+              }
+            },
+            "description": "version_conflict (the note changed since baseVersionId) or idempotency_conflict."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Note Version",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/patients": {
+      "get": {
+        "description": "Up to 20 patients, by name, who have notes matching the filters.",
+        "operationId": "find_patients_api_patients_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patientId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patientid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "GENERATING",
+                  "FAILED",
+                  "READY_FOR_REVIEW",
+                  "IN_REVIEW",
+                  "REJECTED",
+                  "APPROVED",
+                  "AMENDED",
+                  "LOCKED"
+                ],
+                "type": "string"
+              },
+              "title": "Status",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reviewerId",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Reviewerid",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "createdFrom",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Createdfrom"
+            }
+          },
+          {
+            "in": "query",
+            "name": "createdTo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Createdto"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request: the request is malformed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Find Patients",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/telemetry": {
+      "post": {
+        "description": "Accept a batch of usage events that carries no clinical content.",
+        "operationId": "receive_telemetry_api_telemetry_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelemetryBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request: the request is malformed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Receive Telemetry",
+        "tags": [
+          "telemetry"
         ]
       }
     }

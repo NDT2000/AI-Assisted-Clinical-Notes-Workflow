@@ -5,7 +5,7 @@ the same as with the mock backend.
 """
 
 from datetime import date, datetime
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 from sqlalchemy import (
     Boolean,
@@ -20,6 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from clinical_notes_api.db.base import Base
@@ -37,8 +38,15 @@ NoteStatus = Literal[
 
 UserRole = Literal["CLINICIAN", "REVIEWER", "ADMIN", "READONLY_AUDITOR"]
 
+# The two note mutations a client retries with the same clientMutationId.
+MutationKind = Literal["SAVE_VERSION", "TRANSITION"]
+
 NOTE_STATUSES: tuple[str, ...] = get_args(NoteStatus)
 USER_ROLES: tuple[str, ...] = get_args(UserRole)
+MUTATION_KINDS: tuple[str, ...] = get_args(MutationKind)
+
+# Longest clientMutationId the API accepts.
+CLIENT_MUTATION_ID_LENGTH = 128
 
 ID_LENGTH = 64
 
@@ -219,3 +227,27 @@ class ReviewEvent(Base):
         CheckConstraint(_one_of("actor_role", USER_ROLES), name="actor_role"),
         Index("ix_review_events_note_id_occurred_at", "note_id", "occurred_at"),
     )
+
+
+class ClientMutation(Base):
+    """The stored answer to one save or transition.
+
+    A client that retries a request with the same clientMutationId gets the
+    same answer instead of a second change; reusing the id for a different
+    request is refused.
+    """
+
+    __tablename__ = "client_mutations"
+
+    note_id: Mapped[str] = mapped_column(ForeignKey("notes.id"), primary_key=True)
+    kind: Mapped[MutationKind] = mapped_column(String(32), primary_key=True)
+    client_mutation_id: Mapped[str] = mapped_column(
+        String(CLIENT_MUTATION_ID_LENGTH),
+        primary_key=True,
+    )
+    # SHA-256 of the request and who sent it.
+    request_signature: Mapped[str] = mapped_column(String(64))
+    response: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(_timestamp())
+
+    __table_args__ = (CheckConstraint(_one_of("kind", MUTATION_KINDS), name="kind"),)

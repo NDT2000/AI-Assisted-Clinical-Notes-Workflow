@@ -13,7 +13,7 @@ All patient and note data in this repository is synthetic.
 | Part | State |
 | --- | --- |
 | Frontend (React) | Complete; runs against an in-browser mock backend (MSW) |
-| Backend (FastAPI) | Database, seed data and login (JWT) in place; note endpoints in progress |
+| Backend (FastAPI) | Database, seed data, login (JWT) and the note endpoints in place; frontend not yet switched over |
 | Database (Postgres + pgvector) | Runs locally with Docker Compose |
 | AI note generation (RAG) | Planned |
 
@@ -121,6 +121,8 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │   │   ├── dependencies.py  Database session and current-user dependencies
 │   │   ├── errors.py        Error responses ({"error", "message"})
 │   │   ├── workflow.py      Workflow rules, read from the contract
+│   │   ├── notes/           Note and patient endpoints: schemas, queries, changes
+│   │   ├── telemetry.py     Telemetry intake, with a clinical-content check
 │   │   ├── openapi.py       Writes contract/openapi.json
 │   │   ├── db/              SQLAlchemy models and sessions
 │   │   └── seed/            Synthetic data generator and loader
@@ -422,6 +424,45 @@ uv run alembic upgrade head
 
 Review every generated migration before committing it.
 
+### Endpoints
+
+The API offers the same routes, request bodies, responses and error codes as
+the frontend's mock server (`frontend/src/mock-server`), so the frontend can
+switch to it without changing its data handling. Every route needs a signed-in
+user. Interactive documentation is at `/docs`.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/notes` | One page of notes: filters (`status`, `reviewerId`, `patientId`, `createdFrom`, `createdTo`, `q`), sorting (`sortBy`, `sortOrder`), `limit` (up to 100) and `cursor` |
+| `GET /api/notes/{noteId}` | A note with its patient, session, reviewer, versions and review history |
+| `POST /api/notes/{noteId}/versions` | Save edited content as a new version |
+| `POST /api/notes/{noteId}/transitions` | Run a workflow action (start review, approve, reject, …) |
+| `POST /api/notes/bulk/assign-reviewer` | Assign or remove a reviewer on several notes |
+| `POST /api/notes/bulk/regenerate` | Send failed notes back to generation |
+| `GET /api/patients` | Up to 20 patients, by name, who have notes matching the filters |
+| `POST /api/telemetry` | Usage events; refused if they carry clinical or patient data |
+
+How changes stay safe:
+
+- **Workflow rules** come from the shared contract, so a refusal carries the
+  same reason the UI shows (`403 forbidden` for editing, `422
+  transition_not_allowed` for actions).
+- **Stale edits are caught.** Each save and action names the version it
+  started from (`baseVersionId`). If the note has moved on, the answer is
+  `409 version_conflict` with the current version and, for saves, the last
+  version both sides share, which the frontend uses for a three-way merge.
+- **Retries are safe.** Each save and action carries a `clientMutationId`. The
+  answer is stored, so a retry returns the first answer instead of changing the
+  note twice; reusing the id for a different request is refused with `409
+  idempotency_conflict`.
+- **One change at a time per note.** Changing a note locks its row first, so
+  two requests for the same note run one after the other.
+- **History is complete.** Every action, including bulk regeneration, adds a
+  review event.
+- **Pagination is keyset-based**: the cursor holds the last row's sort value
+  and id, so pages never overlap or skip notes while data changes.
+- Malformed requests get `400 invalid_request` with the problem named.
+
 ### Seed data
 
 `clinical-notes-seed` loads the same 5,000 synthetic notes as the frontend's
@@ -497,8 +538,12 @@ Python seed generator and the TypeScript one; every workflow decision in the
 shared contract; and, against a throwaway `clinical_notes_test` database, that
 migrations match the models and round-trip, constraints and immutability
 triggers hold, seeded rows match the generator, and login, token expiry,
-forged tokens and revoked users behave correctly. Database tests are skipped
-when Postgres is not running.
+forged tokens and revoked users behave correctly. The note endpoints are
+checked the same way: list items and note details equal the mock server's for
+every seeded note; cursor pages cover every note exactly once for each sort;
+filters and search match the mock; saves, actions, conflicts, retries,
+editing rules, bulk actions, patient lookup and the telemetry check behave as
+specified. Database tests are skipped when Postgres is not running.
 
 The main risks tested are lost edits, duplicate writes, stale responses,
 invalid transitions, unauthorized mutations, replay ordering, duplicate
@@ -508,9 +553,12 @@ browser-driven end-to-end suite yet.
 ## Assumptions and limitations
 
 - **The frontend still uses the mock backend.** It runs against MSW, with
-  identities passed as demo actor headers; it moves to the API and its access
-  tokens once the note endpoints are ready. MSW does not share data between
-  devices.
+  identities passed as demo actor headers; switching it to the API and its
+  access tokens is the next step. MSW does not share data between devices.
+- **Search is a simple text match** on the patient name and the note preview;
+  Postgres full-text search replaces it next.
+- **Presence is always empty** in the API until real-time updates arrive, and
+  accepted telemetry is only logged, not stored.
 - **Demo accounts share one password** (`DEMO_USER_PASSWORD`), which suits a
   demonstration with synthetic data, not real users.
 - **MFA** is a per-user flag (on for reviewers and the admin), not a real

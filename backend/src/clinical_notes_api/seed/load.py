@@ -41,6 +41,7 @@ MFA_ROLES = frozenset({"REVIEWER", "ADMIN"})
 DEFAULT_DEMO_PASSWORD = "demo-password"  # noqa: S105 - synthetic demo accounts
 
 TABLES_IN_DEPENDENCY_ORDER = (
+    "client_mutations",
     "review_events",
     "note_versions",
     "notes",
