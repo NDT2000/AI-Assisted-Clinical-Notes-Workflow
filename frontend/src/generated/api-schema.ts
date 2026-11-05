@@ -64,21 +64,196 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notes
+         * @description One page of notes, newest change first unless sorted otherwise.
+         */
+        get: operations["list_notes_api_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/bulk/assign-reviewer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assign Reviewer
+         * @description Assign a reviewer to several notes; notes in other statuses are left.
+         */
+        post: operations["assign_reviewer_api_notes_bulk_assign_reviewer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/bulk/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Notes
+         * @description Send failed notes back to generation.
+         */
+        post: operations["regenerate_notes_api_notes_bulk_regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Note
+         * @description A note with its patient, session, versions and review history.
+         */
+        get: operations["read_note_api_notes__note_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/{note_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition Note
+         * @description Run a workflow action (start review, approve, reject, ...).
+         */
+        post: operations["transition_note_api_notes__note_id__transitions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/{note_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Note Version
+         * @description Save edited content as a new version of the note.
+         */
+        post: operations["save_note_version_api_notes__note_id__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/patients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find Patients
+         * @description Up to 20 patients, by name, who have notes matching the filters.
+         */
+        get: operations["find_patients_api_patients_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/telemetry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Telemetry
+         * @description Accept a batch of usage events that carries no clinical content.
+         */
+        post: operations["receive_telemetry_api_telemetry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AssignReviewerRequest */
+        AssignReviewerRequest: {
+            /** Noteids */
+            noteIds: string[];
+            /**
+             * Reviewerdisplayname
+             * @description Ignored: the name comes from the user record. Accepted because the frontend sends it.
+             */
+            reviewerDisplayName?: string | null;
+            /**
+             * Reviewerid
+             * @description The reviewer to assign, or null to unassign.
+             */
+            reviewerId: string | null;
+        };
+        /** AssignReviewerResponse */
+        AssignReviewerResponse: {
+            /** Updated */
+            updated: string[];
+        };
         /** ErrorResponse */
         ErrorResponse: {
             /** Error */
             error: string;
             /** Message */
             message: string;
-        };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
         };
         /** HealthResponse */
         HealthResponse: {
@@ -100,6 +275,309 @@ export interface components {
              */
             username: string;
         };
+        /** Note */
+        Note: {
+            /**
+             * Approvedat
+             * @description Left out until the note is approved.
+             */
+            approvedAt?: string | null;
+            /** Assignedreviewerid */
+            assignedReviewerId: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Currentversionid */
+            currentVersionId: string;
+            /** Id */
+            id: string;
+            /** Patientid */
+            patientId: string;
+            /** Sessionid */
+            sessionId: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "GENERATING" | "FAILED" | "READY_FOR_REVIEW" | "IN_REVIEW" | "REJECTED" | "APPROVED" | "AMENDED" | "LOCKED";
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /** NoteDetail */
+        NoteDetail: {
+            assignedReviewer: components["schemas"]["UserSummary"] | null;
+            currentVersion: components["schemas"]["NoteVersionDetail"];
+            note: components["schemas"]["Note"];
+            patient: components["schemas"]["PatientInformation"];
+            /**
+             * Presence
+             * @description Who else has the note open. Always empty until real-time presence exists.
+             */
+            presence: components["schemas"]["PresenceUser"][];
+            session: components["schemas"]["SessionInformation"];
+            /** Timeline */
+            timeline: components["schemas"]["ReviewTimelineEvent"][];
+            /** Versions */
+            versions: components["schemas"]["NoteVersionDetail"][];
+        };
+        /** NoteListCursor */
+        NoteListCursor: {
+            /** Hasmore */
+            hasMore: boolean;
+            /**
+             * Next
+             * @description Pass as `cursor` for the next page.
+             */
+            next: string | null;
+        };
+        /** NoteListMeta */
+        NoteListMeta: {
+            /** Returned */
+            returned: number;
+            /**
+             * Total
+             * @description Notes matching the filters, on all pages.
+             */
+            total: number;
+        };
+        /** NoteListResponse */
+        NoteListResponse: {
+            cursor: components["schemas"]["NoteListCursor"];
+            /** Items */
+            items: components["schemas"]["NoteSummary"][];
+            meta: components["schemas"]["NoteListMeta"];
+        };
+        /** NoteSummary */
+        NoteSummary: {
+            assignedReviewer: components["schemas"]["ReviewerRef"] | null;
+            /** Contentpreview */
+            contentPreview: string;
+            /** Createdat */
+            createdAt: string;
+            currentVersion: components["schemas"]["VersionRef"];
+            /** Id */
+            id: string;
+            patient: components["schemas"]["PatientRef"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "GENERATING" | "FAILED" | "READY_FOR_REVIEW" | "IN_REVIEW" | "REJECTED" | "APPROVED" | "AMENDED" | "LOCKED";
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /** NoteVersionDetail */
+        NoteVersionDetail: {
+            /** Authordisplayname */
+            authorDisplayName: string;
+            /** Authorid */
+            authorId: string;
+            /**
+             * Authorrole
+             * @enum {string}
+             */
+            authorRole: "CLINICIAN" | "REVIEWER" | "ADMIN" | "READONLY_AUDITOR";
+            content: components["schemas"]["SoapContent"];
+            /** Createdat */
+            createdAt: string;
+            /** Noteid */
+            noteId: string;
+            /** Parentversionid */
+            parentVersionId: string | null;
+            /** Revisionnumber */
+            revisionNumber: number;
+            /** Versionid */
+            versionId: string;
+        };
+        /** PatientInformation */
+        PatientInformation: {
+            /**
+             * Dateofbirth
+             * Format: date
+             */
+            dateOfBirth: string;
+            /** Displayname */
+            displayName: string;
+            /** Id */
+            id: string;
+            /** Medicalrecordnumber */
+            medicalRecordNumber: string;
+        };
+        /** PatientOption */
+        PatientOption: {
+            /** Displayname */
+            displayName: string;
+            /** Id */
+            id: string;
+        };
+        /** PatientRef */
+        PatientRef: {
+            /** Displayname */
+            displayName: string;
+            /** Id */
+            id: string;
+        };
+        /** PatientsResponse */
+        PatientsResponse: {
+            /** Items */
+            items: components["schemas"]["PatientOption"][];
+        };
+        /** PresenceUser */
+        PresenceUser: {
+            /**
+             * Activity
+             * @enum {string}
+             */
+            activity: "VIEWING" | "EDITING";
+            /** Lastseenat */
+            lastSeenAt: string;
+            user: components["schemas"]["UserSummary"];
+        };
+        /** RegenerateRequest */
+        RegenerateRequest: {
+            /** Noteids */
+            noteIds: string[];
+        };
+        /** RegenerateResponse */
+        RegenerateResponse: {
+            /** Skipped */
+            skipped: string[];
+            /** Updated */
+            updated: string[];
+        };
+        /** ReviewTimelineEvent */
+        ReviewTimelineEvent: {
+            /** Actordisplayname */
+            actorDisplayName: string;
+            /** Actorid */
+            actorId: string;
+            /**
+             * Actorrole
+             * @enum {string}
+             */
+            actorRole: "CLINICIAN" | "REVIEWER" | "ADMIN" | "READONLY_AUDITOR";
+            /** Eventid */
+            eventId: string;
+            /**
+             * Fromstatus
+             * @enum {string}
+             */
+            fromStatus: "GENERATING" | "FAILED" | "READY_FOR_REVIEW" | "IN_REVIEW" | "REJECTED" | "APPROVED" | "AMENDED" | "LOCKED";
+            /** Noteid */
+            noteId: string;
+            /** Occurredat */
+            occurredAt: string;
+            /**
+             * Reason
+             * @description Left out when empty.
+             */
+            reason?: string | null;
+            /**
+             * Tostatus
+             * @enum {string}
+             */
+            toStatus: "GENERATING" | "FAILED" | "READY_FOR_REVIEW" | "IN_REVIEW" | "REJECTED" | "APPROVED" | "AMENDED" | "LOCKED";
+            /** Versionid */
+            versionId: string | null;
+        };
+        /** ReviewerRef */
+        ReviewerRef: {
+            /** Displayname */
+            displayName: string;
+            /** Id */
+            id: string;
+        };
+        /** SaveNoteVersionRequest */
+        SaveNoteVersionRequest: {
+            /**
+             * Baseversionid
+             * @description The version the edit started from.
+             */
+            baseVersionId: string;
+            /**
+             * Clientmutationid
+             * @description Retrying with the same id returns the first answer.
+             */
+            clientMutationId: string;
+            content: components["schemas"]["SoapContent"];
+        };
+        /** SaveNoteVersionResponse */
+        SaveNoteVersionResponse: {
+            /** Clientmutationid */
+            clientMutationId: string;
+            note: components["schemas"]["Note"];
+            savedVersion: components["schemas"]["NoteVersionDetail"];
+        };
+        /** SaveVersionConflictResponse */
+        SaveVersionConflictResponse: {
+            commonAncestor: components["schemas"]["NoteVersionDetail"] | null;
+            currentVersion: components["schemas"]["NoteVersionDetail"];
+            /**
+             * Error
+             * @constant
+             */
+            error: "version_conflict";
+            /** Message */
+            message: string;
+        };
+        /** SessionInformation */
+        SessionInformation: {
+            clinician: components["schemas"]["UserSummary"];
+            /** Endedat */
+            endedAt: string;
+            /** Id */
+            id: string;
+            /** Startedat */
+            startedAt: string;
+        };
+        /** SoapContent */
+        SoapContent: {
+            /** Assessment */
+            assessment: string;
+            /** Objective */
+            objective: string;
+            /** Plan */
+            plan: string;
+            /** Subjective */
+            subjective: string;
+        };
+        /** TelemetryAccepted */
+        TelemetryAccepted: {
+            /** Accepted */
+            accepted: number;
+        };
+        /** TelemetryBatch */
+        TelemetryBatch: {
+            /** Events */
+            events: components["schemas"]["TelemetryEvent"][];
+            /** Reason */
+            reason: string;
+            /**
+             * Schemaversion
+             * @constant
+             */
+            schemaVersion: 1;
+            /** Sentat */
+            sentAt: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** TelemetryEvent */
+        TelemetryEvent: {
+            /** Eventid */
+            eventId: string;
+            /** Important */
+            important: boolean;
+            /** Name */
+            name: string;
+            /** Occurredat */
+            occurredAt: string;
+            /** Properties */
+            properties: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
         /** TokenResponse */
         TokenResponse: {
             /** Access Token */
@@ -117,6 +595,39 @@ export interface components {
             token_type: "bearer";
             user: components["schemas"]["UserResponse"];
         };
+        /** TransitionConflictResponse */
+        TransitionConflictResponse: {
+            currentVersion: components["schemas"]["NoteVersionDetail"];
+            /**
+             * Error
+             * @constant
+             */
+            error: "version_conflict";
+            /** Message */
+            message: string;
+        };
+        /** TransitionNoteRequest */
+        TransitionNoteRequest: {
+            /** Baseversionid */
+            baseVersionId: string;
+            /** Clientmutationid */
+            clientMutationId: string;
+            /** Rejectionreason */
+            rejectionReason?: string | null;
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "REGENERATE" | "START_REVIEW" | "RETURN_TO_QUEUE" | "APPROVE" | "REJECT" | "RESUBMIT" | "AMEND";
+        };
+        /** TransitionNoteResponse */
+        TransitionNoteResponse: {
+            /** Clientmutationid */
+            clientMutationId: string;
+            currentVersion: components["schemas"]["NoteVersionDetail"];
+            note: components["schemas"]["Note"];
+            timelineEvent: components["schemas"]["ReviewTimelineEvent"];
+        };
         /** UserResponse */
         UserResponse: {
             /** Display Name */
@@ -128,18 +639,24 @@ export interface components {
             /** Role */
             role: string;
         };
-        /** ValidationError */
-        ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
+        /** UserSummary */
+        UserSummary: {
+            /** Displayname */
+            displayName: string;
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "CLINICIAN" | "REVIEWER" | "ADMIN" | "READONLY_AUDITOR";
+        };
+        /** VersionRef */
+        VersionRef: {
+            /** Id */
+            id: string;
+            /** Revision */
+            revision: number;
         };
     };
     responses: never;
@@ -172,8 +689,8 @@ export interface operations {
                     "application/json": components["schemas"]["TokenResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
+            /** @description invalid_request: the request is malformed. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -181,13 +698,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Validation Error */
-            422: {
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -237,6 +754,436 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    list_notes_api_notes_get: {
+        parameters: {
+            query?: {
+                status?: ("GENERATING" | "FAILED" | "READY_FOR_REVIEW" | "IN_REVIEW" | "REJECTED" | "APPROVED" | "AMENDED" | "LOCKED")[];
+                reviewerId?: string[];
+                patientId?: string[];
+                createdFrom?: string | null;
+                createdTo?: string | null;
+                q?: string;
+                sortBy?: "createdAt" | "updatedAt" | "patientName" | "status";
+                sortOrder?: "asc" | "desc";
+                /** @description At most 100. */
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteListResponse"];
+                };
+            };
+            /** @description invalid_request: the request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    assign_reviewer_api_notes_bulk_assign_reviewer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignReviewerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignReviewerResponse"];
+                };
+            };
+            /** @description invalid_request: the request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    regenerate_notes_api_notes_bulk_regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegenerateResponse"];
+                };
+            };
+            /** @description invalid_request: the request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    read_note_api_notes__note_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteDetail"];
+                };
+            };
+            /** @description invalid_request: the request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transition_note_api_notes__note_id__transitions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionNoteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description version_conflict or idempotency_conflict. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionConflictResponse"] | components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description transition_not_allowed, with the workflow's reason. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    save_note_version_api_notes__note_id__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveNoteVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaveNoteVersionResponse"];
+                };
+            };
+            /** @description invalid_request: the request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description version_conflict (the note changed since baseVersionId) or idempotency_conflict. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaveVersionConflictResponse"] | components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    find_patients_api_patients_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                patientId?: string | null;
+                status?: ("GENERATING" | "FAILED" | "READY_FOR_REVIEW" | "IN_REVIEW" | "REJECTED" | "APPROVED" | "AMENDED" | "LOCKED")[];
+                reviewerId?: string[];
+                createdFrom?: string | null;
+                createdTo?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientsResponse"];
+                };
+            };
+            /** @description invalid_request: the request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    receive_telemetry_api_telemetry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelemetryBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetryAccepted"];
+                };
+            };
+            /** @description invalid_request: the request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
