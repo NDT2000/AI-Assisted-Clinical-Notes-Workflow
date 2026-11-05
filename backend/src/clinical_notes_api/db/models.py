@@ -19,8 +19,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from clinical_notes_api.db.base import Base
@@ -130,6 +131,14 @@ class Note(Base):
     created_at: Mapped[datetime] = mapped_column(_timestamp())
     updated_at: Mapped[datetime] = mapped_column(_timestamp())
     approved_at: Mapped[datetime | None] = mapped_column(_timestamp())
+    # Full-text search over the patient's name and the current version.
+    # A database trigger keeps it current (migration 8d3f6b1c2e90); deferred,
+    # so loading a note does not fetch it.
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        server_default=text("''::tsvector"),
+        deferred=True,
+    )
 
     patient: Mapped[Patient] = relationship()
     session: Mapped[ClinicalSession] = relationship()
@@ -154,6 +163,7 @@ class Note(Base):
         # Stable keyset pagination for the notes list: (sort column, id).
         Index("ix_notes_updated_at_id", "updated_at", "id"),
         Index("ix_notes_created_at_id", "created_at", "id"),
+        Index("ix_notes_search_vector", "search_vector", postgresql_using="gin"),
     )
 
 

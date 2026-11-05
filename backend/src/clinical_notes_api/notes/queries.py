@@ -3,6 +3,7 @@
 import base64
 import binascii
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
@@ -12,13 +13,14 @@ from sqlalchemy import (
     ColumnElement,
     Select,
     case,
+    cast,
     exists,
     func,
     literal,
-    or_,
     select,
     tuple_,
 )
+from sqlalchemy.dialects.postgresql import REGCONFIG
 from sqlalchemy.orm import Session, aliased, selectinload
 
 from clinical_notes_api.db import (
@@ -84,8 +86,7 @@ def content_preview_expression(
     """The list's one-line preview of a note, worked out in SQL.
 
     The first sentence of the first non-empty SOAP section, cut to 120
-    characters. Being SQL, the search filter can match the same text the
-    list shows. `sections` defaults to the version's four SOAP columns.
+    characters. `sections` defaults to the version's four SOAP columns.
     """
     if sections is None:
         sections = (
@@ -132,6 +133,39 @@ def _note_filter_conditions(filters: NoteFilters) -> list[ColumnElement[bool]]:
         next_day = _start_of_day(filters.created_to + timedelta(days=1))
         conditions.append(Note.created_at < next_day)
     return conditions
+
+
+# --- Full-text search ------------------------------------------------------
+
+MAX_SEARCH_TERMS = 10
+# Letters and digits only: nothing a user types can change the query syntax.
+_SEARCH_TERM = re.compile(r"[^\W_]+")
+
+
+def search_terms(text: str) -> list[str]:
+    return _SEARCH_TERM.findall(text.lower())[:MAX_SEARCH_TERMS]
+
+
+def _prefix_query(config: str, term: str) -> ColumnElement[Any]:
+    return func.to_tsquery(cast(literal(config), REGCONFIG), f"{term}:*")
+
+
+def full_text_query(text: str) -> ColumnElement[Any] | None:
+    """The search as a tsquery for notes.search_vector, or None if empty.
+
+    Every word must match, as the start of a word, either the patient's name
+    or the note's text. Names are matched as typed ("simple"); note text is
+    stemmed ("english"), so "improving" finds "improvement".
+    """
+    terms = search_terms(text)
+    if not terms:
+        return None
+
+    query: ColumnElement[Any] | None = None
+    for term in terms:
+        either = _prefix_query("simple", term).op("||")(_prefix_query("english", term))
+        query = either if query is None else query.op("&&")(either)
+    return query
 
 
 def _contains(column: ColumnElement[str], text: str) -> ColumnElement[bool]:
@@ -186,11 +220,9 @@ def list_notes(session: Session, query: NoteListQuery) -> schemas.NoteListRespon
     preview = content_preview_expression().label("content_preview")
 
     conditions = _note_filter_conditions(query.filters)
-    search = query.search.strip()
-    if search:
-        conditions.append(
-            or_(_contains(Patient.display_name, search), _contains(preview, search))
-        )
+    search = full_text_query(query.search)
+    if search is not None:
+        conditions.append(Note.search_vector.op("@@")(search))
 
     total = session.scalar(
         _with_list_joins(select(func.count()).select_from(Note)).where(*conditions)
