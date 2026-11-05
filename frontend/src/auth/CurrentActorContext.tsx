@@ -14,11 +14,14 @@ import {
 import {
   CurrentActorContext,
 } from "./useCurrentActor";
+import {
+  setActiveActor,
+} from "./activeActor";
 
 const SESSION_STORAGE_KEY =
   "clinical-notes-demo-actor-id";
 
-function getInitialActor():
+function getStoredActor():
   Actor {
   if (
     typeof sessionStorage ===
@@ -41,6 +44,16 @@ function getInitialActor():
       storedActorId,
     ) ?? CURRENT_ACTOR
   );
+}
+
+// API requests that do not name an actor are sent as this one.
+function getInitialActor():
+  Actor {
+  const actor = getStoredActor();
+
+  setActiveActor(actor);
+
+  return actor;
 }
 
 export function CurrentActorProvider({
@@ -68,6 +81,7 @@ export function CurrentActorProvider({
           return;
         }
 
+        setActiveActor(nextActor);
         setActor(nextActor);
 
         if (

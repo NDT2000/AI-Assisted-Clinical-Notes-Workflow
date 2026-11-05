@@ -1,3 +1,4 @@
+import { apiFetch } from "../../../api/apiClient";
 import type {
   NoteListFilters,
 } from "../utils/noteListSearchParams";
@@ -55,7 +56,7 @@ export async function getPatients(
     );
   }
 
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/patients?${searchParams.toString()}`,
     { signal },
   );
@@ -80,7 +81,7 @@ export async function getPatientById(
     patientId,
   });
 
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/patients?${searchParams.toString()}`,
     { signal },
   );

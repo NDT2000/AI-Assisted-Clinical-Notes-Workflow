@@ -1,3 +1,4 @@
+import { getMockActor } from "../../../../mock-server/mockAuth";
 import type {
   Actor,
 } from "../../../../domain/actor";
@@ -101,23 +102,14 @@ describe("saveNoteVersion", () => {
             "note-1",
           );
 
+          // The request carries the actor in its access token.
           expect(
-            request.headers.get(
-              "x-actor-id",
-            ),
-          ).toBe("reviewer-1");
-
-          expect(
-            request.headers.get(
-              "x-actor-role",
-            ),
-          ).toBe("REVIEWER");
-
-          expect(
-            request.headers.get(
-              "x-actor-display-name",
-            ),
-          ).toBe("Test Reviewer");
+            getMockActor(request),
+          ).toMatchObject({
+            id: "reviewer-1",
+            role: "REVIEWER",
+            displayName: "Test Reviewer",
+          });
 
           expect(
             await request.json(),

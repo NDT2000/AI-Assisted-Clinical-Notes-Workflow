@@ -258,7 +258,6 @@ describe("useNoteDetail", () => {
       readNoteDetailMock,
     ).toHaveBeenCalledWith(
       "note-1",
-      "REVIEWER",
       expect.any(AbortSignal),
     );
   });
@@ -592,7 +591,7 @@ describe("useNoteDetail", () => {
     );
 
     const signal =
-      readNoteDetailMock.mock.calls[0]?.[2];
+      readNoteDetailMock.mock.calls[0]?.[1];
 
     expect(signal).toBeInstanceOf(
       AbortSignal,

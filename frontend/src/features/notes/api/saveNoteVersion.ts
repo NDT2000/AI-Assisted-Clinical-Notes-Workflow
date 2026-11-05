@@ -1,3 +1,4 @@
+import { apiFetch } from "../../../api/apiClient";
 import type {
   Actor,
 } from "../../../domain/actor";
@@ -183,7 +184,7 @@ export async function saveNoteVersion(
   let response: Response;
 
   try {
-    response = await fetch(
+    response = await apiFetch(
       `/api/notes/${encodeURIComponent(
         noteId,
       )}/versions`,
@@ -192,16 +193,12 @@ export async function saveNoteVersion(
         headers: {
           "content-type":
             "application/json",
-          "x-actor-id": actor.id,
-          "x-actor-role":
-            actor.role,
-          "x-actor-display-name":
-            actor.displayName,
         },
         body:
           JSON.stringify(body),
         signal,
       },
+      { actor },
     );
   } catch (error) {
     track(

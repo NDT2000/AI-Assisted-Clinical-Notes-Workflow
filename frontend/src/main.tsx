@@ -6,10 +6,13 @@ import {
 } from "react-router-dom";
 
 import App from "./App.tsx";
+import { USE_MOCK_API } from "./api/apiConfig.ts";
 import "./index.css";
 
+// The in-browser mock server answers only when mocks are on (see
+// api/apiConfig.ts); otherwise requests go to the API.
 async function enableMocking(): Promise<void> {
-  if (!import.meta.env.DEV) {
+  if (!USE_MOCK_API) {
     return;
   }
 

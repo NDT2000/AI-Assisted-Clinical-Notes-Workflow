@@ -1,3 +1,4 @@
+import { apiFetch } from "../../../api/apiClient";
 import type {
   Actor,
 } from "../../../domain/actor";
@@ -169,7 +170,7 @@ export async function transitionNote(
   let response: Response;
 
   try {
-    response = await fetch(
+    response = await apiFetch(
       `/api/notes/${encodeURIComponent(
         noteId,
       )}/transitions`,
@@ -178,20 +179,12 @@ export async function transitionNote(
         headers: {
           "content-type":
             "application/json",
-          "x-actor-id": actor.id,
-          "x-actor-role":
-            actor.role,
-          "x-actor-display-name":
-            actor.displayName,
-          "x-mfa-verified": String(
-            actor.mfaVerified ===
-              true,
-          ),
         },
         body:
           JSON.stringify(body),
         signal,
       },
+      { actor },
     );
   } catch (error) {
     track(

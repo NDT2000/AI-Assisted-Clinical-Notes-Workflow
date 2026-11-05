@@ -1,3 +1,4 @@
+import { getMockActor } from "./mockAuth";
 import type {
   Actor,
 } from "../domain/actor";
@@ -97,38 +98,16 @@ function isSaveNoteVersionRequestBody(
 function getSaveActor(
   request: Request,
 ): Actor | null {
-  const id = request.headers
-    .get("x-actor-id")
-    ?.trim();
-
-  const displayName =
-    request.headers
-      .get(
-        "x-actor-display-name",
-      )
-      ?.trim();
-
-  const rawRole =
-    request.headers.get(
-      "x-actor-role",
-    );
+  const actor = getMockActor(request);
 
   if (
-    !id ||
-    !displayName ||
-    rawRole === null ||
-    !EDITING_ROLES.includes(
-      rawRole as UserRole,
-    )
+    actor === null ||
+    !EDITING_ROLES.includes(actor.role)
   ) {
     return null;
   }
 
-  return {
-    id,
-    displayName,
-    role: rawRole as UserRole,
-  };
+  return actor;
 }
 
 export const saveNoteVersionHandler =

@@ -191,8 +191,7 @@ describe("readNoteDetail", () => {
 
     const result = await readNoteDetail(
       "note-1",
-      "REVIEWER",
-    );
+          );
 
     expect(result).toEqual({
       note,
@@ -208,7 +207,6 @@ describe("readNoteDetail", () => {
       getNoteDetailMock,
     ).toHaveBeenCalledWith(
       "note-1",
-      "REVIEWER",
       undefined,
     );
   });
@@ -223,8 +221,7 @@ describe("readNoteDetail", () => {
 
     const result = await readNoteDetail(
       "note-1",
-      "REVIEWER",
-    );
+          );
 
     expect(result).toEqual({
       note,
@@ -249,8 +246,7 @@ describe("readNoteDetail", () => {
 
     const result = await readNoteDetail(
       "note-1",
-      "REVIEWER",
-    );
+          );
 
     expect(result).toEqual({
       note,
@@ -280,8 +276,7 @@ describe("readNoteDetail", () => {
     await expect(
       readNoteDetail(
         "note-1",
-        "REVIEWER",
-      ),
+              ),
     ).rejects.toBe(requestError);
   });
 
@@ -306,7 +301,6 @@ describe("readNoteDetail", () => {
     await expect(
       readNoteDetail(
         "note-1",
-        "READONLY_AUDITOR",
       ),
     ).rejects.toBe(requestError);
   });
@@ -317,7 +311,6 @@ describe("readNoteDetail", () => {
     await expect(
       readNoteDetail(
         "note-uncached",
-        "REVIEWER",
       ),
     ).rejects.toEqual(
       new OfflineNoteDetailUnavailableError(
@@ -340,8 +333,7 @@ describe("readNoteDetail", () => {
     await expect(
       readNoteDetail(
         "note-1",
-        "REVIEWER",
-        controller.signal,
+                controller.signal,
       ),
     ).rejects.toMatchObject({
       name: "AbortError",

@@ -12,8 +12,8 @@ All patient and note data in this repository is synthetic.
 
 | Part | State |
 | --- | --- |
-| Frontend (React) | Complete; runs against an in-browser mock backend (MSW) |
-| Backend (FastAPI) | Database, seed data, login (JWT) and the note endpoints in place; frontend not yet switched over |
+| Frontend (React) | Complete; runs against the API, or on its own with an in-browser mock backend (MSW) |
+| Backend (FastAPI) | Database, seed data, login (JWT), note endpoints and full-text search in place |
 | Database (Postgres + pgvector) | Runs locally with Docker Compose |
 | AI note generation (RAG) | Planned |
 
@@ -103,12 +103,13 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 .
 ├── frontend/                React application
 │   └── src/
-│       ├── auth/            Demo identities and the current-actor context
+│       ├── api/             API base URL, mock switch and the authenticated fetch
+│       ├── auth/            Demo identities, sign-in tokens, current-actor context
 │       ├── domain/          Models, workflow rules and pure logic
 │       ├── features/notes/  List, detail, autosave, offline and real-time
 │       ├── generated/       API types generated from contract/openapi.json
 │       ├── mock-data/       Deterministic synthetic data
-│       ├── mock-server/     MSW handlers and the authoritative mock store
+│       ├── mock-server/     MSW handlers, mock store and mock access tokens
 │       ├── shared/          Shared display formatters
 │       ├── telemetry/       Batching, redaction, retry and persistence
 │       └── test/            Test setup
@@ -158,7 +159,8 @@ npm run dev
 ```
 
 Open <http://localhost:5173>. Switch between demo users (clinician, reviewers,
-admin, auditor) from the bar at the top to see how permissions change.
+admin, auditor) from the bar at the top to see how permissions change. Changes
+live in the browser only and reset on reload.
 
 ### Backend and database
 
@@ -194,6 +196,20 @@ curl -X POST http://127.0.0.1:8000/api/auth/login \
   -d '{"username": "reviewer-1", "password": "demo-password"}'
 ```
 
+### Frontend against the API
+
+With the API running (above), from `frontend/`:
+
+```bash
+npm run dev:api
+```
+
+This turns the mock server off and sends requests to
+`http://127.0.0.1:8000` (see `frontend/.env.api`). Switching demo users signs
+in as that user behind the scenes with the shared demo password, so every
+request carries a real access token and the API applies its own rules. Changes
+are saved in Postgres.
+
 ### Checks
 
 Frontend, from `frontend/`:
@@ -228,8 +244,16 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `ACCESS_TOKEN_MINUTES` | `60` | How long an access token stays valid |
 | `DEMO_USER_PASSWORD` | `demo-password` | Password the seed gives every demo user |
 
-Environment variables take precedence over `.env`. The frontend needs no
-configuration yet.
+Environment variables take precedence over `.env`.
+
+The frontend reads Vite variables (`frontend/.env.api` sets them for
+`npm run dev:api`):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VITE_USE_MOCKS` | on in development | `false` sends requests to the API instead of the in-browser mock server; a production build always uses the API |
+| `VITE_API_BASE_URL` | empty (same origin) | Where the API is, e.g. `http://127.0.0.1:8000` |
+| `VITE_DEMO_PASSWORD` | `demo-password` | The backend's `DEMO_USER_PASSWORD`, used to sign demo users in |
 
 ## Architecture
 
@@ -244,7 +268,7 @@ Domain models, guards and pure logic
         ↓
 API, offline, real-time and telemetry adapters
         ↓
-Backend: MSW mock server today, FastAPI next
+Backend: FastAPI API (or the MSW mock server in development and tests)
 ```
 
 - The **domain** layer holds the state machine, authorization rules, version
@@ -253,6 +277,10 @@ Backend: MSW mock server today, FastAPI next
   offline replay and real-time subscriptions.
 - The **backend** is authoritative: it validates every mutation again, because
   the client is treated as untrusted.
+- Every request goes through one function (`api/apiClient.ts`) that adds the
+  API's address and the signed-in user's access token, and renews a rejected
+  token once. With the mock server on, the token is a local stand-in that
+  carries the demo identity, so both backends see users the same way.
 
 State is kept close to the layer that owns it:
 
@@ -546,8 +574,8 @@ guards, authorization, transition eligibility, version-graph traversal,
 word-level diffing, three-way merge, telemetry redaction and URL parsing;
 integration tests for autosave and trailing saves, save idempotency, optimistic
 rollback, offline queue persistence and replay, replay conflicts, real-time
-deduplication and reconnection, server-side authorization, telemetry batching
-and accessibility behavior.
+deduplication and reconnection, server-side authorization, telemetry batching,
+sign-in token caching and renewal, and accessibility behavior.
 
 **Backend** (pytest) — settings and the health endpoint; parity between the
 Python seed generator and the TypeScript one; every workflow decision in the
@@ -569,9 +597,12 @@ browser-driven end-to-end suite yet.
 
 ## Assumptions and limitations
 
-- **The frontend still uses the mock backend.** It runs against MSW, with
-  identities passed as demo actor headers; switching it to the API and its
-  access tokens is the next step. MSW does not share data between devices.
+- **Real-time updates need the mock server for now.** Against the API, other
+  users' changes appear on reload; pushing them over WebSockets comes next.
+  Presence between tabs of one browser still works.
+- **The demo password ships in the page** so the identity switcher can sign
+  in. That suits synthetic demo accounts only.
+- With the mock server, data lives in one browser and resets on reload.
 - **Search covers the whole note**, not only the preview the mock server
   searched, so a word in the synthetic notes' shared wording (such as
   "symptoms") matches every note. A renamed patient's notes are re-indexed

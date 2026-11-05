@@ -79,6 +79,53 @@ describe(
     );
 
     it(
+      "skips sendBeacon when it cannot carry the access token",
+      async () => {
+        const fetchMock =
+          vi.fn(
+            async () =>
+              new Response(null, {
+                status: 202,
+              }),
+          );
+
+        const sendBeacon =
+          vi.fn(() => true);
+
+        const transport =
+          new FetchTelemetryTransport({
+            fetchImplementation:
+              fetchMock,
+            navigatorImplementation: {
+              sendBeacon,
+            } as unknown as Navigator,
+            useBeacon: false,
+          });
+
+        await transport.send(
+          createBatch(),
+          {
+            unload: true,
+          },
+        );
+
+        expect(
+          sendBeacon,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          fetchMock,
+        ).toHaveBeenCalledWith(
+          "/api/telemetry",
+          expect.objectContaining({
+            method: "POST",
+            keepalive: true,
+          }),
+        );
+      },
+    );
+
+    it(
       "falls back to keepalive fetch when sendBeacon declines the payload",
       async () => {
         const fetchMock =

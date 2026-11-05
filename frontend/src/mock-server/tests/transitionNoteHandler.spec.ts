@@ -1,3 +1,4 @@
+import { mockAuthHeaders } from "../mockAuth";
 import {
   afterAll,
   afterEach,
@@ -107,14 +108,12 @@ function getActorHeaders():
   return {
     "content-type":
       "application/json",
-    "x-actor-id":
-      "reviewer-test",
-    "x-actor-role":
-      "REVIEWER",
-    "x-actor-display-name":
-      "Test Reviewer",
-    "x-mfa-verified":
-      "true",
+    ...mockAuthHeaders({
+      id: "reviewer-test",
+      role: "REVIEWER",
+      displayName: "Test Reviewer",
+      mfaVerified: true,
+    }),
   };
 }
 

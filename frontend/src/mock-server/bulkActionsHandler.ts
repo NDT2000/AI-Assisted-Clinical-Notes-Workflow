@@ -1,3 +1,4 @@
+import { getMockActor } from "./mockAuth";
 import type {
   Actor,
 } from "../domain/actor";
@@ -6,9 +7,6 @@ import {
   HttpResponse,
 } from "msw";
 
-import type {
-  UserRole,
-} from "../domain/noteAttributes";
 import {
   canManageReviewerAssignments,
   canRequestRegeneration,
@@ -33,14 +31,6 @@ interface AssignReviewerBody {
 interface RegenerateBody {
   noteIds: string[];
 }
-
-const USER_ROLES:
-  readonly UserRole[] = [
-  "CLINICIAN",
-  "REVIEWER",
-  "ADMIN",
-  "READONLY_AUDITOR",
-];
 
 function isRecord(
   value: unknown,
@@ -117,39 +107,7 @@ function isRegenerateBody(
 function getActor(
   request: Request,
 ): Actor | null {
-  const id =
-    request.headers
-      .get("x-actor-id")
-      ?.trim();
-
-  const displayName =
-    request.headers
-      .get(
-        "x-actor-display-name",
-      )
-      ?.trim();
-
-  const rawRole =
-    request.headers.get(
-      "x-actor-role",
-    );
-
-  if (
-    !id ||
-    !displayName ||
-    rawRole === null ||
-    !USER_ROLES.includes(
-      rawRole as UserRole,
-    )
-  ) {
-    return null;
-  }
-
-  return {
-    id,
-    displayName,
-    role: rawRole as UserRole,
-  };
+  return getMockActor(request);
 }
 
 async function parseRequestBody(
