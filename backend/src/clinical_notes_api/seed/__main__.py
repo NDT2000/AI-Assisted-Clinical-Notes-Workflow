@@ -1,14 +1,20 @@
-"""Seed the database with synthetic notes.
+"""Seed the database with synthetic notes and users.
 
 uv run clinical-notes-seed            # 5,000 notes into an empty database
 uv run clinical-notes-seed --reset    # empty every table first
+
+Every user gets their own random password; the passwords are written to
+credentials.local.md at the repository root (git-ignored).
 """
 
 import argparse
 import sys
+from datetime import UTC, datetime
+from pathlib import Path
 
 from clinical_notes_api.config import get_settings
 from clinical_notes_api.db.session import create_db_engine, create_session_factory
+from clinical_notes_api.seed.credentials import CREDENTIALS_PATH, write_credentials
 from clinical_notes_api.seed.load import SeedError, seed_database
 
 
@@ -23,6 +29,12 @@ def main(argv: list[str] | None = None) -> int:
         "--reset",
         action="store_true",
         help="delete all existing data first",
+    )
+    parser.add_argument(
+        "--credentials-file",
+        type=Path,
+        default=CREDENTIALS_PATH,
+        help="where to write the users' passwords (default: %(default)s)",
     )
     arguments = parser.parse_args(argv)
 
@@ -41,10 +53,23 @@ def main(argv: list[str] | None = None) -> int:
                 count=arguments.count,
                 seed=arguments.seed,
                 reset=arguments.reset,
-                demo_password=settings.demo_user_password.get_secret_value(),
+            )
+            # Before the commit: if the file cannot be written, nothing is
+            # seeded, so no user is left with a password nobody knows.
+            write_credentials(
+                arguments.credentials_file,
+                result.credentials,
+                datetime.now(UTC),
             )
     except SeedError as error:
         print(f"{error} Use --reset to replace the existing data.", file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(
+            f"Could not write {arguments.credentials_file}: {error}. "
+            "Nothing was seeded.",
+            file=sys.stderr,
+        )
         return 1
     finally:
         engine.dispose()
@@ -54,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{result.events} review events, {result.patients} patients "
         f"and {result.users} users."
     )
+    print(f"Passwords written to {arguments.credentials_file} (never commit it).")
     return 0
 
 

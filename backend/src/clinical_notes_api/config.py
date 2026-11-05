@@ -50,11 +50,6 @@ class Settings(BaseSettings):
         description="How long an access token stays valid.",
     )
 
-    demo_user_password: SecretStr = Field(
-        default=SecretStr("demo-password"),
-        description="Password the seed gives every demo user.",
-    )
-
     @model_validator(mode="after")
     def require_a_real_secret_in_production(self) -> "Settings":
         if self.environment != "production":

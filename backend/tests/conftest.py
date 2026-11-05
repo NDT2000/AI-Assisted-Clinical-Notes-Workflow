@@ -119,7 +119,7 @@ def seeded_notes(engine: Engine) -> Iterator[None]:
             count=NOTE_COUNT,
             seed=SEED,
             reset=True,
-            demo_password=PASSWORD,
+            password=PASSWORD,
         )
     yield
     with create_session_factory(engine).begin() as session:

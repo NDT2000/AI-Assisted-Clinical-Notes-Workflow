@@ -118,6 +118,7 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │   │   ├── config.py        Settings from environment variables
 │   │   ├── main.py          App factory and routes
 │   │   ├── auth.py          Login and the signed-in user
+│   │   ├── accounts/        Creating accounts; the create-admin command
 │   │   ├── security.py      Password hashing and access tokens
 │   │   ├── dependencies.py  Database session and current-user dependencies
 │   │   ├── errors.py        Error responses ({"error", "message"})
@@ -179,21 +180,30 @@ Then, from `backend/`:
 ```bash
 uv sync
 uv run alembic upgrade head      # create the tables
-uv run clinical-notes-seed       # load 5,000 synthetic notes
+uv run clinical-notes-seed       # load 5,000 synthetic notes and the users
 uv run clinical-notes-api        # start the API
 ```
 
 The API runs at <http://127.0.0.1:8000>, with interactive docs at `/docs` and
 a health check at `GET /api/health`.
 
-Every seeded user signs in with the password in `DEMO_USER_PASSWORD`
-(`demo-password` by default) and their id as the username — `clinician-1`,
-`reviewer-1` to `reviewer-5`, `admin-1` or `auditor-1`:
+The seed creates one administrator (`admin-1`) and nine test users
+(`clinician-1` to `clinician-3`, `reviewer-1` to `reviewer-5`, `auditor-1`),
+each with their own random password. It writes the usernames and passwords to
+`credentials.local.md` at the repository root. That file is git-ignored: never
+commit or share it. Seeding again replaces every password.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "reviewer-1", "password": "demo-password"}'
+  -d '{"username": "admin-1", "password": "<from credentials.local.md>"}'
+```
+
+For a real installation, create the first administrator yourself; there is no
+default admin password anywhere:
+
+```bash
+uv run clinical-notes-create-admin   # asks for a username, name and password
 ```
 
 ### Frontend against the API
@@ -205,10 +215,13 @@ npm run dev:api
 ```
 
 This turns the mock server off and sends requests to
-`http://127.0.0.1:8000` (see `frontend/.env.api`). Switching demo users signs
-in as that user behind the scenes with the shared demo password, so every
-request carries a real access token and the API applies its own rules. Changes
-are saved in Postgres.
+`http://127.0.0.1:8000` (see `frontend/.env.api`). Changes are saved in
+Postgres.
+
+> **Temporarily broken:** the demo identity switcher signs in behind the scenes
+> with a shared password, which no longer exists now that every user has their
+> own. Until a sign-in page replaces the switcher, `npm run dev:api` cannot sign
+> in. `npm run dev` (mock server) is unaffected.
 
 ### Checks
 
@@ -253,7 +266,6 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Browser origins allowed to call the API |
 | `JWT_SECRET` | a development-only value | Signs access tokens; required in production, 32+ characters |
 | `ACCESS_TOKEN_MINUTES` | `60` | How long an access token stays valid |
-| `DEMO_USER_PASSWORD` | `demo-password` | Password the seed gives every demo user |
 
 Environment variables take precedence over `.env`.
 
@@ -264,7 +276,7 @@ The frontend reads Vite variables (`frontend/.env.api` sets them for
 | --- | --- | --- |
 | `VITE_USE_MOCKS` | on in development | `false` sends requests to the API instead of the in-browser mock server; a production build always uses the API |
 | `VITE_API_BASE_URL` | empty (same origin) | Where the API is, e.g. `http://127.0.0.1:8000` |
-| `VITE_DEMO_PASSWORD` | `demo-password` | The backend's `DEMO_USER_PASSWORD`, used to sign demo users in |
+| `VITE_DEMO_PASSWORD` | `demo-password` | Password the identity switcher signs in with; no seeded user has it any more (see above) |
 
 ## Architecture
 
@@ -523,7 +535,9 @@ text, indexed with GIN, so searching stays fast as the number of notes grows.
 `clinical-notes-seed` loads the same 5,000 synthetic notes as the frontend's
 mock server, so a note id means the same note in both. Use `--reset` to replace
 existing data and `--count` to change the number of notes; it refuses to run
-when `ENVIRONMENT=production`. The generator is a Python port of
+when `ENVIRONMENT=production`. Every user gets a random password, written to
+`credentials.local.md` (`--credentials-file` to choose another place) before
+the data is committed, so if the file cannot be written nothing is seeded. The generator is a Python port of
 `frontend/src/mock-data`; a test compares it with a sample exported from the
 TypeScript code (`backend/tests/fixtures/export_mock_sample.ts`).
 
@@ -539,6 +553,16 @@ on the role, the note's status and reviewer ownership. For example:
 
 Client-side checks shape the experience; the server validates every mutation
 independently.
+
+### Accounts
+
+Each user has a username to sign in with (lowercase letters, digits, dots,
+dashes or underscores, 3 to 32 characters) and an internal id; seeded users'
+usernames are their ids. Users are deactivated, never deleted, because notes
+and their history refer to them. Every change to an account is written to an
+append-only admin action log that a database trigger protects, like note
+history. Tables for one-time setup links and sign-in renewal tokens are in
+place; only hashes of those tokens are stored.
 
 ### Authentication
 
@@ -592,7 +616,10 @@ sign-in token caching and renewal, and accessibility behavior.
 Python seed generator and the TypeScript one; every workflow decision in the
 shared contract; and, against a throwaway `clinical_notes_test` database, that
 migrations match the models and round-trip, constraints and immutability
-triggers hold, seeded rows match the generator, and login, token expiry,
+triggers hold, seeded rows match the generator, accounts follow their rules
+(username format and uniqueness, an unchangeable admin action log, a
+migration that gives existing users their id as username, every seeded
+password signing in, the create-admin command's checks), and login, token expiry,
 forged tokens and revoked users behave correctly. The note endpoints are
 checked the same way: list items and note details equal the mock server's for
 every seeded note; cursor pages cover every note exactly once for each sort;
@@ -627,8 +654,8 @@ browser-driven end-to-end suite yet.
 - **Real-time updates need the mock server for now.** Against the API, other
   users' changes appear on reload; pushing them over WebSockets comes next.
   Presence between tabs of one browser still works.
-- **The demo password ships in the page** so the identity switcher can sign
-  in. That suits synthetic demo accounts only.
+- **The identity switcher still exists** but cannot sign in against the API
+  any more (see "Frontend against the API"); a sign-in page replaces it next.
 - With the mock server, data lives in one browser and resets on reload.
 - **Search covers the whole note**, not only the preview the mock server
   searched, so a word in the synthetic notes' shared wording (such as
@@ -636,8 +663,6 @@ browser-driven end-to-end suite yet.
   only when they next change.
 - **Presence is always empty** in the API until real-time updates arrive, and
   accepted telemetry is only logged, not stored.
-- **Demo accounts share one password** (`DEMO_USER_PASSWORD`), which suits a
-  demonstration with synthetic data, not real users.
 - **MFA** is a per-user flag (on for reviewers and the admin), not a real
   second factor.
 - **Three-way merge instead of a CRDT** — it fits the immutable version model

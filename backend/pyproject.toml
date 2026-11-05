@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 clinical-notes-api = "clinical_notes_api:main"
 clinical-notes-seed = "clinical_notes_api.seed.__main__:main"
+clinical-notes-create-admin = "clinical_notes_api.accounts.create_admin:main"
 clinical-notes-openapi = "clinical_notes_api.openapi:main"
 
 [build-system]

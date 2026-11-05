@@ -1,11 +1,13 @@
 """Loads the synthetic mock data into the database."""
 
+import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.orm import Session
 
+from clinical_notes_api.accounts.users import MFA_ROLES
 from clinical_notes_api.db import (
     Base,
     ClinicalSession,
@@ -35,12 +37,14 @@ SEED_USERS: tuple[Json, ...] = (
     {"id": "auditor-1", "displayName": "Taylor Morgan", "role": "READONLY_AUDITOR"},
 )
 
-# As in the frontend's demo identities: reviewers and the admin have MFA.
-MFA_ROLES = frozenset({"REVIEWER", "ADMIN"})
 
-DEFAULT_DEMO_PASSWORD = "demo-password"  # noqa: S105 - synthetic demo accounts
+# Random bytes per generated password: 16 give 22 URL-safe characters.
+PASSWORD_BYTES = 16
 
 TABLES_IN_DEPENDENCY_ORDER = (
+    "user_admin_events",
+    "refresh_tokens",
+    "user_setup_links",
     "client_mutations",
     "review_events",
     "note_versions",
@@ -58,12 +62,25 @@ class SeedError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class Credential:
+    username: str
+    display_name: str
+    role: str
+    password: str
+
+
+@dataclass(frozen=True)
 class SeedResult:
     users: int
     patients: int
     notes: int
     versions: int
     events: int
+    credentials: tuple[Credential, ...]
+
+
+def generate_password() -> str:
+    return secrets.token_urlsafe(PASSWORD_BYTES)
 
 
 def _batched(rows: list[Json]) -> Iterable[list[Json]]:
@@ -89,11 +106,13 @@ def seed_database(
     count: int = 5_000,
     seed: int = 42,
     reset: bool = False,
-    demo_password: str = DEFAULT_DEMO_PASSWORD,
+    password: str | None = None,
 ) -> SeedResult:
-    """Insert `count` synthetic notes and the demo users; the caller commits.
+    """Insert `count` synthetic notes and the users; the caller commits.
 
-    Every demo user can log in with `demo_password`.
+    Each user gets their own random password, returned in the result's
+    `credentials` (only hashes are stored). Tests pass `password` to give
+    every user the same known one.
     """
     if reset:
         clear_all(session)
@@ -105,16 +124,27 @@ def seed_database(
         for summary in generate_note_summaries(count, seed)
     ]
 
+    credentials = tuple(
+        Credential(
+            # Seeded users sign in with their id.
+            username=user["id"],
+            display_name=user["displayName"],
+            role=user["role"],
+            password=password if password is not None else generate_password(),
+        )
+        for user in SEED_USERS
+    )
     users = [
         {
             "id": user["id"],
+            "username": credential.username,
             "display_name": user["displayName"],
             "role": user["role"],
             # Hashed per user, so each gets its own salt.
-            "password_hash": hash_password(demo_password),
+            "password_hash": hash_password(credential.password),
             "mfa_enabled": user["role"] in MFA_ROLES,
         }
-        for user in SEED_USERS
+        for user, credential in zip(SEED_USERS, credentials, strict=True)
     ]
 
     patients_by_id: dict[str, Json] = {}
@@ -212,4 +242,5 @@ def seed_database(
         notes=len(notes),
         versions=len(versions),
         events=len(events),
+        credentials=credentials,
     )

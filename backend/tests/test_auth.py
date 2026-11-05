@@ -38,7 +38,7 @@ def settings(test_database_url: str) -> Settings:
 @pytest.fixture(scope="module")
 def seeded_users(engine: Engine) -> Iterator[None]:
     with create_session_factory(engine).begin() as session:
-        seed_database(session, count=0, reset=True, demo_password=PASSWORD)
+        seed_database(session, count=0, reset=True, password=PASSWORD)
     yield
     with engine.begin() as connection:
         connection.execute(text("TRUNCATE users CASCADE"))
@@ -166,6 +166,7 @@ def test_removed_user_loses_access_at_once(
             session.add(
                 User(
                     id="auditor-1",
+                    username="auditor-1",
                     display_name="Taylor Morgan",
                     role="READONLY_AUDITOR",
                 )
