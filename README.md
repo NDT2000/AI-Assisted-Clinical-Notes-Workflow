@@ -226,7 +226,18 @@ Backend, from `backend/`:
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest
+uv run pytest --cov      # with a coverage report; fails below 95%
 ```
+
+Database tests need the Compose Postgres and are skipped without it; set
+`REQUIRE_DATABASE=1` to make them fail instead.
+
+**Continuous integration.** GitHub Actions
+(`.github/workflows/backend.yml`) runs the backend checks on every pull
+request and push to `main` that touches `backend/` or `contract/`: lint,
+formatting, and the full test suite with coverage against a Postgres
+service container, with `REQUIRE_DATABASE=1` so no database test is quietly
+skipped.
 
 ## Configuration
 
@@ -585,10 +596,26 @@ triggers hold, seeded rows match the generator, and login, token expiry,
 forged tokens and revoked users behave correctly. The note endpoints are
 checked the same way: list items and note details equal the mock server's for
 every seeded note; cursor pages cover every note exactly once for each sort;
-filters match the mock; search matches name prefixes and stemmed note text,
-needs every word, follows newly saved versions and uses the GIN index; saves, actions, conflicts, retries,
-editing rules, bulk actions, patient lookup and the telemetry check behave as
-specified. Database tests are skipped when Postgres is not running.
+filters match the mock; pages stay consistent while notes change; search
+matches name prefixes and stemmed note text, needs every word, follows newly
+saved versions and uses the GIN index; saves, actions, conflicts, retries,
+bulk actions, patient lookup and the telemetry check behave as specified.
+
+- **Authorization matrix** (`test_note_rules.py`): for every status, every
+  kind of user (clinician, admin, auditor, the assigned reviewer with and
+  without MFA, another reviewer) and every action, saving, transitions and
+  bulk actions give exactly the answer the shared rules give for that note's
+  stored state.
+- **Concurrency** (`test_concurrency.py`): with real commits on separate
+  connections, of eight simultaneous saves from one version exactly one
+  wins and the rest get a conflict; eight simultaneous retries make one
+  change; only one of five reviewers can start a review; overlapping bulk
+  actions do not deadlock. Without the row lock these tests fail.
+- **Seed command**: refuses to run in production and to seed a non-empty
+  database without `--reset`.
+
+Coverage is about 98% of lines and branches; CI fails below 95%. Database
+tests are skipped when Postgres is not running, unless `REQUIRE_DATABASE=1`.
 
 The main risks tested are lost edits, duplicate writes, stale responses,
 invalid transitions, unauthorized mutations, replay ordering, duplicate

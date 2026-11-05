@@ -1,26 +1,27 @@
 """The note, patient and telemetry endpoints, against a real database.
 
-60 seeded notes are shared by the module; every test runs in a transaction
-that is rolled back afterwards, so tests can change notes freely.
+Uses the note API fixtures from conftest.py: 60 seeded notes, and every test
+runs in a transaction that is rolled back afterwards.
 """
 
 import base64
 import json
-from collections.abc import Iterator
-from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
-from sqlalchemy import Connection, Engine, Text, literal, select, text, update
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import Text, literal, select, text, update
+from sqlalchemy.orm import Session
 
-from clinical_notes_api.config import Settings
-from clinical_notes_api.db import ClientMutation, Note, NoteVersion, ReviewEvent, User
-from clinical_notes_api.db.session import create_session_factory
-from clinical_notes_api.main import create_app
+from clinical_notes_api.db import (
+    ClientMutation,
+    ClinicalSession,
+    Note,
+    NoteVersion,
+    ReviewEvent,
+    User,
+)
 from clinical_notes_api.notes.queries import (
     EMPTY_PREVIEW,
     MAX_SEARCH_TERMS,
@@ -28,16 +29,11 @@ from clinical_notes_api.notes.queries import (
     full_text_query,
     search_terms,
 )
-from clinical_notes_api.security import create_access_token
-from clinical_notes_api.seed.load import clear_all, seed_database
 from clinical_notes_api.seed.mock_data import (
     generate_note_detail,
     generate_note_summaries,
 )
-
-NOTE_COUNT = 60
-SEED = 42
-PASSWORD = "test-password"  # noqa: S105 - test fixture
+from tests.note_api import NOTE_COUNT, SEED, content, current_version_id
 
 SUMMARIES = generate_note_summaries(NOTE_COUNT, SEED)
 SUMMARIES_BY_ID = {summary["id"]: summary for summary in SUMMARIES}
@@ -51,81 +47,6 @@ REJECTED_NOTE = "note-000008"  # reviewer-2
 READY_NOTE = "note-000012"  # reviewer-2
 
 
-@pytest.fixture(scope="module")
-def settings(test_database_url: str) -> Settings:
-    return Settings(
-        _env_file=None,
-        environment="test",
-        database_url=test_database_url,
-        jwt_secret=SecretStr("test-secret-that-is-long-enough-for-hs256"),
-    )
-
-
-@pytest.fixture(scope="module")
-def seeded(engine: Engine) -> Iterator[None]:
-    with create_session_factory(engine).begin() as session:
-        seed_database(
-            session,
-            count=NOTE_COUNT,
-            seed=SEED,
-            reset=True,
-            demo_password=PASSWORD,
-        )
-    yield
-    with create_session_factory(engine).begin() as session:
-        clear_all(session)
-
-
-@pytest.fixture
-def connection(engine: Engine, seeded: None) -> Iterator[Connection]:
-    """One connection in an outer transaction that is always rolled back."""
-    with engine.connect() as connection:
-        transaction = connection.begin()
-        yield connection
-        transaction.rollback()
-
-
-@pytest.fixture
-def app(settings: Settings, connection: Connection) -> FastAPI:
-    app = create_app(settings)
-    # Each request's commit becomes a savepoint inside the outer transaction.
-    app.state.session_factory = sessionmaker(
-        bind=connection,
-        expire_on_commit=False,
-        join_transaction_mode="create_savepoint",
-    )
-    return app
-
-
-@pytest.fixture
-def db(connection: Connection) -> Iterator[Session]:
-    """For checking what the API wrote."""
-    with Session(bind=connection, join_transaction_mode="create_savepoint") as session:
-        yield session
-
-
-@pytest.fixture
-def client(app: FastAPI) -> TestClient:
-    return TestClient(app)
-
-
-def auth(user_id: str, settings: Settings) -> dict[str, str]:
-    # Roles are read from the database; the token only names the user.
-    token, _ = create_access_token(
-        user_id=user_id,
-        role="CLINICIAN",
-        mfa_verified=False,
-        settings=settings,
-        now=datetime.now(UTC),
-    )
-    return {"Authorization": f"Bearer {token}"}
-
-
-@pytest.fixture
-def as_user(settings: Settings):
-    return lambda user_id: auth(user_id, settings)
-
-
 def expected_detail(note_id: str) -> dict[str, Any]:
     """The mock server's detail for a seeded note, as the database holds it."""
     detail = generate_note_detail(SUMMARIES_BY_ID[note_id])
@@ -135,22 +56,6 @@ def expected_detail(note_id: str) -> dict[str, Any]:
         if event["actorId"] == "admin-1":
             event["actorDisplayName"] = "Jordan Lee"
     return {**detail, "presence": []}
-
-
-def current_version_id(client: TestClient, headers: dict, note_id: str) -> str:
-    return client.get(f"/api/notes/{note_id}", headers=headers).json()["note"][
-        "currentVersionId"
-    ]
-
-
-def content(**changes: str) -> dict[str, str]:
-    return {
-        "subjective": "Patient feels better. Sleeping well.",
-        "objective": "Vitals stable.",
-        "assessment": "Improving.",
-        "plan": "Review in two weeks.",
-        **changes,
-    }
 
 
 # --- Authentication --------------------------------------------------------
@@ -406,6 +311,116 @@ def test_list_rejects_unknown_values_and_caps_the_limit(
     first_page = client.get("/api/notes", headers=headers).json()["items"]
     unreadable = client.get("/api/notes?cursor=not-a-cursor", headers=headers)
     assert unreadable.json()["items"] == first_page
+
+
+def page_through(
+    client: TestClient,
+    headers: dict,
+    sort_by: str,
+    between_pages=None,
+) -> list[str]:
+    """Every id the list returns, page by page; runs between_pages once."""
+    ids: list[str] = []
+    cursor = None
+    while True:
+        params = {"sortBy": sort_by, "limit": 10}
+        if cursor:
+            params["cursor"] = cursor
+        body = client.get("/api/notes", params=params, headers=headers).json()
+        ids.extend(item["id"] for item in body["items"])
+        if between_pages is not None:
+            between_pages(ids)
+            between_pages = None
+        cursor = body["cursor"]["next"]
+        if not body["cursor"]["hasMore"]:
+            return ids
+
+
+@pytest.mark.parametrize("sort_by", ["updatedAt", "createdAt"])
+def test_pages_stay_consistent_while_a_note_changes(
+    client: TestClient,
+    as_user,
+    sort_by: str,
+) -> None:
+    headers = as_user("clinician-1")
+    order = [item["id"] for item in all_notes(client, headers, sortBy=sort_by)]
+    # A note further down that a clinician may edit.
+    changed = next(
+        note_id
+        for note_id in order[20:]
+        if SUMMARIES_BY_ID[note_id]["status"] in ("REJECTED", "AMENDED")
+    )
+
+    def edit_changed_note(_seen: list[str]) -> None:
+        save(
+            client,
+            headers,
+            changed,
+            baseVersionId=current_version_id(client, headers, changed),
+            clientMutationId="edited-while-paging",
+            content=content(),
+        )
+
+    ids = page_through(client, headers, sort_by, between_pages=edit_changed_note)
+
+    assert len(ids) == len(set(ids)), "a note was listed twice"
+    if sort_by == "updatedAt":
+        # The edit moved the note to the top, behind the cursor: it is not
+        # listed again, and nothing else is skipped.
+        assert set(ids) == set(order) - {changed}
+    else:
+        # Creation time does not change, so every note is still listed once.
+        assert set(ids) == set(order)
+
+
+def test_note_without_content_is_not_listed_or_opened(
+    client: TestClient,
+    as_user,
+    db: Session,
+) -> None:
+    template = db.get(Note, READY_NOTE)
+    assert template is not None
+    db.add(
+        ClinicalSession(
+            id="session-empty",
+            patient_id=template.patient_id,
+            clinician_id="clinician-1",
+            started_at=template.created_at,
+            ended_at=template.created_at,
+        )
+    )
+    db.add(
+        Note(
+            id="note-empty",
+            patient_id=template.patient_id,
+            session_id="session-empty",
+            # A status the clinician may edit, so a save gets past the
+            # permission check to the missing content.
+            status="REJECTED",
+            current_version_id=None,
+            created_at=template.created_at,
+            updated_at=template.created_at,
+        )
+    )
+    db.commit()
+    headers = as_user("clinician-1")
+
+    listed = {item["id"] for item in all_notes(client, headers)}
+    detail = client.get("/api/notes/note-empty", headers=headers)
+    saved = save(
+        client,
+        headers,
+        "note-empty",
+        baseVersionId="none",
+        clientMutationId="m",
+        content=content(),
+    )
+
+    assert "note-empty" not in listed
+    assert detail.status_code == 404
+    assert detail.json()["message"] == "Note note-empty has no content yet."
+    assert saved.status_code == 404
+    assert saved.json()["message"] == "Note note-empty has no content yet."
 
 
 def test_cursor_from_another_sort_starts_over(client: TestClient, as_user) -> None:
