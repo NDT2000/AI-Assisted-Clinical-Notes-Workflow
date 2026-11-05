@@ -30,12 +30,23 @@ build-backend = "uv_build"
 dev = [
     "httpx2>=2.16.0",
     "pytest>=8.3",
+    "pytest-cov>=7.1.0",
     "ruff>=0.8",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.coverage.run]
+source = ["clinical_notes_api"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 95
+exclude_also = ['if __name__ == "__main__":']
 
 [tool.ruff]
 line-length = 88

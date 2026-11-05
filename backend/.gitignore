@@ -5,3 +5,8 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 dist/
+
+# Coverage data from pytest --cov
+.coverage
+.coverage.*
+htmlcov/
