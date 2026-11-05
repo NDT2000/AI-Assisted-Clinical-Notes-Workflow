@@ -5,8 +5,11 @@ from clinical_notes_api.db.models import (
     Note,
     NoteVersion,
     Patient,
+    RefreshToken,
     ReviewEvent,
     User,
+    UserAdminEvent,
+    UserSetupLink,
 )
 
 __all__ = [
@@ -16,6 +19,9 @@ __all__ = [
     "Note",
     "NoteVersion",
     "Patient",
+    "RefreshToken",
     "ReviewEvent",
     "User",
+    "UserAdminEvent",
+    "UserSetupLink",
 ]

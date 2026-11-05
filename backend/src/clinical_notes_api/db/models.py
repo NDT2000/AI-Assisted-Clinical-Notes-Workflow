@@ -19,7 +19,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    func,
     text,
+    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -42,9 +44,28 @@ UserRole = Literal["CLINICIAN", "REVIEWER", "ADMIN", "READONLY_AUDITOR"]
 # The two note mutations a client retries with the same clientMutationId.
 MutationKind = Literal["SAVE_VERSION", "TRANSITION"]
 
+# What an administrator (or the create-admin command) did to an account.
+UserAdminAction = Literal[
+    "CREATED",
+    "RENAMED",
+    "ROLE_CHANGED",
+    "DEACTIVATED",
+    "REACTIVATED",
+    "SETUP_LINK_ISSUED",
+    "PASSWORD_SET",
+]
+
 NOTE_STATUSES: tuple[str, ...] = get_args(NoteStatus)
 USER_ROLES: tuple[str, ...] = get_args(UserRole)
 MUTATION_KINDS: tuple[str, ...] = get_args(MutationKind)
+USER_ADMIN_ACTIONS: tuple[str, ...] = get_args(UserAdminAction)
+
+# Sign-in names: 3-32 lowercase letters, digits, dots, dashes or underscores.
+USERNAME_LENGTH = 32
+USERNAME_PATTERN = "^[a-z0-9._-]{3,32}$"
+
+# SHA-256 in hex, for setup links and renewal tokens stored as hashes.
+TOKEN_HASH_LENGTH = 64
 
 # Longest clientMutationId the API accepts.
 CLIENT_MUTATION_ID_LENGTH = 128
@@ -62,9 +83,13 @@ def _timestamp() -> DateTime:
 
 
 class User(Base):
+    """A person who signs in. Never deleted: history refers to users."""
+
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    # What the person signs in with; the id is internal.
+    username: Mapped[str] = mapped_column(String(USERNAME_LENGTH), unique=True)
     display_name: Mapped[str] = mapped_column(String(200))
     role: Mapped[UserRole] = mapped_column(String(32))
     # Argon2 hash; null means the user cannot log in.
@@ -74,8 +99,92 @@ class User(Base):
         Boolean,
         server_default=false(),
     )
+    # Deactivated users keep their history but cannot sign in.
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=true())
+    created_at: Mapped[datetime] = mapped_column(
+        _timestamp(),
+        server_default=func.now(),
+    )
+    # Null for users made by the seed or the create-admin command.
+    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    last_login_at: Mapped[datetime | None] = mapped_column(_timestamp())
 
-    __table_args__ = (CheckConstraint(_one_of("role", USER_ROLES), name="role"),)
+    __table_args__ = (
+        CheckConstraint(_one_of("role", USER_ROLES), name="role"),
+        CheckConstraint(f"username ~ '{USERNAME_PATTERN}'", name="username_format"),
+    )
+
+
+class UserSetupLink(Base):
+    """A one-time link with which a new user chooses their password.
+
+    Only a hash of the link's token is stored, so a database copy cannot be
+    used to take over an account.
+    """
+
+    __tablename__ = "user_setup_links"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(TOKEN_HASH_LENGTH), unique=True)
+    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(_timestamp())
+    expires_at: Mapped[datetime] = mapped_column(_timestamp())
+    used_at: Mapped[datetime | None] = mapped_column(_timestamp())
+
+    __table_args__ = (
+        CheckConstraint("expires_at > created_at", name="expires_after_created"),
+    )
+
+
+class RefreshToken(Base):
+    """A renewal token that keeps a user signed in; stored as a hash.
+
+    Each renewal replaces the token with a new one in the same family. A
+    replaced token presented again means it was copied: the whole family is
+    revoked.
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    family_id: Mapped[str] = mapped_column(String(ID_LENGTH), index=True)
+    token_hash: Mapped[str] = mapped_column(String(TOKEN_HASH_LENGTH), unique=True)
+    created_at: Mapped[datetime] = mapped_column(_timestamp())
+    expires_at: Mapped[datetime] = mapped_column(_timestamp())
+    revoked_at: Mapped[datetime | None] = mapped_column(_timestamp())
+    replaced_by_id: Mapped[str | None] = mapped_column(
+        ForeignKey("refresh_tokens.id"),
+    )
+
+    __table_args__ = (
+        CheckConstraint("expires_at > created_at", name="expires_after_created"),
+    )
+
+
+class UserAdminEvent(Base):
+    """An append-only record of one change to an account.
+
+    A database trigger rejects updates and deletes.
+    """
+
+    __tablename__ = "user_admin_events"
+
+    event_id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    # Null when the change was made by a command, not a signed-in admin.
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    target_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    action: Mapped[UserAdminAction] = mapped_column(String(32))
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        server_default=text("'{}'::jsonb"),
+    )
+    occurred_at: Mapped[datetime] = mapped_column(_timestamp())
+
+    __table_args__ = (
+        CheckConstraint(_one_of("action", USER_ADMIN_ACTIONS), name="action"),
+    )
 
 
 class Patient(Base):

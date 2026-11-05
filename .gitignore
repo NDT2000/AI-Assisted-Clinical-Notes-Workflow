@@ -1,2 +1,5 @@
 # Local environment; see .env.example
 .env
+
+# Seeded users' passwords, written by clinical-notes-seed. Never commit.
+credentials.local.md
