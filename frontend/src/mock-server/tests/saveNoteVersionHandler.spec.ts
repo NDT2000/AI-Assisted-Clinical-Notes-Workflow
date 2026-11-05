@@ -1,3 +1,4 @@
+import { mockAuthHeaders } from "../mockAuth";
 import type {
   Actor,
 } from "../../domain/actor";
@@ -85,11 +86,7 @@ function getActorHeaders(
   return {
     "content-type":
       "application/json",
-    "x-actor-id": actor.id,
-    "x-actor-role":
-      actor.role,
-    "x-actor-display-name":
-      actor.displayName,
+    ...mockAuthHeaders(actor),
   };
 }
 
@@ -529,7 +526,7 @@ describe(
     );
 
     it(
-      "returns 403 when actor headers are missing",
+      "returns 403 without an access token",
       async () => {
         const detail =
           prepareInReviewNote();

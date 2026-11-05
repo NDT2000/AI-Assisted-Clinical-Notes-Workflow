@@ -1,3 +1,4 @@
+import { apiFetch } from "../../../api/apiClient";
 import type { NoteListFilters } from "../utils/noteListSearchParams";
 import type { NoteListResponse } from "./noteListResponse";
 
@@ -60,7 +61,7 @@ export async function getNotes(
     filters.sortDirection,
   );
 
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/notes?${searchParams.toString()}`,
     { signal },
   );

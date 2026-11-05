@@ -1,3 +1,5 @@
+import { createMockToken, mockAuthHeaders } from "../mockAuth";
+import type { UserRole } from "../../domain/noteAttributes";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, } from "vitest";
 import { setupServer } from "msw/node";
 
@@ -30,6 +32,13 @@ interface ErrorResponse {
   error: string;
   message: string;
 }
+
+
+const TEST_REVIEWER = {
+  id: "reviewer-1",
+  displayName: "Alex Kim",
+  role: "REVIEWER" as const,
+};
 
 describe("getNoteDetailHandler", () => {
   beforeAll(() => {
@@ -68,7 +77,7 @@ describe("getNoteDetailHandler", () => {
       `http://localhost/api/notes/${summary.id}`,
       {
         headers: {
-          "x-actor-role": "REVIEWER",
+          ...mockAuthHeaders(TEST_REVIEWER),
         },
       },
     );
@@ -151,7 +160,10 @@ describe("getNoteDetailHandler", () => {
       `http://localhost/api/notes/${summary.id}`,
       {
         headers: {
-          "x-actor-role": "PATIENT",
+          authorization: `Bearer ${createMockToken({
+            ...TEST_REVIEWER,
+            role: "PATIENT" as UserRole,
+          })}`,
         },
       },
     );
@@ -168,7 +180,7 @@ describe("getNoteDetailHandler", () => {
       "http://localhost/api/notes/note-does-not-exist",
       {
         headers: {
-          "x-actor-role": "REVIEWER",
+          ...mockAuthHeaders(TEST_REVIEWER),
         },
       },
     );
@@ -206,7 +218,7 @@ describe("getNoteDetailHandler", () => {
       `http://localhost/api/notes/${summary.id}`,
       {
         headers: {
-          "x-actor-role": "REVIEWER",
+          ...mockAuthHeaders(TEST_REVIEWER),
         },
       },
     );

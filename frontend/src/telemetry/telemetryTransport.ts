@@ -1,15 +1,27 @@
+import { apiFetch } from "../api/apiClient";
+import { USE_MOCK_API } from "../api/apiConfig";
 import type {
   TelemetryBatch,
   TelemetrySendOptions,
   TelemetryTransport,
 } from "./telemetryTypes";
 
+type TelemetryFetch = (
+  input: string,
+  init: RequestInit,
+) => Promise<Response>;
+
 export interface FetchTelemetryTransportOptions {
   endpoint?: string;
   fetchImplementation?:
-    typeof fetch;
+    TelemetryFetch;
   navigatorImplementation?:
     Navigator;
+  /*
+   * sendBeacon cannot carry an access token, so it is used only with the
+   * mock server; the API gets a keepalive fetch instead.
+   */
+  useBeacon?: boolean;
 }
 
 export class FetchTelemetryTransport
@@ -18,7 +30,10 @@ export class FetchTelemetryTransport
     string;
 
   private readonly fetchImplementation:
-    typeof fetch;
+    TelemetryFetch;
+
+  private readonly useBeacon:
+    boolean;
 
   private readonly navigatorImplementation:
     Navigator | null;
@@ -31,11 +46,15 @@ export class FetchTelemetryTransport
       options.endpoint ??
       "/api/telemetry";
 
+    // apiFetch adds the API's base URL and the access token.
     this.fetchImplementation =
       options.fetchImplementation ??
-      globalThis.fetch.bind(
-        globalThis,
-      );
+      ((input, init) =>
+        apiFetch(input, init));
+
+    this.useBeacon =
+      options.useBeacon ??
+      USE_MOCK_API;
 
     this.navigatorImplementation =
       options.navigatorImplementation ??
@@ -55,6 +74,7 @@ export class FetchTelemetryTransport
 
     if (
       options.unload === true &&
+      this.useBeacon &&
       this.navigatorImplementation
         ?.sendBeacon !==
         undefined

@@ -130,7 +130,6 @@ export function useNoteDetail(
         const result =
           await readNoteDetail(
             resolvedNoteId,
-            actorRole,
             controller.signal,
           );
 

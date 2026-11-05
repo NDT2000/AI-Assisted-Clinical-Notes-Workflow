@@ -1,4 +1,3 @@
-import type { UserRole } from "../../../domain/noteAttributes";
 import type { NoteDetail } from "../../../domain/noteDetail";
 
 import {
@@ -89,7 +88,6 @@ async function readCachedNote(
 
 export async function readNoteDetail(
   noteId: string,
-  actorRole: UserRole,
   signal?: AbortSignal,
 ): Promise<NoteDetailReadResult> {
   if (signal?.aborted) {
@@ -103,7 +101,6 @@ export async function readNoteDetail(
   try {
     const note = await getNoteDetail(
       noteId,
-      actorRole,
       signal,
     );
 

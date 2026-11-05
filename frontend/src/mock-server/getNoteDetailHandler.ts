@@ -1,32 +1,14 @@
+import { getMockActor } from "./mockAuth";
 import { http, HttpResponse, } from "msw";
 
 import type { UserRole, } from "../domain/noteAttributes";
 import { getNoteDetail, } from "./noteStore";
 import { simulateNetwork, SimulatedNetworkFailure, } from "./mockNetwork";
 
-const USER_ROLES: readonly UserRole[] = [
-  "CLINICIAN",
-  "REVIEWER",
-  "ADMIN",
-  "READONLY_AUDITOR",
-];
-
 function getActorRole(
   request: Request,
 ): UserRole | null {
-  const rawRole =
-    request.headers.get("x-actor-role");
-
-  if (
-    rawRole === null ||
-    !USER_ROLES.includes(
-      rawRole as UserRole,
-    )
-  ) {
-    return null;
-  }
-
-  return rawRole as UserRole;
+  return getMockActor(request)?.role ?? null;
 }
 
 export const getNoteDetailHandler =

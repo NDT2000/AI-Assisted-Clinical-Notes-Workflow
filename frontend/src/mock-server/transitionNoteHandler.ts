@@ -1,9 +1,9 @@
+import { getMockActor } from "./mockAuth";
 import type {
   Actor,
 } from "../domain/actor";
 import { http, HttpResponse, } from "msw";
 
-import type { UserRole } from "../domain/noteAttributes";
 import {
   USER_NOTE_ACTION_TRIGGERS,
   type TransitionNoteRequestBody,
@@ -13,13 +13,6 @@ import { devFailureControls } from "./devFailureControls";
 import { SimulatedNetworkFailure, simulateNetwork, } from "./mockNetwork";
 import { transitionNote } from "./noteStore";
 import { mockRealtimeChannel } from "../features/notes/realtime/mockRealtimeChannel";
-
-const USER_ROLES: readonly UserRole[] = [
-  "CLINICIAN",
-  "REVIEWER",
-  "ADMIN",
-  "READONLY_AUDITOR",
-];
 
 function isRecord(
   value: unknown,
@@ -69,38 +62,7 @@ function isTransitionNoteRequestBody(
 function getTransitionActor(
   request: Request,
 ): Actor | null {
-  const id = request.headers
-    .get("x-actor-id")
-    ?.trim();
-
-  const displayName = request.headers
-    .get("x-actor-display-name")
-    ?.trim();
-
-  const rawRole = request.headers.get(
-    "x-actor-role",
-  );
-
-  if (
-    !id ||
-    !displayName ||
-    rawRole === null ||
-    !USER_ROLES.includes(
-      rawRole as UserRole,
-    )
-  ) {
-    return null;
-  }
-
-  return {
-    id,
-    displayName,
-    role: rawRole as UserRole,
-    mfaVerified:
-      request.headers.get(
-        "x-mfa-verified",
-      ) === "true",
-  };
+  return getMockActor(request);
 }
 
 export const transitionNoteHandler =

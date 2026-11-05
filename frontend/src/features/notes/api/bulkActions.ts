@@ -1,3 +1,4 @@
+import { apiFetch } from "../../../api/apiClient";
 import type {
   Actor,
 } from "../../../domain/actor";
@@ -39,20 +40,10 @@ async function readErrorMessage(
   return fallback;
 }
 
-function createActorHeaders(
-  actor:
-    Actor,
-): Record<string, string> {
-  return {
-    "content-type":
-      "application/json",
-    "x-actor-id": actor.id,
-    "x-actor-role":
-      actor.role,
-    "x-actor-display-name":
-      actor.displayName,
-  };
-}
+const JSON_HEADERS = {
+  "content-type":
+    "application/json",
+};
 
 export async function postAssignReviewer(
   noteIds: string[],
@@ -65,12 +56,11 @@ export async function postAssignReviewer(
   actor:
     Actor,
 ): Promise<AssignReviewerResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     "/api/notes/bulk/assign-reviewer",
     {
       method: "POST",
-      headers:
-        createActorHeaders(actor),
+      headers: JSON_HEADERS,
       body: JSON.stringify({
         noteIds,
         reviewerId:
@@ -80,6 +70,7 @@ export async function postAssignReviewer(
           null,
       }),
     },
+    { actor },
   );
 
   if (!response.ok) {
@@ -99,17 +90,17 @@ export async function postRequestRegeneration(
   actor:
     Actor,
 ): Promise<RegenerateResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     "/api/notes/bulk/regenerate",
     {
       method: "POST",
-      headers:
-        createActorHeaders(actor),
+      headers: JSON_HEADERS,
       body:
         JSON.stringify({
           noteIds,
         }),
     },
+    { actor },
   );
 
   if (!response.ok) {

@@ -1,4 +1,4 @@
-import type { UserRole, } from "../../../domain/noteAttributes";
+import { apiFetch } from "../../../api/apiClient";
 import type { NoteDetail, } from "../../../domain/noteDetail";
 
 interface ErrorResponseBody {
@@ -42,21 +42,16 @@ async function readErrorResponse(
   }
 }
 
+/* Sent as the active demo identity. */
 export async function getNoteDetail(
   noteId: string,
-  actorRole: UserRole,
   signal?: AbortSignal,
 ): Promise<NoteDetail> {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/notes/${encodeURIComponent(
       noteId,
     )}`,
-    {
-      signal,
-      headers: {
-        "x-actor-role": actorRole,
-      },
-    },
+    { signal },
   );
 
   if (!response.ok) {
