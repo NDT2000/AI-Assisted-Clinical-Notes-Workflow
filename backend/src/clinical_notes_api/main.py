@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from clinical_notes_api import auth, health, telemetry
+from clinical_notes_api.accounts.router import router as users_router
 from clinical_notes_api.config import Settings, get_settings
 from clinical_notes_api.db.session import create_db_engine, create_session_factory
 from clinical_notes_api.errors import register_error_handlers
@@ -37,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(notes_router, prefix=API_PREFIX)
+    app.include_router(users_router, prefix=API_PREFIX)
     app.include_router(telemetry.router, prefix=API_PREFIX)
 
     _document_validation_errors(app)

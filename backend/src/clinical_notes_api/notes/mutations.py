@@ -372,6 +372,10 @@ def assign_reviewer(
         reviewer = session.get(User, reviewer_id)
         if reviewer is None or reviewer.role != "REVIEWER":
             raise invalid_request(f"{reviewer_id} is not a reviewer.")
+        if not reviewer.is_active:
+            raise invalid_request(
+                f"{reviewer.display_name} is deactivated and cannot be assigned notes."
+            )
 
     note_ids = _unique(request.note_ids)
     notes = _lock_notes(session, note_ids)

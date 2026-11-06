@@ -12,11 +12,21 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 from pydantic import BaseModel, Field
 
-from clinical_notes_api.accounts import sessions
+from clinical_notes_api.accounts import sessions, setup_links
+from clinical_notes_api.accounts.schemas import (
+    SetPasswordRequest,
+    SetupLinkInfo,
+    SetupLinkToken,
+)
 from clinical_notes_api.config import Settings
 from clinical_notes_api.db import User
 from clinical_notes_api.db.models import LOGIN_USERNAME_LENGTH
-from clinical_notes_api.dependencies import AppSettings, CurrentUser, SessionFactory
+from clinical_notes_api.dependencies import (
+    AppSettings,
+    CurrentUser,
+    DbSession,
+    SessionFactory,
+)
 from clinical_notes_api.errors import ApiError, ErrorResponse, forbidden
 from clinical_notes_api.security import create_access_token
 
@@ -234,6 +244,46 @@ def logout(
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     _clear_renewal_cookie(response, settings)
     return response
+
+
+@router.post(
+    "/setup-link",
+    dependencies=[OwnOrigin],
+    responses={400: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def check_setup_link(
+    request: SetupLinkToken,
+    session: DbSession,
+) -> SetupLinkInfo:
+    """Whose setup link this is, so the page can greet them before they choose
+    a password."""
+    found = setup_links.find(session, request.token, datetime.now(UTC))
+    if found is None:
+        raise setup_links.invalid_setup_link()
+    link, user = found
+    return SetupLinkInfo(
+        username=user.username,
+        display_name=user.display_name,
+        expires_at=link.expires_at,
+    )
+
+
+@router.post(
+    "/set-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[OwnOrigin],
+    responses={400: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def set_password(request: SetPasswordRequest, session: DbSession) -> Response:
+    """Choose a password with a setup link. The link then stops working, and
+    the person is signed out everywhere; they sign in with the new password."""
+    setup_links.set_password(
+        session,
+        request.token,
+        request.password,
+        datetime.now(UTC),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

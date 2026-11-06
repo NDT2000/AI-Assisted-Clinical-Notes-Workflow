@@ -61,6 +61,11 @@ def invalid_request(message: str) -> ApiError:
     return ApiError(400, "invalid_request", message)
 
 
+def conflict(code: str, message: str, **details: Any) -> ApiError:
+    """The request breaks a rule about the current state (409)."""
+    return ApiError(409, code, message, details=details)
+
+
 def ensure_allowed(decision: Decision) -> None:
     """Reject the request with the workflow's own reason when not allowed."""
     if not decision.allowed:
