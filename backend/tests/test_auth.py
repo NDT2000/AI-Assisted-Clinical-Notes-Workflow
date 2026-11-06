@@ -12,7 +12,7 @@ from pydantic import SecretStr
 from sqlalchemy import Engine, delete, text
 
 from clinical_notes_api.config import DEVELOPMENT_JWT_SECRET, Settings
-from clinical_notes_api.db import User
+from clinical_notes_api.db import RefreshToken, User
 from clinical_notes_api.db.session import create_session_factory
 from clinical_notes_api.dependencies import get_current_user
 from clinical_notes_api.errors import ensure_allowed, forbidden
@@ -74,6 +74,7 @@ def test_login_returns_a_token_and_the_user(client: TestClient) -> None:
     assert body["expires_in"] == 15 * 60
     assert body["user"] == {
         "id": "reviewer-1",
+        "username": "reviewer-1",
         "display_name": "Alex Kim",
         "role": "REVIEWER",
         "mfa_verified": True,
@@ -156,6 +157,8 @@ def test_removed_user_loses_access_at_once(
     token = login(client, "auditor-1").json()["access_token"]
 
     with create_session_factory(engine).begin() as session:
+        # Its sign-in session refers to the user, so it goes first.
+        session.execute(delete(RefreshToken).where(RefreshToken.user_id == "auditor-1"))
         session.execute(delete(User).where(User.id == "auditor-1"))
 
     try:
@@ -212,7 +215,12 @@ def _depends_on(route: APIRoute, dependency: object) -> bool:
     return False
 
 
-PUBLIC_MUTATIONS = {("POST", "/api/auth/login")}
+# Signing in, renewing and signing out work without an access token.
+PUBLIC_MUTATIONS = {
+    ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/refresh"),
+    ("POST", "/api/auth/logout"),
+}
 
 
 def test_every_mutation_requires_a_signed_in_user(app: FastAPI) -> None:

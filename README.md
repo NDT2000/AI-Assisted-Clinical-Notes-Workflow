@@ -118,7 +118,7 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │   │   ├── config.py        Settings from environment variables
 │   │   ├── main.py          App factory and routes
 │   │   ├── auth.py          Login and the signed-in user
-│   │   ├── accounts/        Creating accounts; the create-admin command
+│   │   ├── accounts/        Accounts, sign-in sessions, the create-admin command
 │   │   ├── security.py      Password hashing and access tokens
 │   │   ├── dependencies.py  Database session and current-user dependencies
 │   │   ├── errors.py        Error responses ({"error", "message"})
@@ -196,7 +196,12 @@ commit or share it. Seeding again replaces every password.
 ```bash
 curl -X POST http://127.0.0.1:8000/api/auth/login \
   -H "Content-Type: application/json" \
+  -c cookies.txt \
   -d '{"username": "admin-1", "password": "<from credentials.local.md>"}'
+
+# A new access token from the renewal cookie, then sign out.
+curl -X POST http://127.0.0.1:8000/api/auth/refresh -b cookies.txt -c cookies.txt
+curl -X POST http://127.0.0.1:8000/api/auth/logout -b cookies.txt
 ```
 
 For a real installation, create the first administrator yourself; there is no
@@ -214,8 +219,9 @@ With the API running (above), from `frontend/`:
 npm run dev:api
 ```
 
-This turns the mock server off and sends requests to
-`http://127.0.0.1:8000` (see `frontend/.env.api`). Changes are saved in
+This turns the mock server off. The Vite dev server forwards `/api` to the
+API on port 8000 (see `frontend/vite.config.ts`), so the page and the API share
+one address and the sign-in cookie reaches the API. Changes are saved in
 Postgres.
 
 > **Temporarily broken:** the demo identity switcher signs in behind the scenes
@@ -265,7 +271,11 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `DATABASE_URL` | the Compose database | SQLAlchemy URL the API connects to |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Browser origins allowed to call the API |
 | `JWT_SECRET` | a development-only value | Signs access tokens; required in production, 32+ characters |
-| `ACCESS_TOKEN_MINUTES` | `60` | How long an access token stays valid |
+| `ACCESS_TOKEN_MINUTES` | `15` | How long an access token stays valid |
+| `SESSION_HOURS` | `12` | How long a sign-in lasts, however often it is renewed |
+| `LOGIN_FAILURE_LIMIT` | `5` | Failed sign-ins per username before it is locked |
+| `LOGIN_IP_FAILURE_LIMIT` | `20` | Failed sign-ins per address before it is locked |
+| `LOGIN_LOCKOUT_MINUTES` | `15` | The window failures are counted in, and how long a lock lasts |
 
 Environment variables take precedence over `.env`.
 
@@ -275,7 +285,7 @@ The frontend reads Vite variables (`frontend/.env.api` sets them for
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `VITE_USE_MOCKS` | on in development | `false` sends requests to the API instead of the in-browser mock server; a production build always uses the API |
-| `VITE_API_BASE_URL` | empty (same origin) | Where the API is, e.g. `http://127.0.0.1:8000` |
+| `VITE_API_BASE_URL` | empty (same origin) | Where the API is; leave it empty so the sign-in cookie works (the dev server forwards `/api`) |
 | `VITE_DEMO_PASSWORD` | `demo-password` | Password the identity switcher signs in with; no seeded user has it any more (see above) |
 
 ## Architecture
@@ -493,6 +503,8 @@ user. Interactive documentation is at `/docs`.
 | `GET /api/patients` | Up to 20 patients, by name, who have notes matching the filters |
 | `POST /api/telemetry` | Usage events; refused if they carry clinical or patient data |
 
+Signing in has its own routes, described under "Authentication" below.
+
 How changes stay safe:
 
 - **Workflow rules** come from the shared contract, so a refusal carries the
@@ -561,20 +573,48 @@ dashes or underscores, 3 to 32 characters) and an internal id; seeded users'
 usernames are their ids. Users are deactivated, never deleted, because notes
 and their history refer to them. Every change to an account is written to an
 append-only admin action log that a database trigger protects, like note
-history. Tables for one-time setup links and sign-in renewal tokens are in
-place; only hashes of those tokens are stored.
+history. A table for one-time setup links is in place; only hashes of those
+links are stored.
 
 ### Authentication
 
-`POST /api/auth/login` exchanges a username and password for a signed access
-token (JWT, HS256); clients send it as `Authorization: Bearer <token>`, and
-`GET /api/auth/me` returns the signed-in user.
+| Route | Purpose |
+| --- | --- |
+| `POST /api/auth/login` | Sign in with a username and password: an access token, plus a renewal cookie |
+| `POST /api/auth/refresh` | Swap the renewal cookie for a new access token and a new cookie |
+| `POST /api/auth/logout` | End the session and remove the cookie |
+| `GET /api/auth/me` | The signed-in user |
 
-- Passwords are stored as Argon2 hashes. A wrong password and an unknown user
-  get the same answer and take the same time, so usernames cannot be probed.
-- On every request the user is read again from the database: removing a user
-  revokes access at once, and the role always comes from the database, never
-  from the token.
+The access token (JWT, HS256) is short-lived, 15 minutes by default; clients
+send it as `Authorization: Bearer <token>` and the page keeps it in memory
+only. To stay signed in, the page calls `/api/auth/refresh`, which uses the
+renewal cookie.
+
+- **The renewal cookie** cannot be read by JavaScript (`HttpOnly`), is sent
+  only to `/api/auth` and only from the application's own pages
+  (`SameSite=Strict`), and needs HTTPS in production (`Secure`). As a second
+  check, these routes refuse requests whose `Origin` is another site.
+- **Each renewal cookie works once.** Renewing replaces it, and the session
+  still ends 12 hours after signing in. A cookie presented a second time has
+  been copied, so the whole session ends, for the copier and the real user
+  alike. Only SHA-256 hashes of the cookies are stored, and two renewals with
+  the same cookie at once cannot both succeed.
+- **Signing out** revokes the session on the server, and works even when the
+  access token has expired.
+- **Password guessing is slowed down.** After 5 failed sign-ins for a username
+  within 15 minutes, or 20 from one address, further attempts get `429
+  too_many_attempts` (with `Retry-After`) until the oldest of those failures
+  is 15 minutes old, even with the right password. A successful sign-in clears
+  the username's failures. Failures are kept in the database, so restarting
+  the API does not reset them.
+- **Usernames cannot be probed.** Passwords are stored as Argon2 hashes. A
+  wrong password, an unknown user and an account still waiting for its setup
+  link get the same answer and take the same time. Only someone who gives the
+  right password learns that an account is deactivated (`403
+  account_deactivated`).
+- On every request the user is read again from the database: deactivating or
+  removing a user revokes access at once, and the role always comes from the
+  database, never from the token.
 - Errors use one shape, `{"error": "...", "message": "..."}`. A `401` means
   "sign in"; a `403` carries the workflow rule's own reason.
 - A test checks that every route that changes data requires a signed-in user,
@@ -620,7 +660,11 @@ triggers hold, seeded rows match the generator, accounts follow their rules
 (username format and uniqueness, an unchangeable admin action log, a
 migration that gives existing users their id as username, every seeded
 password signing in, the create-admin command's checks), and login, token expiry,
-forged tokens and revoked users behave correctly. The note endpoints are
+forged tokens and revoked users behave correctly. Sessions are tested the
+same way: signing in by username, deactivated users, the cookie's settings,
+each cookie working once, reuse ending the session, simultaneous renewals,
+the session's end time, signing out, both lockouts and requests from other
+sites. The note endpoints are
 checked the same way: list items and note details equal the mock server's for
 every seeded note; cursor pages cover every note exactly once for each sort;
 filters match the mock; pages stay consistent while notes change; search
@@ -655,7 +699,13 @@ browser-driven end-to-end suite yet.
   users' changes appear on reload; pushing them over WebSockets comes next.
   Presence between tabs of one browser still works.
 - **The identity switcher still exists** but cannot sign in against the API
-  any more (see "Frontend against the API"); a sign-in page replaces it next.
+  any more (see "Frontend against the API"); a sign-in page replaces it soon.
+- **An access token stays valid until it expires** (15 minutes) after signing
+  out; the session itself, and with it any renewal, ends at once. Deactivating
+  a user ends their access at once.
+- **Lockouts can be triggered on purpose**: someone who knows a username can
+  lock it for 15 minutes by guessing wrong. That is the usual price of
+  limiting guesses.
 - With the mock server, data lives in one browser and resets on reload.
 - **Search covers the whole note**, not only the preview the mock server
   searched, so a word in the synthetic notes' shared wording (such as
