@@ -77,6 +77,17 @@ class Settings(BaseSettings):
         description="The window failed sign-ins are counted in, and the lockout.",
     )
 
+    app_base_url: str = Field(
+        default="http://localhost:5173",
+        description="Where people open the application; setup links point here.",
+    )
+
+    setup_link_hours: int = Field(
+        default=72,
+        gt=0,
+        description="How long a new user's setup link stays valid.",
+    )
+
     @property
     def secure_cookies(self) -> bool:
         """Cookies only over HTTPS in production; local development is HTTP."""

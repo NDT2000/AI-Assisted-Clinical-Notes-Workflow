@@ -263,6 +263,15 @@ def revoke_family(session: Session, family_id: str, now: datetime) -> None:
     )
 
 
+def revoke_user_sessions(session: Session, user_id: str, now: datetime) -> None:
+    """End every session of one user, as when they are deactivated."""
+    session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+
+
 def _issue(
     session: Session,
     *,

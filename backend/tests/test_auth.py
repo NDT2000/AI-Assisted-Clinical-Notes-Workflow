@@ -220,6 +220,9 @@ PUBLIC_MUTATIONS = {
     ("POST", "/api/auth/login"),
     ("POST", "/api/auth/refresh"),
     ("POST", "/api/auth/logout"),
+    # Choosing a password with a setup link: the link is the proof.
+    ("POST", "/api/auth/setup-link"),
+    ("POST", "/api/auth/set-password"),
 }
 
 

@@ -118,7 +118,7 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │   │   ├── config.py        Settings from environment variables
 │   │   ├── main.py          App factory and routes
 │   │   ├── auth.py          Login and the signed-in user
-│   │   ├── accounts/        Accounts, sign-in sessions, the create-admin command
+│   │   ├── accounts/        Accounts, user admin, setup links, sessions, create-admin
 │   │   ├── security.py      Password hashing and access tokens
 │   │   ├── dependencies.py  Database session and current-user dependencies
 │   │   ├── errors.py        Error responses ({"error", "message"})
@@ -276,6 +276,8 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `LOGIN_FAILURE_LIMIT` | `5` | Failed sign-ins per username before it is locked |
 | `LOGIN_IP_FAILURE_LIMIT` | `20` | Failed sign-ins per address before it is locked |
 | `LOGIN_LOCKOUT_MINUTES` | `15` | The window failures are counted in, and how long a lock lasts |
+| `APP_BASE_URL` | `http://localhost:5173` | Where people open the application; setup links point here |
+| `SETUP_LINK_HOURS` | `72` | How long a setup link stays valid |
 
 Environment variables take precedence over `.env`.
 
@@ -503,7 +505,8 @@ user. Interactive documentation is at `/docs`.
 | `GET /api/patients` | Up to 20 patients, by name, who have notes matching the filters |
 | `POST /api/telemetry` | Usage events; refused if they carry clinical or patient data |
 
-Signing in has its own routes, described under "Authentication" below.
+Signing in and managing accounts have their own routes, described under
+"Accounts" and "Authentication" below.
 
 How changes stay safe:
 
@@ -573,8 +576,42 @@ dashes or underscores, 3 to 32 characters) and an internal id; seeded users'
 usernames are their ids. Users are deactivated, never deleted, because notes
 and their history refer to them. Every change to an account is written to an
 append-only admin action log that a database trigger protects, like note
-history. A table for one-time setup links is in place; only hashes of those
-links are stored.
+history.
+
+An administrator manages accounts through the API (the admin page comes
+later). Everything under `/api/users` is for administrators only, except the
+directory:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/users` | Every account, including deactivated ones; filters `role`, `active`, `q` (name or username) |
+| `POST /api/users` | Create an account of any role, without a password, and its setup link |
+| `GET /api/users/{id}` | One account, its open reviews and its admin action log |
+| `PATCH /api/users/{id}` | Change the name, username or role |
+| `POST /api/users/{id}/deactivate`, `/reactivate` | Turn an account off (ending its sessions) or back on |
+| `POST /api/users/{id}/setup-link` | A new setup link; for someone with a password it is a reset |
+| `GET /api/users/directory` | Active people with name and role (`?role=REVIEWER`), for any signed-in user |
+| `POST /api/auth/setup-link` | Whose setup link this is, for the set-password page |
+| `POST /api/auth/set-password` | Choose a password with a setup link |
+
+- **Setup links** are shown once, in the response that creates them, and look
+  like `http://localhost:5173/set-password#<token>`: the part after `#` is
+  never sent to a server, so it stays out of access logs. Only a hash is
+  stored. A link expires after 72 hours, works once, and stops working when a
+  newer one is issued or the account is deactivated. Using it signs the
+  person out everywhere; until then, an old password keeps working.
+- **No one can lock the administrators out.** An administrator cannot
+  deactivate themselves or change their own role, and the last active
+  administrator who can sign in cannot be removed. Changes to administrators
+  lock them first, so two administrators removing each other at the same
+  moment cannot both succeed.
+- **Deactivating a reviewer with open reviews** (notes ready for or in review
+  assigned to them) is refused with `409 has_open_reviews` and the count,
+  until the request confirms it with `{"confirmOpenReviews": true}`. The notes
+  stay assigned until someone reassigns them; deactivated reviewers cannot be
+  assigned new ones.
+- Errors: `409 username_taken`, `own_account`, `last_admin`,
+  `has_open_reviews`, `account_deactivated`; `400 invalid_setup_link`.
 
 ### Authentication
 
@@ -664,7 +701,13 @@ forged tokens and revoked users behave correctly. Sessions are tested the
 same way: signing in by username, deactivated users, the cookie's settings,
 each cookie working once, reuse ending the session, simultaneous renewals,
 the session's end time, signing out, both lockouts and requests from other
-sites. The note endpoints are
+sites. User management is tested for every role: only administrators manage
+accounts; creating, listing, filtering, renaming and role changes, each
+logged once; setup links working once, expiring, being replaced, resetting a
+password and ending sessions; the self-protection rules; the confirmation for
+reviewers with open reviews; the directory; and, with real commits, that two
+administrators removing each other at once leave one administrator. The note
+endpoints are
 checked the same way: list items and note details equal the mock server's for
 every seeded note; cursor pages cover every note exactly once for each sort;
 filters match the mock; pages stay consistent while notes change; search
@@ -706,6 +749,10 @@ browser-driven end-to-end suite yet.
 - **Lockouts can be triggered on purpose**: someone who knows a username can
   lock it for 15 minutes by guessing wrong. That is the usual price of
   limiting guesses.
+- **The administrator passes setup links on by hand**; the application does
+  not send email.
+- **The frontend's reviewer list is still built in**; it moves to
+  `GET /api/users/directory` with the sign-in page.
 - With the mock server, data lives in one browser and resets on reload.
 - **Search covers the whole note**, not only the preview the mock server
   searched, so a word in the synthetic notes' shared wording (such as
