@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from clinical_notes_api.config import Settings, get_app_settings
 from clinical_notes_api.db import User
@@ -24,6 +24,14 @@ def get_db_session(request: Request) -> Iterator[Session]:
 
 
 DbSession = Annotated[Session, Depends(get_db_session)]
+
+
+def get_session_factory(request: Request) -> sessionmaker[Session]:
+    """For endpoints that commit on their own, even when they refuse."""
+    return request.app.state.session_factory
+
+
+SessionFactory = Annotated[sessionmaker[Session], Depends(get_session_factory)]
 AppSettings = Annotated[Settings, Depends(get_app_settings)]
 
 
@@ -34,8 +42,9 @@ def get_current_user(
 ) -> User:
     """The user the bearer token was issued to.
 
-    The user is re-read from the database on every request, so a removed
-    user loses access at once and role changes apply immediately.
+    The user is re-read from the database on every request, so a removed or
+    deactivated user loses access at once and role changes apply
+    immediately.
     """
     if credentials is None:
         raise unauthenticated()
@@ -46,7 +55,7 @@ def get_current_user(
         raise unauthenticated("Your session is invalid or has expired.") from error
 
     user = session.get(User, claims.user_id)
-    if user is None or user.password_hash is None:
+    if user is None or not user.is_active or user.password_hash is None:
         raise unauthenticated("Your session is invalid or has expired.")
 
     return user

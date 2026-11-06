@@ -8,11 +8,13 @@ from datetime import date, datetime
 from typing import Any, Literal, get_args
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     Integer,
     String,
@@ -63,6 +65,10 @@ USER_ADMIN_ACTIONS: tuple[str, ...] = get_args(UserAdminAction)
 # Sign-in names: 3-32 lowercase letters, digits, dots, dashes or underscores.
 USERNAME_LENGTH = 32
 USERNAME_PATTERN = "^[a-z0-9._-]{3,32}$"
+
+# Longest username a sign-in request may send (longer than a real one, so a
+# mistyped name still gets the ordinary "incorrect" answer).
+LOGIN_USERNAME_LENGTH = 64
 
 # SHA-256 in hex, for setup links and renewal tokens stored as hashes.
 TOKEN_HASH_LENGTH = 64
@@ -184,6 +190,32 @@ class UserAdminEvent(Base):
 
     __table_args__ = (
         CheckConstraint(_one_of("action", USER_ADMIN_ACTIONS), name="action"),
+    )
+
+
+class LoginAttempt(Base):
+    """A failed sign-in, kept briefly to slow down password guessing.
+
+    Rows older than the lockout window no longer count and are removed as
+    new failures arrive.
+    """
+
+    __tablename__ = "login_attempts"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    # As typed (trimmed and lowercase), whether or not such a user exists.
+    username: Mapped[str] = mapped_column(String(LOGIN_USERNAME_LENGTH))
+    ip_address: Mapped[str] = mapped_column(String(64))
+    attempted_at: Mapped[datetime] = mapped_column(_timestamp())
+
+    __table_args__ = (
+        Index("ix_login_attempts_username_attempted_at", "username", "attempted_at"),
+        Index(
+            "ix_login_attempts_ip_address_attempted_at",
+            "ip_address",
+            "attempted_at",
+        ),
+        Index("ix_login_attempts_attempted_at", "attempted_at"),
     )
 
 

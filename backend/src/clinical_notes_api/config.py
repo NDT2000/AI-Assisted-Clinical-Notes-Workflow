@@ -45,10 +45,42 @@ class Settings(BaseSettings):
     )
 
     access_token_minutes: int = Field(
-        default=60,
+        default=15,
         gt=0,
         description="How long an access token stays valid.",
     )
+
+    session_hours: int = Field(
+        default=12,
+        gt=0,
+        description=(
+            "How long a sign-in lasts, however often it is renewed; then the "
+            "user signs in again."
+        ),
+    )
+
+    login_failure_limit: int = Field(
+        default=5,
+        gt=0,
+        description="Failed sign-ins for one username before it is locked.",
+    )
+
+    login_ip_failure_limit: int = Field(
+        default=20,
+        gt=0,
+        description="Failed sign-ins from one address before it is locked.",
+    )
+
+    login_lockout_minutes: int = Field(
+        default=15,
+        gt=0,
+        description="The window failed sign-ins are counted in, and the lockout.",
+    )
+
+    @property
+    def secure_cookies(self) -> bool:
+        """Cookies only over HTTPS in production; local development is HTTP."""
+        return self.environment == "production"
 
     @model_validator(mode="after")
     def require_a_real_secret_in_production(self) -> "Settings":
