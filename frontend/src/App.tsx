@@ -11,6 +11,9 @@ import {
   AppHeader,
 } from "./app/AppHeader";
 import {
+  RequireAdmin,
+} from "./auth/RequireAdmin";
+import {
   RequireSignIn,
 } from "./auth/RequireSignIn";
 import {
@@ -43,6 +46,12 @@ import {
 import {
   mockRealtimePresenceService,
 } from "./features/notes/realtime/mockRealtimePresenceService";
+import {
+  UserDetailPage,
+} from "./features/users/pages/UserDetailPage";
+import {
+  UsersPage,
+} from "./features/users/pages/UsersPage";
 import {
   TelemetryLifecycle,
 } from "./telemetry/TelemetryLifecycle";
@@ -141,6 +150,24 @@ function SignedInApp({
           path="/notes/:noteId"
           element={
             <NoteDetailPage />
+          }
+        />
+
+        <Route
+          path="/admin/users"
+          element={
+            <RequireAdmin>
+              <UsersPage />
+            </RequireAdmin>
+          }
+        />
+
+        <Route
+          path="/admin/users/:userId"
+          element={
+            <RequireAdmin>
+              <UserDetailPage />
+            </RequireAdmin>
           }
         />
       </Routes>

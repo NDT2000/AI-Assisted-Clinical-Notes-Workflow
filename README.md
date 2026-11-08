@@ -83,6 +83,9 @@ another user's work.
   the visible notes.
 - **Role- and ownership-based authorization** — checked in the UI and again on
   the server.
+- **Real accounts** — users sign in with their own password; an administrator
+  adds people, changes roles, deactivates accounts and resets passwords from
+  the Users page.
 - **Resilient, privacy-safe telemetry** — batched and retried, with patient
   information and clinical text removed before sending.
 - **Keyboard and screen-reader accessibility** throughout.
@@ -109,7 +112,7 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │       ├── auth/            Session, sign-in and set-password pages, page guard
 │       ├── domain/          Models, workflow rules and pure logic
 │       ├── features/notes/  List, detail, autosave, offline and real-time
-│       ├── features/users/  The reviewer list from the API's user directory
+│       ├── features/users/  Users admin pages and the reviewer directory
 │       ├── generated/       API types generated from contract/openapi.json
 │       ├── mock-data/       Deterministic synthetic data and users, for tests
 │       ├── mock-server/     MSW handlers for tests, mock store and mock tokens
@@ -584,6 +587,26 @@ independently.
   ones disappear. A deactivated reviewer still assigned to a note stays shown
   on that note until it is reassigned.
 
+### Users page (administrators)
+
+Administrators see a **Users** link in the header; everyone else does not, and
+opening `/admin/users` directly takes them to the notes (the API refuses them
+too).
+
+- **The list** shows every account with its role, status (Active, Waiting for
+  password, Deactivated) and last sign-in, filtered by name or username, role
+  and status.
+- **Add user** asks for the full name, username and role, then shows the
+  setup link once, with a Copy button and its expiry, to pass on privately.
+- **One person's page** edits the name, username and role, deactivates or
+  reactivates the account, issues a new setup link (or a password reset for
+  someone who has a password), and lists the account's history in plain
+  sentences.
+- **The server's rules show where they apply:** an administrator cannot
+  change their own role or deactivate themselves, and deactivating a reviewer
+  with open reviews asks for a second confirmation with the number of notes.
+- Changes to people refresh the reviewer lists on the notes pages.
+
 ### Accounts
 
 Each user has a username to sign in with (lowercase letters, digits, dots,
@@ -593,9 +616,9 @@ and their history refer to them. Every change to an account is written to an
 append-only admin action log that a database trigger protects, like note
 history.
 
-An administrator manages accounts through the API (the admin page comes
-later). Everything under `/api/users` is for administrators only, except the
-directory:
+An administrator manages accounts from the Users page (see "Users page"
+above), which uses these routes. Everything under `/api/users` is for
+administrators only, except the directory:
 
 | Route | Purpose |
 | --- | --- |
@@ -764,8 +787,6 @@ browser-driven end-to-end suite yet.
   changes appear on reload; pushing them over WebSockets comes next. Presence
   between tabs of one browser still works.
 - **The app needs the API to run**; the mock server is used only in tests.
-- **There is no admin page yet**: accounts are managed through the API (or the
-  create-admin command) until it arrives.
 - **An access token stays valid until it expires** (15 minutes) after signing
   out; the session itself, and with it any renewal, ends at once. Deactivating
   a user ends their access at once.
