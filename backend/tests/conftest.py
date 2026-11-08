@@ -7,8 +7,8 @@ REQUIRE_DATABASE=1 (as in CI) they fail instead.
 
 The note API fixtures at the end seed 60 notes per module and run each test
 inside a transaction that is rolled back. test_auth.py and test_database.py
-define their own `settings`, `app`, `client` and `seeded`, which take
-precedence there.
+define their own fixtures of the same names (such as `settings`, `app` and
+`client`), which take precedence there.
 """
 
 import os
