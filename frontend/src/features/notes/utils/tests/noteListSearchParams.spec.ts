@@ -67,10 +67,10 @@ describe(
     );
 
     it(
-      "falls back when the reviewer ID is invalid",
+      "falls back when the reviewer ID is malformed",
       () => {
         const result = parse(
-          "reviewer=invalid-reviewer",
+          "reviewer=not%20a%20reviewer!",
         );
 
         expect(result.reviewerId).toBe(

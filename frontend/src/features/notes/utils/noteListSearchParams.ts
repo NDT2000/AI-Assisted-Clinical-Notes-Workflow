@@ -1,5 +1,4 @@
 import { NOTE_STATUS, type NoteStatus, } from "../../../domain/noteAttributes";
-import { REVIEWERS, } from "../../../domain/reviewers";
 
 export type NoteSortField =
   | "createdAt"
@@ -66,12 +65,13 @@ function isSortDirection(
   );
 }
 
+// Reviewers come from the API, so only the id's shape is checked here;
+// an unknown id simply matches no notes.
 function isValidReviewerId(
   value: string,
 ): boolean {
-  return REVIEWERS.some(
-    (reviewer) =>
-      reviewer.id === value,
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(
+    value,
   );
 }
 

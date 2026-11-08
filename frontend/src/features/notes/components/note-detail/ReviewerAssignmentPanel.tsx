@@ -12,9 +12,12 @@ import type {
 import type {
   UserSummary,
 } from "../../../../domain/noteDetail";
-import {
-  REVIEWERS,
+import type {
+  Reviewer,
 } from "../../../../domain/reviewers";
+import {
+  useReviewers,
+} from "../../../users/reviewerDirectory";
 import {
   postAssignReviewer,
 } from "../../api/bulkActions";
@@ -76,6 +79,31 @@ export function ReviewerAssignmentPanel({
   assignedReviewer,
   onAssigned,
 }: ReviewerAssignmentPanelProps) {
+  const activeReviewers = useReviewers();
+
+  // A deactivated reviewer is no longer in the directory, but stays
+  // assigned until someone reassigns the note.
+  const reviewers: readonly Reviewer[] =
+    useMemo(
+      () =>
+        assignedReviewer === null ||
+        activeReviewers.some(
+          (reviewer) =>
+            reviewer.id ===
+            assignedReviewer.id,
+        )
+          ? activeReviewers
+          : [
+              {
+                id: assignedReviewer.id,
+                displayName:
+                  assignedReviewer.displayName,
+              },
+              ...activeReviewers,
+            ],
+      [activeReviewers, assignedReviewer],
+    );
+
   const [
     selectedReviewerId,
     setSelectedReviewerId,
@@ -98,12 +126,12 @@ export function ReviewerAssignmentPanel({
   const selectedReviewer =
     useMemo(
       () =>
-        REVIEWERS.find(
+        reviewers.find(
           (reviewer) =>
             reviewer.id ===
             selectedReviewerId,
         ) ?? null,
-      [selectedReviewerId],
+      [reviewers, selectedReviewerId],
     );
 
   if (actor.role !== "ADMIN") {
@@ -227,7 +255,7 @@ export function ReviewerAssignmentPanel({
               Unassigned
             </option>
 
-            {REVIEWERS.map(
+            {reviewers.map(
               (reviewer) => (
                 <option
                   key={reviewer.id}

@@ -1,0 +1,64 @@
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  width: min(100% - 2rem, 76rem);
+  margin: 1rem auto;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  text-align: left;
+}
+
+.app-header p {
+  margin: 0;
+}
+
+.app-header__name {
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.app-header__user {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-header__role {
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.875rem;
+}
+
+.app-header__confirm {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #b54708;
+  border-radius: 0.5rem;
+}
+
+.app-header__confirm div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.app-header button:focus-visible {
+  outline: 3px solid #245ea8;
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .app-header,
+  .app-header__confirm {
+    border: 1px solid CanvasText;
+  }
+}

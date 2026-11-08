@@ -211,7 +211,7 @@ export function RoleWorkspaceShortcuts({
       <div className="role-workspace__heading">
         <div>
           <p className="role-workspace__eyebrow">
-            Viewing as {actor.displayName}
+            Signed in as {actor.displayName}
           </p>
 
           <h2 id="role-workspace-title">

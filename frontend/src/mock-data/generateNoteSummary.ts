@@ -1,6 +1,7 @@
 import { type NoteStatus, NOTE_STATUS } from "../domain/noteAttributes";
 import type { NoteSummary } from "../domain/noteSummary";
-import { REVIEWERS } from "../domain/reviewers";
+import type { Reviewer } from "../domain/reviewers";
+import { MOCK_REVIEWERS } from "./mockUsers";
 
 type RandomFunction = () => number;
 
@@ -77,7 +78,7 @@ function generateStatus(random: RandomFunction): NoteStatus {
 function generateReviewer(
   status: NoteStatus,
   random: RandomFunction,
-): (typeof REVIEWERS)[number] | null {
+): Reviewer | null {
   const statusesRequiringReviewer: readonly NoteStatus[] = [
     "READY_FOR_REVIEW",
     "IN_REVIEW",
@@ -91,7 +92,7 @@ function generateReviewer(
     return null;
   }
 
-  return pickRandom(REVIEWERS, random);
+  return pickRandom(MOCK_REVIEWERS, random);
 }
 
 function generateCurrentVersion(

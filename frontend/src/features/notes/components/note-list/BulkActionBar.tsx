@@ -2,10 +2,12 @@ import {
   useState,
 } from "react";
 
-import {
-  REVIEWERS,
-  type Reviewer,
+import type {
+  Reviewer,
 } from "../../../../domain/reviewers";
+import {
+  useReviewers,
+} from "../../../users/reviewerDirectory";
 
 interface BulkActionBarProps {
   selectedCount: number;
@@ -30,6 +32,8 @@ export function BulkActionBar({
   onRegenerate,
   onClearSelection,
 }: BulkActionBarProps) {
+  const reviewers = useReviewers();
+
   const [
     selectedReviewerId,
     setSelectedReviewerId,
@@ -37,7 +41,7 @@ export function BulkActionBar({
 
   function handleAssignClick() {
     const reviewer =
-      REVIEWERS.find(
+      reviewers.find(
         candidate =>
           candidate.id ===
           selectedReviewerId,
@@ -67,7 +71,7 @@ export function BulkActionBar({
           Choose reviewer…
         </option>
 
-        {REVIEWERS.map(reviewer => (
+        {reviewers.map(reviewer => (
           <option
             key={reviewer.id}
             value={reviewer.id}
