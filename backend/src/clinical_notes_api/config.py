@@ -88,6 +88,12 @@ class Settings(BaseSettings):
         description="How long a new user's setup link stays valid.",
     )
 
+    event_retention_days: int = Field(
+        default=30,
+        gt=0,
+        description="How long the note event log keeps events for catching up.",
+    )
+
     @property
     def secure_cookies(self) -> bool:
         """Cookies only over HTTPS in production; local development is HTTP."""

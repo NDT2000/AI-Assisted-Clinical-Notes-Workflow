@@ -129,7 +129,7 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │   │   ├── dependencies.py  Database session and current-user dependencies
 │   │   ├── errors.py        Error responses ({"error", "message"})
 │   │   ├── workflow.py      Workflow rules, read from the contract
-│   │   ├── notes/           Note and patient endpoints: schemas, queries, changes
+│   │   ├── notes/           Note and patient endpoints, and the note event log
 │   │   ├── telemetry.py     Telemetry intake, with a clinical-content check
 │   │   ├── openapi.py       Writes contract/openapi.json
 │   │   ├── db/              SQLAlchemy models and sessions
@@ -201,6 +201,7 @@ default admin password anywhere:
 
 ```bash
 uv run clinical-notes-create-admin   # asks for a username, name and password
+uv run clinical-notes-prune-events  # remove note events older than 30 days
 ```
 
 ### Frontend
@@ -271,6 +272,7 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `LOGIN_LOCKOUT_MINUTES` | `15` | The window failures are counted in, and how long a lock lasts |
 | `APP_BASE_URL` | `http://localhost:5173` | Where people open the application; setup links point here |
 | `SETUP_LINK_HOURS` | `72` | How long a setup link stays valid |
+| `EVENT_RETENTION_DAYS` | `30` | How long the note event log keeps events for catching up |
 
 Environment variables take precedence over `.env`.
 
@@ -538,6 +540,30 @@ text, indexed with GIN, so searching stays fast as the number of notes grows.
   version, so saves, the seed and any other write keep it current.
 - Results keep the chosen sort order; they are not ranked by relevance.
 
+### Event log
+
+Every saved version and every workflow action (including bulk regeneration)
+adds a row to `note_events`, for real-time clients: the note, the kind of
+change (`note.version_added` or `note.status_changed`, with the action), the
+time, and the API's own response to the change, which the frontend already
+knows how to apply. Reviewer assignments are not recorded yet.
+
+- **Written in the same transaction as the change**, so a change never goes
+  out without its event, nor an event without its change. Refused requests
+  and retried requests (which get their stored answer) add nothing.
+- **Numbered in commit order.** Each event gets the next number while
+  holding a lock that is released when its transaction commits, so a later
+  number can never become visible before an earlier one. A client that has
+  seen event N catches up with exactly "everything after N" for the notes it
+  follows (`events_after`, in pages); the live connection that delivers this
+  comes next.
+- **Kept for 30 days.** `clinical-notes-prune-events` removes older events
+  and remembers the highest number it removed. A client that last saw an
+  event before that, or a number the log has not reached (as after a
+  database reset), is told to reload its notes instead of catching up.
+- Events contain note text, like the notes themselves, and are only sent to
+  signed-in users.
+
 ### Seed data
 
 `clinical-notes-seed` loads the same 5,000 synthetic notes as the frontend's
@@ -763,7 +789,13 @@ bulk actions, patient lookup and the telemetry check behave as specified.
   wins and the rest get a conflict; eight simultaneous retries make one
   change; only one of five reviewers can start a review; overlapping bulk
   actions do not deadlock; two administrators removing each other at once
-  leave one administrator. Without the row locks these tests fail.
+  leave one administrator; a second writer to the event log waits for the
+  first to commit before taking a number. Without the locks these tests
+  fail.
+- **Event log** (`test_note_events.py`): saves, actions and bulk
+  regeneration each record exactly one event with the API's response;
+  refused and retried requests record none; catching up returns the right
+  events in order and in pages; pruning, and when a client must reload.
 - **Seed command**: refuses to run in production and to seed a non-empty
   database without `--reset`.
 
@@ -783,9 +815,10 @@ browser-driven end-to-end suite yet.
 
 ## Assumptions and limitations
 
-- **Real-time updates are not connected to the API yet.** Other users'
-  changes appear on reload; pushing them over WebSockets comes next. Presence
-  between tabs of one browser still works.
+- **Real-time updates are not connected to the API yet.** The server records
+  every change in the event log, but nothing delivers it live yet, so other
+  users' changes appear on reload. A WebSocket connection comes next.
+  Presence between tabs of one browser still works.
 - **The app needs the API to run**; the mock server is used only in tests.
 - **An access token stays valid until it expires** (15 minutes) after signing
   out; the session itself, and with it any renewal, ends at once. Deactivating

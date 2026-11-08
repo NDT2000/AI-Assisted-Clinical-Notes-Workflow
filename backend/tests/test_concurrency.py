@@ -30,6 +30,7 @@ from clinical_notes_api.db import ClientMutation, Note, NoteVersion, ReviewEvent
 from clinical_notes_api.db.session import create_session_factory
 from clinical_notes_api.errors import ApiError
 from clinical_notes_api.main import create_app
+from clinical_notes_api.notes.events import record_event
 from tests.note_api import PASSWORD, content
 
 PARALLEL = 8
@@ -302,3 +303,50 @@ def test_two_admins_cannot_both_be_removed(engine: Engine, second_admin: str) ->
             select(User.id).where(User.role == "ADMIN", User.is_active.is_(True))
         ).all()
     assert remaining == ["admin-1"]
+
+
+# --- Event log -----------------------------------------------------------------
+
+
+def test_event_numbers_follow_commit_order(
+    engine: Engine,
+    seeded_notes: None,
+) -> None:
+    """A second writer waits until the first commits before taking a number.
+
+    Otherwise number 11 could commit before number 10, and a client reading
+    in between would move past 10 and never see it.
+    """
+    factory = create_session_factory(engine)
+    now = datetime.now(UTC)
+    numbers: dict[str, int] = {}
+
+    def write(session: Session, name: str) -> None:
+        numbers[name] = record_event(
+            session,
+            note_id="note-000003",
+            event_type="note.version_added",
+            payload={},
+            occurred_at=now,
+        ).cursor
+
+    first = factory()
+    try:
+        first.begin()
+        write(first, "first")
+
+        def second_writer() -> None:
+            with factory.begin() as session:
+                write(session, "second")
+
+        waiting = threading.Thread(target=second_writer)
+        waiting.start()
+        waiting.join(timeout=0.5)
+        assert waiting.is_alive(), "the second writer did not wait"
+        assert "second" not in numbers
+        first.commit()
+        waiting.join(timeout=10)
+    finally:
+        first.close()
+
+    assert numbers["second"] > numbers["first"]
