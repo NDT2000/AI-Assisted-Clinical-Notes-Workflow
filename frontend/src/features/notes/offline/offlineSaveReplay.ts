@@ -347,6 +347,32 @@ export class OfflineSaveReplayCoordinator {
     this.activeAbortController = null;
   }
 
+  /*
+   * Forget everything about the queue, as after its storage was cleared
+   * when the user signed out. Call stop() first.
+   */
+  reset(): void {
+    this.hydrated = false;
+    this.hydrationPromise = null;
+    this.replayAfterCurrentRun = false;
+    this.replayAfterConflictResolution = false;
+
+    this.updateSnapshot({
+      status:
+        this.dependencies.isOnline()
+          ? "idle"
+          : "offline",
+      isHydrated: false,
+      pendingCount: 0,
+      currentSequence: null,
+      replayedCount: 0,
+      retryCount: 0,
+      nextRetryDelayMs: null,
+      lastError: null,
+      blockedConflict: null,
+    });
+  }
+
   notifyQueueChanged(): void {
     this.hydrated = false;
 

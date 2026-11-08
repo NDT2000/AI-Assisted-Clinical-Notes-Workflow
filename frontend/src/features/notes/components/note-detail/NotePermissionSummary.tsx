@@ -142,7 +142,7 @@ export function NotePermissionSummary(
           </p>
 
           <h2 id="note-permission-heading">
-            Viewing as{" "}
+            Access for{" "}
             {actor.displayName}
           </h2>
         </div>

@@ -1,39 +1,29 @@
-import {
-  createContext,
-  useContext,
-} from "react";
+import { useSyncExternalStore } from "react";
 
-import type {
-  Actor,
-} from "../domain/actor";
 import {
-  CURRENT_ACTOR,
-} from "./currentActor";
+  session,
+  type SessionState,
+  type SessionUser,
+} from "./session";
 
-export interface CurrentActorContextValue {
-  actor: Actor;
-  setActorById: (
-    actorId: string,
-  ) => void;
+export function useSession(): SessionState {
+  return useSyncExternalStore(
+    session.subscribe,
+    session.getState,
+    session.getState,
+  );
 }
 
-export const CurrentActorContext =
-  createContext<
-    CurrentActorContextValue | null
-  >(null);
+/*
+ * The signed-in user. Only used inside pages that require signing in
+ * (RequireSignIn), so there always is one.
+ */
+export function useCurrentActor(): { actor: SessionUser } {
+  const state = useSession();
 
-// Used outside a provider, e.g. in isolated component tests.
-const FALLBACK_CONTEXT:
-  CurrentActorContextValue = {
-    actor: CURRENT_ACTOR,
-    setActorById() {},
-  };
+  if (state.status !== "signedIn") {
+    throw new Error("useCurrentActor needs a signed-in user.");
+  }
 
-/* The demo identity the app is currently acting as. */
-export function useCurrentActor():
-  CurrentActorContextValue {
-  return (
-    useContext(CurrentActorContext) ??
-    FALLBACK_CONTEXT
-  );
+  return { actor: state.user };
 }

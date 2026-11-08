@@ -7,6 +7,7 @@ import { getNoteDetailHandler, } from "./getNoteDetailHandler";
 import { saveNoteVersionHandler } from "./saveNoteVersionHandler";
 import { transitionNoteHandler } from "./transitionNoteHandler";
 import { telemetryHandler } from "./telemetryHandler";
+import { directoryHandler } from "./directoryHandler";
 
 export const handlers: RequestHandler[] = [
     getNoteDetailHandler,
@@ -18,4 +19,5 @@ export const handlers: RequestHandler[] = [
     saveNoteVersionHandler,
     transitionNoteHandler,
     telemetryHandler,
+    directoryHandler,
 ];

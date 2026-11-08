@@ -12,8 +12,8 @@ All patient and note data in this repository is synthetic.
 
 | Part | State |
 | --- | --- |
-| Frontend (React) | Complete; runs against the API, or on its own with an in-browser mock backend (MSW) |
-| Backend (FastAPI) | Database, seed data, login (JWT), note endpoints and full-text search in place |
+| Frontend (React) | Complete; runs against the API, with sign-in and set-password pages |
+| Backend (FastAPI) | Database, seed data, accounts and sessions, user management, note endpoints and full-text search in place |
 | Database (Postgres + pgvector) | Runs locally with Docker Compose |
 | AI note generation (RAG) | Planned |
 
@@ -90,7 +90,8 @@ another user's work.
 ## Technology stack
 
 **Frontend:** React, TypeScript, Vite, React Router, TanStack Virtual,
-IndexedDB (`idb`), MSW for the mock backend, Vitest and React Testing Library.
+IndexedDB (`idb`), Vitest and React Testing Library, with MSW as the mock
+backend in tests.
 
 **Backend:** Python 3.13, FastAPI, SQLAlchemy 2, Alembic, psycopg 3,
 pydantic-settings; managed with uv, linted with ruff, tested with pytest.
@@ -103,13 +104,15 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 .
 ├── frontend/                React application
 │   └── src/
-│       ├── api/             API base URL, mock switch and the authenticated fetch
-│       ├── auth/            Demo identities, sign-in tokens, current-actor context
+│       ├── api/             API base URL and the authenticated fetch
+│       ├── app/             Header and sign-out
+│       ├── auth/            Session, sign-in and set-password pages, page guard
 │       ├── domain/          Models, workflow rules and pure logic
 │       ├── features/notes/  List, detail, autosave, offline and real-time
+│       ├── features/users/  The reviewer list from the API's user directory
 │       ├── generated/       API types generated from contract/openapi.json
-│       ├── mock-data/       Deterministic synthetic data
-│       ├── mock-server/     MSW handlers, mock store and mock access tokens
+│       ├── mock-data/       Deterministic synthetic data and users, for tests
+│       ├── mock-server/     MSW handlers for tests, mock store and mock tokens
 │       ├── shared/          Shared display formatters
 │       ├── telemetry/       Batching, redaction, retry and persistence
 │       └── test/            Test setup
@@ -148,20 +151,6 @@ Tests sit in a `tests/` folder beside the code they cover.
 - Node.js (current LTS) and npm — for the frontend
 - [uv](https://docs.astral.sh/uv/) — for the backend; it installs Python 3.13
 - Docker — for the database
-
-### Frontend only (no setup beyond npm)
-
-The frontend runs on its own: its mock backend starts in the browser.
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open <http://localhost:5173>. Switch between demo users (clinician, reviewers,
-admin, auditor) from the bar at the top to see how permissions change. Changes
-live in the browser only and reset on reload.
 
 ### Backend and database
 
@@ -211,23 +200,24 @@ default admin password anywhere:
 uv run clinical-notes-create-admin   # asks for a username, name and password
 ```
 
-### Frontend against the API
+### Frontend
 
-With the API running (above), from `frontend/`:
+The frontend needs the API (above). With the database and API running, from
+`frontend/`:
 
 ```bash
-npm run dev:api
+npm install
+npm run dev
 ```
 
-This turns the mock server off. The Vite dev server forwards `/api` to the
-API on port 8000 (see `frontend/vite.config.ts`), so the page and the API share
-one address and the sign-in cookie reaches the API. Changes are saved in
-Postgres.
+Open <http://localhost:5173> and sign in with a username and password from
+`credentials.local.md`. The Vite dev server forwards `/api` to the API on port
+8000 (see `frontend/vite.config.ts`), so the page and the API share one address
+and the sign-in cookie reaches the API. Changes are saved in Postgres; run the
+seed with `--reset` to start over.
 
-> **Temporarily broken:** the demo identity switcher signs in behind the scenes
-> with a shared password, which no longer exists now that every user has their
-> own. Until a sign-in page replaces the switcher, `npm run dev:api` cannot sign
-> in. `npm run dev` (mock server) is unaffected.
+A new user opens the setup link an administrator gives them
+(`/set-password#...`), chooses a password and then signs in.
 
 ### Checks
 
@@ -281,14 +271,14 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 
 Environment variables take precedence over `.env`.
 
-The frontend reads Vite variables (`frontend/.env.api` sets them for
-`npm run dev:api`):
+The frontend reads one Vite variable:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `VITE_USE_MOCKS` | on in development | `false` sends requests to the API instead of the in-browser mock server; a production build always uses the API |
 | `VITE_API_BASE_URL` | empty (same origin) | Where the API is; leave it empty so the sign-in cookie works (the dev server forwards `/api`) |
-| `VITE_DEMO_PASSWORD` | `demo-password` | Password the identity switcher signs in with; no seeded user has it any more (see above) |
+
+The mock server (MSW) answers only in tests; the app itself always uses the
+API.
 
 ## Architecture
 
@@ -303,7 +293,7 @@ Domain models, guards and pure logic
         ↓
 API, offline, real-time and telemetry adapters
         ↓
-Backend: FastAPI API (or the MSW mock server in development and tests)
+Backend: FastAPI API (the MSW mock server in tests)
 ```
 
 - The **domain** layer holds the state machine, authorization rules, version
@@ -314,8 +304,8 @@ Backend: FastAPI API (or the MSW mock server in development and tests)
   the client is treated as untrusted.
 - Every request goes through one function (`api/apiClient.ts`) that adds the
   API's address and the signed-in user's access token, and renews a rejected
-  token once. With the mock server on, the token is a local stand-in that
-  carries the demo identity, so both backends see users the same way.
+  token once. In tests, the token is a local stand-in that carries the user,
+  so the mock server sees users the way the API does.
 
 State is kept close to the layer that owns it:
 
@@ -569,6 +559,31 @@ on the role, the note's status and reviewer ownership. For example:
 Client-side checks shape the experience; the server validates every mutation
 independently.
 
+### Signing in (frontend)
+
+- **Every page except sign-in and set-password needs a signed-in user.**
+  Anyone else is sent to `/sign-in` and comes back to the page they asked for
+  afterwards. Opening the app again resumes the session from the renewal
+  cookie, so a reload does not ask for the password.
+- **The access token lives in memory only** (`auth/session.ts`). It is renewed
+  shortly before it expires, and once more if the API refuses it. When the
+  session ends (12 hours, deactivation, a copied cookie), the app returns to
+  sign-in and says why.
+- **Tabs take turns renewing** (Web Locks), because each renewal cookie works
+  once and two tabs using the same one at the same moment would end the
+  session. Signing in or out in one tab is passed to the others
+  (BroadcastChannel).
+- **Signing out** ends the session on the server and clears this browser's
+  offline notes and queued saves (it may be a shared computer). If saves are
+  still waiting to be sent, the header asks first.
+- **Offline data belongs to one user.** When a different user signs in on the
+  same browser, what the previous one left is cleared before anything reads
+  it, and a queued save is never sent with someone else's sign-in.
+- **Reviewer lists** in the filters, bulk actions and assignment panel come
+  from `GET /api/users/directory`, so new reviewers appear and deactivated
+  ones disappear. A deactivated reviewer still assigned to a note stays shown
+  on that note until it is reassigned.
+
 ### Accounts
 
 Each user has a username to sign in with (lowercase letters, digits, dots,
@@ -738,11 +753,12 @@ browser-driven end-to-end suite yet.
 
 ## Assumptions and limitations
 
-- **Real-time updates need the mock server for now.** Against the API, other
-  users' changes appear on reload; pushing them over WebSockets comes next.
-  Presence between tabs of one browser still works.
-- **The identity switcher still exists** but cannot sign in against the API
-  any more (see "Frontend against the API"); a sign-in page replaces it soon.
+- **Real-time updates are not connected to the API yet.** Other users'
+  changes appear on reload; pushing them over WebSockets comes next. Presence
+  between tabs of one browser still works.
+- **The app needs the API to run**; the mock server is used only in tests.
+- **There is no admin page yet**: accounts are managed through the API (or the
+  create-admin command) until it arrives.
 - **An access token stays valid until it expires** (15 minutes) after signing
   out; the session itself, and with it any renewal, ends at once. Deactivating
   a user ends their access at once.
@@ -751,9 +767,6 @@ browser-driven end-to-end suite yet.
   limiting guesses.
 - **The administrator passes setup links on by hand**; the application does
   not send email.
-- **The frontend's reviewer list is still built in**; it moves to
-  `GET /api/users/directory` with the sign-in page.
-- With the mock server, data lives in one browser and resets on reload.
 - **Search covers the whole note**, not only the preview the mock server
   searched, so a word in the synthetic notes' shared wording (such as
   "symptoms") matches every note. A renamed patient's notes are re-indexed

@@ -102,13 +102,12 @@ describe("saveNoteVersion", () => {
             "note-1",
           );
 
-          // The request carries the actor in its access token.
+          // The request carries the signed-in user's access token.
           expect(
             getMockActor(request),
           ).toMatchObject({
             id: "reviewer-1",
             role: "REVIEWER",
-            displayName: "Test Reviewer",
           });
 
           expect(

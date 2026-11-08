@@ -42,7 +42,7 @@ async function readErrorResponse(
   }
 }
 
-/* Sent as the active demo identity. */
+/* Sent as the signed-in user. */
 export async function getNoteDetail(
   noteId: string,
   signal?: AbortSignal,

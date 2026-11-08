@@ -7,8 +7,8 @@ import {
   type NoteStatus,
 } from "../../../../domain/noteAttributes";
 import {
-  REVIEWERS,
-} from "../../../../domain/reviewers";
+  useReviewers,
+} from "../../../users/reviewerDirectory";
 import type {
   NoteListFilters,
   NoteSortField,
@@ -87,6 +87,8 @@ export function NotesFilters({
   onSortDirectionChange,
   onQueryChange,
 }: NotesFiltersProps) {
+  const reviewers = useReviewers();
+
   function handleStatusChange(
     event:
       ChangeEvent<HTMLSelectElement>,
@@ -181,7 +183,7 @@ export function NotesFilters({
               All reviewers
             </option>
 
-            {REVIEWERS.map(
+            {reviewers.map(
               (reviewer) => (
                 <option
                   key={reviewer.id}
