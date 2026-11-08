@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NavLink } from "react-router-dom";
 
 import { useCurrentActor } from "../auth/useCurrentActor";
 import { useOfflineSaveReplaySnapshot } from "../features/notes/offline/useOfflineSaveReplaySnapshot";
@@ -37,6 +38,14 @@ export function AppHeader({ signOut = signOutAndClear }: AppHeaderProps) {
   return (
     <header className="app-header">
       <p className="app-header__name">Clinical Notes Workspace</p>
+
+      <nav className="app-header__nav" aria-label="Main">
+        <NavLink to="/notes">Notes</NavLink>
+        {/* Only administrators manage accounts, so only they see it. */}
+        {actor.role === "ADMIN" && (
+          <NavLink to="/admin/users">Users</NavLink>
+        )}
+      </nav>
 
       <div className="app-header__user">
         <p>

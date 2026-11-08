@@ -1,5 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useOfflineSaveReplaySnapshot } from "../../features/notes/offline/useOfflineSaveReplaySnapshot";
@@ -10,6 +12,10 @@ vi.mock("../../features/notes/offline/useOfflineSaveReplaySnapshot", () => ({
 }));
 
 const snapshotMock = vi.mocked(useOfflineSaveReplaySnapshot);
+
+function renderHeader(header: ReactElement) {
+  render(<MemoryRouter>{header}</MemoryRouter>);
+}
 
 function withPending(pendingCount: number) {
   snapshotMock.mockReturnValue({
@@ -23,7 +29,7 @@ describe("AppHeader", () => {
   });
 
   it("shows who is signed in", () => {
-    render(<AppHeader signOut={vi.fn()} />);
+    renderHeader(<AppHeader signOut={vi.fn()} />);
 
     expect(screen.getByText("Alex Kim")).toBeInTheDocument();
     expect(screen.getByText("Reviewer")).toBeInTheDocument();
@@ -32,7 +38,7 @@ describe("AppHeader", () => {
   it("signs out at once when nothing is waiting to be sent", async () => {
     const user = userEvent.setup({ delay: null });
     const signOut = vi.fn().mockResolvedValue(undefined);
-    render(<AppHeader signOut={signOut} />);
+    renderHeader(<AppHeader signOut={signOut} />);
 
     await user.click(screen.getByRole("button", { name: "Sign out" }));
 
@@ -43,7 +49,7 @@ describe("AppHeader", () => {
     const user = userEvent.setup({ delay: null });
     const signOut = vi.fn().mockResolvedValue(undefined);
     withPending(2);
-    render(<AppHeader signOut={signOut} />);
+    renderHeader(<AppHeader signOut={signOut} />);
 
     await user.click(screen.getByRole("button", { name: "Sign out" }));
 

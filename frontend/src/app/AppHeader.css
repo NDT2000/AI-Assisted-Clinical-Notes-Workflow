@@ -21,6 +21,22 @@
   font-weight: 700;
 }
 
+.app-header__nav {
+  display: flex;
+  gap: 1rem;
+  margin-right: auto;
+}
+
+.app-header__nav a {
+  color: inherit;
+}
+
+.app-header__nav a.active {
+  color: var(--text-h);
+  font-weight: 700;
+  text-decoration-thickness: 2px;
+}
+
 .app-header__user {
   display: flex;
   flex-wrap: wrap;
@@ -51,6 +67,7 @@
   gap: 0.5rem;
 }
 
+.app-header a:focus-visible,
 .app-header button:focus-visible {
   outline: 3px solid #245ea8;
   outline-offset: 2px;

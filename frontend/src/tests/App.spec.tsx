@@ -6,6 +6,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { session } from "../auth/session";
+import { MOCK_ACTORS } from "../mock-data/mockUsers";
 
 function renderAppAt(path: string) {
   const router = createMemoryRouter(
@@ -77,5 +78,44 @@ describe("App sign-in", () => {
     expect(
       screen.getByRole("heading", { name: "Choose your password" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("App administration", () => {
+  it("shows the Users page link to administrators only", () => {
+    renderAppAt("/notes");
+
+    expect(
+      screen.queryByRole("link", { name: "Users" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Notes" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives administrators the Users link", () => {
+    session.signInForTests(MOCK_ACTORS.ADMIN);
+
+    renderAppAt("/notes");
+
+    expect(
+      screen.getByRole("link", { name: "Users" }),
+    ).toHaveAttribute("href", "/admin/users");
+  });
+
+  it.each([
+    "/admin/users",
+    "/admin/users/clinician-1",
+  ])("takes everyone else from %s to the notes", (path) => {
+    session.signInForTests(MOCK_ACTORS.CLINICIAN);
+
+    renderAppAt(path);
+
+    expect(
+      screen.getByRole("heading", { name: "Notes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Users" }),
+    ).not.toBeInTheDocument();
   });
 });
