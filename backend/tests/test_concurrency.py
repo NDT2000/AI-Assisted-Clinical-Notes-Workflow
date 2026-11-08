@@ -10,8 +10,10 @@ database connections, as in production. The module's seeded notes are
 cleared afterwards.
 """
 
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from threading import Barrier
 from typing import Any
 
@@ -21,10 +23,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select, update
 from sqlalchemy.orm import Session
 
+from clinical_notes_api.accounts import admin
+from clinical_notes_api.accounts.users import create_user
 from clinical_notes_api.config import Settings
-from clinical_notes_api.db import ClientMutation, Note, NoteVersion, ReviewEvent
+from clinical_notes_api.db import ClientMutation, Note, NoteVersion, ReviewEvent, User
+from clinical_notes_api.db.session import create_session_factory
+from clinical_notes_api.errors import ApiError
 from clinical_notes_api.main import create_app
-from tests.note_api import content
+from tests.note_api import PASSWORD, content
 
 PARALLEL = 8
 
@@ -218,3 +224,81 @@ def test_overlapping_bulk_actions_do_not_deadlock(
     assert {response.status_code for response in responses} == {200}
     updated = [i for r in responses for i in r.json()["updated"]]
     assert sorted(updated) == failed
+
+
+# --- Administrators --------------------------------------------------------
+
+
+@pytest.fixture
+def second_admin(engine: Engine, seeded_notes: None) -> str:
+    """A second administrator who can sign in, committed for real.
+
+    Left in place: the module's seeded data is cleared afterwards.
+    """
+    with create_session_factory(engine).begin() as session:
+        user = create_user(
+            session,
+            username="admin-2",
+            display_name="Second Admin",
+            role="ADMIN",
+            password=PASSWORD,
+            actor_id=None,
+            now=datetime.now(UTC),
+        )
+        return user.id
+
+
+def test_two_admins_cannot_both_be_removed(engine: Engine, second_admin: str) -> None:
+    """Two administrators removing each other at the same moment.
+
+    Without the lock on the administrators, both would succeed and leave no
+    administrator at all.
+    """
+    factory = create_session_factory(engine)
+    now = datetime.now(UTC)
+    second_id = second_admin
+    outcome: list[object] = []
+
+    first = factory()
+    try:
+        actor = first.get(User, "admin-1")
+        admin.deactivate(
+            first,
+            actor=actor,
+            user_id=second_id,
+            confirm_open_reviews=False,
+            now=now,
+        )
+
+        def demote_the_first() -> None:
+            with factory() as session:
+                try:
+                    with session.begin():
+                        admin.update(
+                            session,
+                            actor=session.get(User, second_id),
+                            user_id="admin-1",
+                            username=None,
+                            display_name=None,
+                            role="CLINICIAN",
+                            now=now,
+                        )
+                    outcome.append("changed")
+                except ApiError as error:
+                    outcome.append(error.code)
+
+        waiting = threading.Thread(target=demote_the_first)
+        waiting.start()
+        waiting.join(timeout=0.5)
+        assert waiting.is_alive(), "the second change did not wait for the first"
+        first.commit()
+        waiting.join(timeout=10)
+    finally:
+        first.close()
+
+    assert outcome == ["last_admin"]
+    with Session(engine) as session:
+        remaining = session.scalars(
+            select(User.id).where(User.role == "ADMIN", User.is_active.is_(True))
+        ).all()
+    assert remaining == ["admin-1"]

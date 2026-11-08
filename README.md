@@ -724,9 +724,16 @@ bulk actions, patient lookup and the telemetry check behave as specified.
   connections, of eight simultaneous saves from one version exactly one
   wins and the rest get a conflict; eight simultaneous retries make one
   change; only one of five reviewers can start a review; overlapping bulk
-  actions do not deadlock. Without the row lock these tests fail.
+  actions do not deadlock; two administrators removing each other at once
+  leave one administrator. Without the row locks these tests fail.
 - **Seed command**: refuses to run in production and to seed a non-empty
   database without `--reset`.
+
+Backend tests are grouped by feature, one file each: `test_auth.py` (sign-in
+and sessions), `test_users.py` (user management), `test_notes.py`,
+`test_note_rules.py`, `test_concurrency.py`, and so on. A new test goes into
+its feature's file; a new file is only for a new feature area or a different
+database setup (rolled back per test, or committing for real).
 
 Coverage is about 98% of lines and branches; CI fails below 95%. Database
 tests are skipped when Postgres is not running, unless `REQUIRE_DATABASE=1`.
