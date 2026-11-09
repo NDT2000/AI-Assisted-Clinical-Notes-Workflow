@@ -1,5 +1,5 @@
 # Backend checks: lint, formatting, and the full test suite against a real
-# Postgres (the same pgvector image as docker-compose.yml).
+# Postgres (the same pgvector image as docker-compose.yml) and Redis.
 name: Backend
 
 on:
@@ -47,11 +47,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       DATABASE_URL: postgresql+psycopg://clinical:clinical@localhost:5432/clinical_notes
       # Fail, rather than skip, the database tests if Postgres is missing.
       REQUIRE_DATABASE: "1"
+      # The Redis relay test; the other tests use the in-process relay.
+      TEST_REDIS_URL: redis://localhost:6379/0
+      REQUIRE_REDIS: "1"
 
     steps:
       - uses: actions/checkout@v4

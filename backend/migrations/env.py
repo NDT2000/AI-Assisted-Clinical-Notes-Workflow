@@ -11,7 +11,8 @@ from clinical_notes_api.db import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep the application's loggers working when migrations run in-process.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # An explicit URL (alembic.ini or a test's Config) wins over the settings.
 if not config.get_main_option("sqlalchemy.url"):

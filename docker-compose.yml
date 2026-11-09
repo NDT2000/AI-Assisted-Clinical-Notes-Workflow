@@ -23,5 +23,19 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Relays note events between API processes for live updates.
+  redis:
+    image: redis:7.4-alpine
+    # Only a relay: nothing needs to survive a restart.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   postgres-data:

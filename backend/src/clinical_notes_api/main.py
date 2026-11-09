@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
@@ -8,7 +10,11 @@ from clinical_notes_api.accounts.router import router as users_router
 from clinical_notes_api.config import Settings, get_settings
 from clinical_notes_api.db.session import create_db_engine, create_session_factory
 from clinical_notes_api.errors import register_error_handlers
+from clinical_notes_api.notes.events import publish_after_commit
 from clinical_notes_api.notes.router import router as notes_router
+from clinical_notes_api.realtime.hub import ConnectionHub
+from clinical_notes_api.realtime.relay import create_relay
+from clinical_notes_api.realtime.router import router as realtime_router
 
 API_PREFIX = "/api"
 
@@ -16,15 +22,31 @@ API_PREFIX = "/api"
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
+    hub = ConnectionHub()
+    relay = create_relay(settings.redis_url, hub)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        await relay.start()
+        try:
+            yield
+        finally:
+            await relay.stop()
+
     app = FastAPI(
         title="Clinical Notes Workflow API",
         version="0.1.0",
+        lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.hub = hub
+    app.state.relay = relay
     # Connects lazily, on the first request that needs the database.
     app.state.session_factory = create_session_factory(
         create_db_engine(settings.database_url),
     )
+    # Committed note events go to live connections (realtime/).
+    publish_after_commit(app.state.session_factory, relay.publish)
 
     app.add_middleware(
         CORSMiddleware,
@@ -40,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(notes_router, prefix=API_PREFIX)
     app.include_router(users_router, prefix=API_PREFIX)
     app.include_router(telemetry.router, prefix=API_PREFIX)
+    app.include_router(realtime_router, prefix=API_PREFIX)
 
     _document_validation_errors(app)
 
