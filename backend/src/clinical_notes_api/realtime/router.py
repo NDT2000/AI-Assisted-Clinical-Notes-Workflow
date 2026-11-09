@@ -8,6 +8,10 @@ The protocol, in JSON text messages:
     {"type": "subscribe", "noteIds": [...], "afterCursor": N}
         Follow these notes (replacing the previous set), having seen every
         event up to N. Missed events are sent first, then live ones.
+    {"type": "presence", "noteId": "...", "activity": "VIEWING" | "EDITING"}
+        This connection has the note open; repeat it every 15 seconds while
+        it stays (entries expire after PRESENCE_TTL_SECONDS). The reply is
+        the note's presence. {"noteId": null} closes it.
 
   server -> browser
     {"type": "ready", "userId": ..., "latestCursor": N}  signed in; the log is at N
@@ -25,6 +29,8 @@ deactivated account, and 4400 for a broken protocol.
 import asyncio
 import contextlib
 import json
+import logging
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -40,9 +46,16 @@ from clinical_notes_api.db import User
 from clinical_notes_api.db.models import ID_LENGTH
 from clinical_notes_api.notes.events import EventsPage, events_after, latest_cursor
 from clinical_notes_api.realtime.hub import ConnectionHub
+from clinical_notes_api.realtime.presence import (
+    ACTIVITIES,
+    PresenceEntry,
+    PresenceService,
+    now_ms,
+)
 from clinical_notes_api.security import InvalidTokenError, decode_access_token
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 AUTH_TIMEOUT_SECONDS = 5.0
 KEEPALIVE_SECONDS = 25.0
@@ -68,6 +81,8 @@ class ProtocolError(Exception):
 @dataclass(frozen=True)
 class SignedInUser:
     user_id: str
+    display_name: str
+    role: str
     expires_at: datetime
 
 
@@ -100,6 +115,7 @@ async def realtime(websocket: WebSocket) -> None:
         hub=hub,
         session_factory=app.state.session_factory,
         settings=app.state.settings,
+        presence=app.state.presence,
     ).run()
 
 
@@ -111,8 +127,13 @@ class RealtimeConnection:
         hub: ConnectionHub,
         session_factory,
         settings: Settings,
+        presence: PresenceService | None = None,
     ) -> None:
         self.websocket = websocket
+        self.connection_id = f"connection-{uuid.uuid4()}"
+        self.presence = presence
+        # The note this connection has open, if any.
+        self.presence_note: str | None = None
         self.hub = hub
         self.session_factory = session_factory
         self.settings = settings
@@ -161,6 +182,7 @@ class RealtimeConnection:
         finally:
             self.group = None
             self.hub.leave(self.deliver)
+            await self.leave_note()
 
         if self.close_code is not None:
             # Whatever was queued before the close still goes out first.
@@ -217,6 +239,10 @@ class RealtimeConnection:
         """A live event for a followed note (called by the hub)."""
         if message.get("noteId") not in self.following:
             return
+        if message.get("type") == "note.presence_changed":
+            # Not in the event log: no catching up, nothing to hold back.
+            self.send({"type": "event", "event": message})
+            return
         if self.catching_up:
             self.held_back.append(message)
             return
@@ -268,6 +294,8 @@ class RealtimeConnection:
             self.user = renewed
         elif message["type"] == "subscribe":
             await self.subscribe(message)
+        elif message["type"] == "presence":
+            await self.announce(message)
         else:
             raise ProtocolError(
                 CLOSE_BAD_MESSAGE,
@@ -312,7 +340,12 @@ class RealtimeConnection:
             )
         if not user.is_active:
             raise ProtocolError(CLOSE_FORBIDDEN, "This account is deactivated.")
-        return SignedInUser(user_id=user.id, expires_at=claims.expires_at)
+        return SignedInUser(
+            user_id=user.id,
+            display_name=user.display_name,
+            role=user.role,
+            expires_at=claims.expires_at,
+        )
 
     def load_user(self, user_id: str) -> User | None:
         with self.session_factory() as session:
@@ -383,3 +416,49 @@ class RealtimeConnection:
     def read_latest_cursor(self) -> int:
         with self.session_factory() as session:
             return latest_cursor(session)
+
+    # --- Presence -------------------------------------------------------------
+
+    async def announce(self, message: dict[str, Any]) -> None:
+        note_id = message.get("noteId")
+        activity = message.get("activity", "VIEWING")
+        if note_id is not None and (
+            not isinstance(note_id, str) or not 0 < len(note_id) <= ID_LENGTH
+        ):
+            raise ProtocolError(CLOSE_BAD_MESSAGE, "noteId must be a note id or null.")
+        if activity not in ACTIVITIES:
+            raise ProtocolError(
+                CLOSE_BAD_MESSAGE,
+                "activity must be VIEWING or EDITING.",
+            )
+
+        if note_id != self.presence_note:
+            await self.leave_note()
+        if note_id is None or self.presence is None or self.user is None:
+            return
+
+        self.presence_note = note_id
+        # Who it is comes from the sign-in, never from the message.
+        entry = PresenceEntry(
+            connection_id=self.connection_id,
+            user_id=self.user.user_id,
+            display_name=self.user.display_name,
+            role=self.user.role,
+            activity=activity,
+            last_seen_ms=now_ms(),
+        )
+        try:
+            snapshot = await self.presence.announce(note_id, entry)
+        except Exception:  # noqa: BLE001 - presence is best effort
+            logger.warning("Presence for %s was not recorded.", note_id, exc_info=True)
+            return
+        self.send({"type": "event", "event": snapshot})
+
+    async def leave_note(self) -> None:
+        note_id, self.presence_note = self.presence_note, None
+        if note_id is None or self.presence is None:
+            return
+        try:
+            await self.presence.leave(note_id, self.connection_id)
+        except Exception:  # noqa: BLE001 - it expires on its own anyway
+            logger.warning("Presence for %s was not removed.", note_id, exc_info=True)

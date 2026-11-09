@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -13,6 +15,10 @@ from clinical_notes_api.errors import register_error_handlers
 from clinical_notes_api.notes.events import publish_after_commit
 from clinical_notes_api.notes.router import router as notes_router
 from clinical_notes_api.realtime.hub import ConnectionHub
+from clinical_notes_api.realtime.presence import (
+    PresenceService,
+    create_presence_store,
+)
 from clinical_notes_api.realtime.relay import create_relay
 from clinical_notes_api.realtime.router import router as realtime_router
 
@@ -24,14 +30,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     hub = ConnectionHub()
     relay = create_relay(settings.redis_url, hub)
+    presence = PresenceService(
+        create_presence_store(settings.redis_url),
+        relay.publish,
+        hub,
+        settings.presence_ttl_seconds,
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await relay.start()
+        sweeper = asyncio.create_task(presence.sweep_forever())
         try:
             yield
         finally:
+            sweeper.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sweeper
             await relay.stop()
+            await presence.store.close()
 
     app = FastAPI(
         title="Clinical Notes Workflow API",
@@ -41,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.hub = hub
     app.state.relay = relay
+    app.state.presence = presence
     # Connects lazily, on the first request that needs the database.
     app.state.session_factory = create_session_factory(
         create_db_engine(settings.database_url),

@@ -102,6 +102,15 @@ class Settings(BaseSettings):
         ),
     )
 
+    presence_ttl_seconds: int = Field(
+        default=30,
+        gt=0,
+        description=(
+            "How long someone stays shown on a note after their browser stops "
+            "saying it is still there."
+        ),
+    )
+
     @property
     def secure_cookies(self) -> bool:
         """Cookies only over HTTPS in production; local development is HTTP."""

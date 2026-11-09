@@ -137,12 +137,24 @@ function createNoteDetail(): NoteDetail {
     presence: [
       {
         user: {
+          id: "reviewer-2",
+          displayName:
+            "Sam Rivera",
+          role: "REVIEWER",
+        },
+        activity: "EDITING",
+        lastSeenAt:
+          "2026-07-29T10:31:00.000Z",
+      },
+      {
+        // The signed-in user: the card leaves them out.
+        user: {
           id: "reviewer-1",
           displayName:
             "Alex Reviewer",
           role: "REVIEWER",
         },
-        activity: "EDITING",
+        activity: "VIEWING",
         lastSeenAt:
           "2026-07-29T10:31:00.000Z",
       },
@@ -441,10 +453,14 @@ describe("NoteDetailPage", () => {
     expect(
       within(
         presenceSection!,
-      ).getByText(
-        "Alex Reviewer",
-      ),
+      ).getByText("Sam Rivera"),
     ).toBeInTheDocument();
+
+    expect(
+      within(
+        presenceSection!,
+      ).queryByText("Alex Reviewer"),
+    ).not.toBeInTheDocument();
 
     const versionHistorySection = screen
       .getByRole("heading", {

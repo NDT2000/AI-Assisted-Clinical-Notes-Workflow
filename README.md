@@ -83,6 +83,8 @@ another user's work.
   the visible notes without a reload; after a lost connection, a "While you
   were away" panel lists what was missed and points out where it meets your
   offline edits.
+- **Presence** — each note shows who else has it open right now, viewing or
+  editing, across browsers and computers.
 - **Role- and ownership-based authorization** — checked in the UI and again on
   the server.
 - **Real accounts** — users sign in with their own password; an administrator
@@ -280,6 +282,7 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `EVENT_RETENTION_DAYS` | `30` | How long the note event log keeps events for catching up |
 | `REDIS_URL` | unset | Redis that relays live events between API processes (`redis://localhost:6380/0` with Compose); unset, events reach only the same process |
 | `REDIS_PORT` | `6380` | Host port for Redis |
+| `PRESENCE_TTL_SECONDS` | `30` | How long someone stays shown on a note after their browser stops repeating that it is there |
 
 Environment variables take precedence over `.env`.
 
@@ -469,8 +472,10 @@ local optimistic state, not applied blindly.
   button to the conflict resolver; if the note was approved or locked
   meanwhile, it says why the offline edit cannot be saved. When too much
   changed to catch up, the note is reloaded and the page says so.
-- Presence ("who is viewing") still comes from the tabs of one browser,
-  until the server takes it over.
+- **Presence.** The open note announces itself on the live connection
+  ("viewing", or "editing" while the user types; back to viewing after 3
+  seconds without typing) and repeats that every 15 seconds. The presence
+  card lists the other people on the note, editors first; you are left out.
 
 ### Telemetry and privacy
 
@@ -599,6 +604,7 @@ messages are small JSON objects:
 | --- | --- | --- |
 | Browser | `{"type": "auth", "token": ...}` | The access token: first, within 5 seconds, and again whenever it is renewed |
 | Browser | `{"type": "subscribe", "noteIds": [...], "afterCursor": N}` | Follow these notes (up to 200), having seen every event up to N |
+| Browser | `{"type": "presence", "noteId": ..., "activity": "VIEWING" \| "EDITING"}` | This connection has the note open (repeat every 15 seconds; `noteId: null` closes it). The reply is the note's presence |
 | Server | `{"type": "ready", "latestCursor": N}` | Signed in; the event log is at N |
 | Server | `{"type": "event", "event": ...}` | One note change, in the event log's shape |
 | Server | `{"type": "caughtUp", "cursor": N}` | Missed events have been sent; what follows is live |
@@ -622,6 +628,23 @@ messages are small JSON objects:
   still saved, and clients get them when they next catch up.
 - A client that cannot keep up (1,000 messages waiting) is disconnected and
   catches up when it reconnects.
+
+### Presence
+
+Who has a note open right now is kept per connection, in Redis when it is
+configured (shared by every API process) and in memory otherwise.
+
+- **Who someone is comes from their sign-in** on the connection, never from
+  the message, so a browser cannot claim to be someone else.
+- **Entries expire on their own.** Each lasts `PRESENCE_TTL_SECONDS` (30)
+  unless repeated, so a closed laptop or lost network leaves nothing behind;
+  closing the note or the connection removes it at once.
+- **Changes go to everyone following the note**, as a `note.presence_changed`
+  event (cursor 0: presence is not in the event log). Every 5 seconds each
+  API process also looks again at the notes where it last showed someone, to
+  notice entries that expired silently.
+- **One entry per person**: several tabs of one user count once, and editing
+  wins over viewing. Repeating an unchanged announcement tells nobody.
 
 ### Seed data
 
@@ -866,6 +889,11 @@ bulk actions, patient lookup and the telemetry check behave as specified.
   (following new notes from the log position, marking missed events until
   caught up, reload requests), ignoring late events, and the "While you were
   away" panel's wording for overlapping, non-overlapping and refused edits.
+- **Presence**: people on a note seeing each other, editing first, leaving
+  by closing the note or the connection, expiry when announcements stop,
+  that a message cannot claim another user, one entry per person, and Redis
+  shared between processes; in the frontend, announcing viewing and editing,
+  the 15-second repeat and announcing again after a reconnection.
 - **Seed command**: refuses to run in production and to seed a non-empty
   database without `--reset`.
 
@@ -885,8 +913,7 @@ browser-driven end-to-end suite yet.
 
 ## Assumptions and limitations
 
-- **Presence is shared only between tabs of one browser** for now; the
-  server takes it over next. Live note changes come from the server.
+- **Presence is shown on the note page only**, not in the notes list.
 - **The note list does not reload by itself** when the server says too much
   changed while it was disconnected; the open note does. Reloading the list
   page catches it up.
@@ -907,8 +934,7 @@ browser-driven end-to-end suite yet.
   searched, so a word in the synthetic notes' shared wording (such as
   "symptoms") matches every note. A renamed patient's notes are re-indexed
   only when they next change.
-- **Presence is always empty** in the API until real-time updates arrive, and
-  accepted telemetry is only logged, not stored.
+- **Accepted telemetry is only logged**, not stored.
 - **MFA** is a per-user flag (on for reviewers and the admin), not a real
   second factor.
 - **Three-way merge instead of a CRDT** — it fits the immutable version model

@@ -20,6 +20,9 @@ class ConnectionHub:
         self._followers: dict[str, set[Deliver]] = defaultdict(set)
         self._following: dict[Deliver, set[str]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
+        # What this process last showed each note's followers about who is
+        # there, to tell when an expiry changes it.
+        self._presence: dict[str, tuple[tuple[str, str], ...]] = {}
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -44,8 +47,25 @@ class ConnectionHub:
 
     def dispatch(self, message: dict[str, Any]) -> None:
         """On the event loop: give the event to its note's followers."""
-        for deliver in list(self._followers.get(message.get("noteId", ""), ())):
+        note_id = message.get("noteId", "")
+        if message.get("type") == "note.presence_changed":
+            people = tuple(
+                (person["user"]["id"], person["activity"])
+                for person in message.get("presence", [])
+            )
+            if people:
+                self._presence[note_id] = people
+            else:
+                self._presence.pop(note_id, None)
+        for deliver in list(self._followers.get(note_id, ())):
             deliver(message)
+
+    def notes_with_presence(self) -> list[str]:
+        """Followed notes where someone was last shown as present."""
+        return [note_id for note_id in self._presence if note_id in self._followers]
+
+    def presence_signature(self, note_id: str) -> tuple[tuple[str, str], ...]:
+        return self._presence.get(note_id, ())
 
     def dispatch_threadsafe(self, message: dict[str, Any]) -> None:
         """From any thread. Dropped if no connection has started yet."""

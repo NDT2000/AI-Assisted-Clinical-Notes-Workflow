@@ -96,6 +96,9 @@ import {
 import type {
   NoteRealtimeEvent,
 } from "../../realtime/realtimeTypes";
+import {
+  useNotePresence,
+} from "../../realtime/useNotePresence";
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
@@ -460,6 +463,12 @@ export function NoteDetailWorkspace({
   });
 
 
+  // Tell others this note is open here, and when it is being typed in.
+  const markEditing =
+    useNotePresence(
+      workspaceDetail.note.id,
+    );
+
   useNoteDetailRealtime({
     noteId: workspaceDetail.note.id,
     getDetail: () =>
@@ -747,6 +756,8 @@ export function NoteDetailWorkspace({
     queueAutosave(
       nextContent,
     );
+
+    markEditing();
   }
 
   function handleAction(
@@ -1018,8 +1029,14 @@ export function NoteDetailWorkspace({
         >
           <PresencePanel
             presence={
+              // Others only: you know you are here.
               workspaceDetail
                 .presence
+                .filter(
+                  entry =>
+                    entry.user.id !==
+                    actor.id,
+                )
             }
           />
 

@@ -1,16 +1,18 @@
+import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionStore } from "../../../../auth/session";
-import { createAppRealtimeChannel } from "../appRealtimeChannel";
 import { RealtimeConnectionManager } from "../RealtimeConnectionManager";
 import type {
   MockRealtimeConnectOptions,
   NoteRealtimeEvent,
+  PresenceAnnouncement,
   RealtimeChannel,
 } from "../realtimeTypes";
+import { EDITING_IDLE_MS, useNotePresence } from "../useNotePresence";
 import {
   CLOSE_UNAUTHENTICATED,
-  TOKEN_CHECK_INTERVAL_MS,
+  REPEAT_INTERVAL_MS,
   WebSocketRealtimeChannel,
   realtimeUrl,
   type WebSocketLike,
@@ -203,7 +205,7 @@ describe("WebSocketRealtimeChannel", () => {
       { type: "auth", token: "token-1" },
       { type: "auth", token: "token-2" },
     ]);
-    expect(TOKEN_CHECK_INTERVAL_MS).toBeLessThan(30_000);
+    expect(REPEAT_INTERVAL_MS).toBeLessThan(30_000);
   });
 
   it("renews the token and reports the drop when the server says it expired", async () => {
@@ -262,15 +264,23 @@ class ServerLikeChannel implements RealtimeChannel {
   connections: {
     options: MockRealtimeConnectOptions;
     noteIds: readonly string[][];
+    presence: (PresenceAnnouncement | null)[];
   }[] = [];
 
   connect(options: MockRealtimeConnectOptions) {
-    const record = { options, noteIds: [] as string[][] };
+    const record = {
+      options,
+      noteIds: [] as string[][],
+      presence: [] as (PresenceAnnouncement | null)[],
+    };
     this.connections.push(record);
     return {
       id: `connection-${this.connections.length}`,
       updateNoteIds(noteIds: readonly string[]) {
         record.noteIds.push([...noteIds]);
+      },
+      setPresence(presence: PresenceAnnouncement | null) {
+        record.presence.push(presence);
       },
       disconnect() {},
     };
@@ -357,31 +367,110 @@ describe("RealtimeConnectionManager with the server's channel", () => {
   });
 });
 
-describe("createAppRealtimeChannel", () => {
-  it("takes note changes from the server and only presence from the tabs", () => {
-    const server = new ServerLikeChannel();
-    const local = new ServerLikeChannel();
-    const channel = createAppRealtimeChannel(server, local);
-    const onEvent = vi.fn();
+describe("presence on the live connection", () => {
+  async function ready() {
+    const setup_ = setup(["token-1"]);
+    const connection = setup_.channel.connect(setup_.options);
+    const [socket] = setup_.sockets;
+    return { ...setup_, connection, socket };
+  }
 
-    const connection = channel.connect({
-      noteIds: ["note-1"],
-      afterCursor: 0,
-      onEvent,
-      onDisconnect: vi.fn(),
-    });
-    local.last.onEvent(event(99));
-    local.last.onEvent({
-      ...event(98),
-      type: "note.version_added",
-    } as unknown as NoteRealtimeEvent);
-    connection.updateNoteIds(["note-2"]);
+  function presenceMessages(socket: FakeSocket) {
+    return socket.sent.filter((message) => message.type === "presence");
+  }
 
-    expect(channel.updatesNoteIdsInPlace).toBe(true);
-    // Presence never moves the server cursor.
-    expect(onEvent).toHaveBeenCalledTimes(1);
-    expect(onEvent.mock.calls[0][0].cursor).toBe(0);
-    expect(server.connections[0].noteIds).toEqual([["note-2"]]);
-    expect(local.connections[0].noteIds).toEqual([["note-2"]]);
+  it("announces the open note once ready, and repeats it", async () => {
+    const { connection, socket, tick } = await ready();
+
+    // Before the server is ready, it waits.
+    connection.setPresence?.({ noteId: "note-1", activity: "VIEWING" });
+    socket.open();
+    await flush();
+    expect(presenceMessages(socket)).toEqual([]);
+
+    socket.receive({ type: "ready", userId: "reviewer-1", latestCursor: 0 });
+    tick();
+    await flush();
+
+    expect(presenceMessages(socket)).toEqual([
+      { type: "presence", noteId: "note-1", activity: "VIEWING" },
+      { type: "presence", noteId: "note-1", activity: "VIEWING" },
+    ]);
+    expect(REPEAT_INTERVAL_MS).toBeLessThanOrEqual(15_000);
+  });
+
+  it("sends changes, and closing the note once", async () => {
+    const { connection, socket, tick } = await ready();
+    socket.open();
+    await flush();
+    socket.receive({ type: "ready", userId: "reviewer-1", latestCursor: 0 });
+
+    connection.setPresence?.(null); // nothing was open: nothing to say
+    connection.setPresence?.({ noteId: "note-1", activity: "EDITING" });
+    connection.setPresence?.(null);
+    tick(); // nothing open: no repeat
+
+    expect(presenceMessages(socket)).toEqual([
+      { type: "presence", noteId: "note-1", activity: "EDITING" },
+      { type: "presence", noteId: null },
+    ]);
+  });
+
+  it("announces again on every new connection", () => {
+    const channel = new ServerLikeChannel();
+    const { manager, runTimer } = managerWith(channel);
+    manager.subscribe(["note-1"], vi.fn());
+
+    manager.setPresence({ noteId: "note-1", activity: "VIEWING" });
+    channel.last.onDisconnect(new Error("network"));
+    runTimer();
+
+    expect(channel.connections.map((record) => record.presence)).toEqual([
+      [{ noteId: "note-1", activity: "VIEWING" }],
+      [{ noteId: "note-1", activity: "VIEWING" }],
+    ]);
   });
 });
+
+describe("useNotePresence", () => {
+  function fakeManager() {
+    const calls: (PresenceAnnouncement | null)[] = [];
+    return {
+      calls,
+      manager: {
+        setPresence: (presence: PresenceAnnouncement | null) => {
+          calls.push(presence);
+        },
+      } as unknown as RealtimeConnectionManager,
+    };
+  }
+
+  it("views on open, edits while typing, views again when idle", () => {
+    vi.useFakeTimers();
+    try {
+      const { calls, manager } = fakeManager();
+      const { result, unmount } = renderHook(() =>
+        useNotePresence("note-1", manager),
+      );
+
+      act(() => {
+        result.current();
+        result.current(); // still editing: nothing new
+      });
+      act(() => {
+        vi.advanceTimersByTime(EDITING_IDLE_MS);
+      });
+      unmount();
+
+      expect(calls).toEqual([
+        { noteId: "note-1", activity: "VIEWING" },
+        { noteId: "note-1", activity: "EDITING" },
+        { noteId: "note-1", activity: "VIEWING" },
+        null,
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+

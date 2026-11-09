@@ -5,7 +5,9 @@ change commits. The module's seeded notes are cleared afterwards.
 """
 
 import asyncio
+import contextlib
 import os
+import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -28,6 +30,14 @@ from clinical_notes_api.notes.events import (
 )
 from clinical_notes_api.realtime import router as realtime
 from clinical_notes_api.realtime.hub import ConnectionHub
+from clinical_notes_api.realtime.presence import (
+    MemoryPresenceStore,
+    PresenceEntry,
+    PresenceService,
+    RedisPresenceStore,
+    now_ms,
+    presence_message,
+)
 from clinical_notes_api.realtime.relay import LocalRelay, RedisRelay
 from clinical_notes_api.security import create_access_token
 from tests.note_api import auth, content, current_version_id
@@ -580,3 +590,269 @@ def test_ready_says_where_the_log_is(
         ready = websocket.receive_json()
 
     assert ready["latestCursor"] == cursor_now(engine)
+
+
+# --- Presence ---------------------------------------------------------------
+
+PRESENCE_NOTE = "note-000012"
+
+
+def next_presence(websocket) -> list[tuple[str, str]]:
+    """The next presence message, as (user id, activity) pairs."""
+    while True:
+        message = websocket.receive_json()
+        if (
+            message["type"] == "event"
+            and message["event"]["type"] == "note.presence_changed"
+        ):
+            event = message["event"]
+            assert event["cursor"] == 0
+            return [
+                (person["user"]["id"], person["activity"])
+                for person in event["presence"]
+            ]
+
+
+def follow(websocket, note_id: str = PRESENCE_NOTE) -> None:
+    websocket.send_json({"type": "subscribe", "noteIds": [note_id], "afterCursor": 0})
+    receive_until(websocket, "caughtUp")
+
+
+def announce(websocket, activity: str = "VIEWING", note_id=PRESENCE_NOTE) -> None:
+    websocket.send_json({"type": "presence", "noteId": note_id, "activity": activity})
+
+
+def presence_becomes(websocket, expected: list[tuple[str, str]]) -> None:
+    """Read presence messages until one shows exactly `expected`.
+
+    An announcer gets both the reply and the broadcast of its own change,
+    and others may still be hearing an earlier change: only the state
+    reached matters.
+    """
+    seen = []
+    for _ in range(6):
+        seen.append(next_presence(websocket))
+        if seen[-1] == expected:
+            return
+    raise AssertionError(f"presence never became {expected}; saw {seen}")
+
+
+def test_people_on_a_note_see_each_other(live: TestClient, settings: Settings) -> None:
+    with contextlib.ExitStack() as stack:
+        alex = connect(live, settings, "reviewer-1")
+        stack.callback(alex.__exit__, None, None, None)
+        sam = connect(live, settings, "reviewer-2")
+        sam_closed = False
+
+        def close_sam() -> None:
+            if not sam_closed:
+                sam.__exit__(None, None, None)
+
+        stack.callback(close_sam)
+        follow(alex)
+        follow(sam)
+
+        announce(alex)
+        presence_becomes(alex, [("reviewer-1", "VIEWING")])
+
+        announce(sam)
+        both = [("reviewer-1", "VIEWING"), ("reviewer-2", "VIEWING")]
+        presence_becomes(sam, both)
+        presence_becomes(alex, both)
+
+        # Editors come first.
+        announce(sam, "EDITING")
+        presence_becomes(alex, [("reviewer-2", "EDITING"), ("reviewer-1", "VIEWING")])
+
+        # Closing the note removes them at once.
+        sam.send_json({"type": "presence", "noteId": None})
+        presence_becomes(alex, [("reviewer-1", "VIEWING")])
+
+        announce(sam)
+        presence_becomes(alex, both)
+
+        # So does closing the connection.
+        sam.__exit__(None, None, None)
+        sam_closed = True
+        presence_becomes(alex, [("reviewer-1", "VIEWING")])
+
+
+def test_presence_says_who_signed_in_not_who_the_message_claims(
+    live: TestClient,
+    settings: Settings,
+) -> None:
+    websocket = connect(live, settings, "reviewer-1")
+    try:
+        websocket.send_json(
+            {
+                "type": "presence",
+                "noteId": PRESENCE_NOTE,
+                "activity": "VIEWING",
+                "userId": "admin-1",
+                "displayName": "Jordan Lee",
+            }
+        )
+        message = websocket.receive_json()
+    finally:
+        websocket.__exit__(None, None, None)
+
+    [person] = message["event"]["presence"]
+    assert person["user"] == {
+        "id": "reviewer-1",
+        "displayName": "Alex Kim",
+        "role": "REVIEWER",
+    }
+
+
+def test_repeating_an_announcement_tells_nobody(
+    live: TestClient,
+    settings: Settings,
+) -> None:
+    with contextlib.ExitStack() as stack:
+        alex = connect(live, settings, "reviewer-1")
+        stack.callback(alex.__exit__, None, None, None)
+        sam = connect(live, settings, "reviewer-2")
+        stack.callback(sam.__exit__, None, None, None)
+        follow(sam)
+        announce(alex)
+        presence_becomes(sam, [("reviewer-1", "VIEWING")])
+
+        announce(alex)  # the 15-second repeat
+        # The next presence message the second user gets is the reply to
+        # their own announcement: the repeat sent nothing.
+        announce(sam)
+        assert next_presence(sam) == [
+            ("reviewer-1", "VIEWING"),
+            ("reviewer-2", "VIEWING"),
+        ]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ({"type": "presence", "noteId": 5}, "note id or null"),
+        ({"type": "presence", "noteId": "", "activity": "VIEWING"}, "note id or null"),
+        (
+            {"type": "presence", "noteId": PRESENCE_NOTE, "activity": "DANCING"},
+            "VIEWING or EDITING",
+        ),
+    ],
+)
+def test_broken_presence_messages_get_an_error(
+    live: TestClient,
+    settings: Settings,
+    message: dict,
+    expected: str,
+) -> None:
+    websocket = connect(live, settings)
+    try:
+        websocket.send_json(message)
+        error = websocket.receive_json()
+    finally:
+        websocket.__exit__(None, None, None)
+
+    assert error["type"] == "error"
+    assert expected in error["message"]
+
+
+def entry(connection: str, user: str, activity: str = "VIEWING", seen: int = 0):
+    return PresenceEntry(
+        connection_id=connection,
+        user_id=user,
+        display_name=user.title(),
+        role="REVIEWER",
+        activity=activity,
+        last_seen_ms=seen or now_ms(),
+    )
+
+
+def test_one_entry_per_person_and_editing_wins() -> None:
+    message = presence_message(
+        "note-1",
+        [
+            entry("tab-1", "zoe", "VIEWING", 1),
+            entry("tab-2", "zoe", "EDITING", 2),
+            entry("tab-3", "zoe", "VIEWING", 3),
+            entry("tab-4", "amy", "VIEWING", 4),
+        ],
+    )
+
+    assert [
+        (person["user"]["id"], person["activity"]) for person in message["presence"]
+    ] == [("zoe", "EDITING"), ("amy", "VIEWING")]
+    assert message["cursor"] == 0
+    assert message["occurredAt"].endswith("Z")
+
+
+def test_someone_who_stops_repeating_disappears() -> None:
+    async def scenario() -> list[list[str]]:
+        hub = ConnectionHub()
+        seen: list[list[str]] = []
+        hub.follow(
+            lambda message: seen.append(
+                [person["user"]["id"] for person in message["presence"]]
+            ),
+            {"note-1"},
+        )
+        service = PresenceService(MemoryPresenceStore(), hub.dispatch, hub, 1)
+        service.ttl_ms = 50
+        await service.announce("note-1", entry("tab-1", "zoe"))
+
+        await service.sweep_once()  # nothing changed yet
+        await asyncio.sleep(0.1)
+        await service.sweep_once()  # expired
+        await service.sweep_once()  # already told
+        return seen
+
+    assert asyncio.run(scenario()) == [["zoe"], []]
+
+
+def test_the_memory_store_reports_real_changes() -> None:
+    async def scenario() -> list[bool]:
+        store = MemoryPresenceStore()
+        return [
+            await store.set("note-1", entry("tab-1", "zoe"), 30_000),
+            await store.set("note-1", entry("tab-1", "zoe"), 30_000),
+            await store.set("note-1", entry("tab-1", "zoe", "EDITING"), 30_000),
+            await store.remove("note-1", "tab-1"),
+            await store.remove("note-1", "tab-1"),
+        ]
+
+    assert asyncio.run(scenario()) == [True, False, True, True, False]
+
+
+def test_redis_presence_is_shared_and_expires() -> None:
+    url = redis_url()
+
+    async def scenario() -> dict[str, object]:
+        first, second = RedisPresenceStore(url), RedisPresenceStore(url)
+        note = f"note-test-{uuid.uuid4()}"
+        try:
+            changed = await first.set(note, entry("tab-1", "zoe"), 200)
+            again = await first.set(note, entry("tab-1", "zoe"), 200)
+            await first.set(note, entry("tab-2", "amy"), 30_000)
+            both = sorted(e.user_id for e in await second.entries(note))
+            await asyncio.sleep(0.3)
+            after_expiry = [e.user_id for e in await second.entries(note)]
+            removed = await second.remove(note, "tab-2")
+            empty = await first.entries(note)
+        finally:
+            await first.close()
+            await second.close()
+        return {
+            "changed": changed,
+            "again": again,
+            "both": both,
+            "after_expiry": after_expiry,
+            "removed": removed,
+            "empty": empty,
+        }
+
+    assert asyncio.run(scenario()) == {
+        "changed": True,
+        "again": False,
+        "both": ["amy", "zoe"],
+        "after_expiry": ["amy"],
+        "removed": True,
+        "empty": [],
+    }

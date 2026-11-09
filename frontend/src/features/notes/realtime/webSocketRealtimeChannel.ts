@@ -7,6 +7,7 @@ import type {
   MockRealtimeConnectOptions,
   MockRealtimeConnection,
   NoteRealtimeEvent,
+  PresenceAnnouncement,
   RealtimeChannel,
 } from "./realtimeTypes";
 
@@ -16,13 +17,17 @@ import type {
  * The access token is the first message, never part of the URL, and a
  * renewed token is sent on the same connection before the old one runs
  * out. Changing the followed notes re-subscribes on the open connection.
+ * The open note's presence is announced on it too, and repeated so the
+ * server knows the tab is still there.
  * The protocol is described in backend/src/clinical_notes_api/realtime/
  * router.py.
  */
 
-// Shorter than the session's 30-second renewal margin, so a renewed
-// token always reaches the server before the previous one expires.
-export const TOKEN_CHECK_INTERVAL_MS = 20_000;
+// How often the token is checked and presence repeated. Shorter than the
+// session's 30-second renewal margin, so a renewed token reaches the
+// server before the previous one expires; and half the server's 30-second
+// presence time to live, so one late repeat does not drop the user.
+export const REPEAT_INTERVAL_MS = 15_000;
 
 // Close codes the server uses.
 export const CLOSE_UNAUTHENTICATED = 4401;
@@ -106,6 +111,7 @@ export class WebSocketRealtimeChannel implements RealtimeChannel {
     let isClosedByUs = false;
     let sentToken: string | null = null;
     let tokenTimer: unknown = null;
+    let presence: PresenceAnnouncement | null = null;
 
     function send(message: unknown): void {
       socket.send(JSON.stringify(message));
@@ -119,6 +125,18 @@ export class WebSocketRealtimeChannel implements RealtimeChannel {
           options.resolveAfterCursor?.(latestCursor) ??
           options.afterCursor,
       });
+    }
+
+    function sendPresence(): void {
+      send(
+        presence === null
+          ? { type: "presence", noteId: null }
+          : {
+              type: "presence",
+              noteId: presence.noteId,
+              activity: presence.activity,
+            },
+      );
     }
 
     function stop(): void {
@@ -175,9 +193,15 @@ export class WebSocketRealtimeChannel implements RealtimeChannel {
           isReady = true;
           latestCursor = Math.max(latestCursor, message.latestCursor);
           subscribe();
+          if (presence !== null) {
+            sendPresence();
+          }
           tokenTimer = setTimer(() => {
             void sendToken();
-          }, TOKEN_CHECK_INTERVAL_MS);
+            if (presence !== null) {
+              sendPresence();
+            }
+          }, REPEAT_INTERVAL_MS);
           return;
         case "event":
           latestCursor = Math.max(latestCursor, message.event.cursor);
@@ -219,6 +243,17 @@ export class WebSocketRealtimeChannel implements RealtimeChannel {
         noteIds = [...nextNoteIds];
         if (isReady && !isClosedByUs) {
           subscribe();
+        }
+      },
+      setPresence(nextPresence) {
+        const hadPresence = presence !== null;
+        presence = nextPresence;
+        if (
+          isReady &&
+          !isClosedByUs &&
+          (nextPresence !== null || hadPresence)
+        ) {
+          sendPresence();
         }
       },
       disconnect() {
