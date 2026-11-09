@@ -85,6 +85,17 @@ import {
 import {
   WorkflowStatusGuidance,
 } from "./WorkflowStatusGuidance";
+import {
+  WhileAwayPanel,
+} from "./WhileAwayPanel";
+import {
+  describeMissedChange,
+  overlappingSections,
+  type MissedChange,
+} from "../../realtime/missedChanges";
+import type {
+  NoteRealtimeEvent,
+} from "../../realtime/realtimeTypes";
 
 interface NoteDetailWorkspaceProps {
   detail: NoteDetail;
@@ -92,6 +103,8 @@ interface NoteDetailWorkspaceProps {
   onUnresolvedSaveChange?: (
     unresolvedSave: UnresolvedSave | null,
   ) => void;
+  /* Too much changed while disconnected: load the note again. */
+  onReloadRequired?: () => void;
 }
 
 type DirtySections = Record<
@@ -143,6 +156,7 @@ export function NoteDetailWorkspace({
   detail,
   actor,
   onUnresolvedSaveChange,
+  onReloadRequired,
 }: NoteDetailWorkspaceProps) {
   const [
     workspaceDetail,
@@ -220,6 +234,35 @@ export function NoteDetailWorkspace({
   ] = useState<string | null>(
     null,
   );
+
+  // Changes that arrived while catching up after a disconnection.
+  const [
+    missedChanges,
+    setMissedChanges,
+  ] = useState<MissedChange[]>([]);
+
+  const recordMissedChange =
+    useCallback(
+      (event: NoteRealtimeEvent) => {
+        const change =
+          describeMissedChange(event);
+
+        if (change === null) {
+          return;
+        }
+
+        setMissedChanges(current =>
+          current.some(
+            existing =>
+              existing.eventId ===
+              change.eventId,
+          )
+            ? current
+            : [...current, change],
+        );
+      },
+      [],
+    );
 
   const draftContentRef =
     useRef<SoapContent>(
@@ -448,6 +491,8 @@ export function NoteDetailWorkspace({
       draftContentRef.current = content;
     },
     onNotice: setRealtimeNotice,
+    onMissed: recordMissedChange,
+    onReloadRequired,
   });
 
   const editPermission =
@@ -467,6 +512,55 @@ export function NoteDetailWorkspace({
     editPermission.allowed &&
     transitionState.status !==
       "pending";
+
+  // How the missed changes meet this user's edits, for the panel.
+  const whileAwayConflict =
+    autosaveConflict === null
+      ? null
+      : {
+          overlappingSections:
+            overlappingSections(
+              autosaveConflict
+                .commonAncestor
+                ?.content ??
+                savedContent,
+              draftContent,
+              autosaveConflict
+                .currentVersion
+                .content,
+            ),
+        };
+
+  const hasOwnUnsavedWork =
+    hasDirtySections ||
+    unresolvedSave !== null ||
+    autosaveSnapshot.hasPendingChanges;
+
+  const whileAwayRefusedReason =
+    !editPermission.allowed &&
+    hasOwnUnsavedWork &&
+    missedChanges.some(
+      change =>
+        change.kind === "status",
+    )
+      ? editPermission.reason
+      : null;
+
+  function showConflictResolver() {
+    const resolver =
+      document.getElementById(
+        "note-conflict-resolver",
+      );
+
+    // Focus without letting the browser scroll on its own, then show
+    // the resolver from its heading.
+    resolver?.focus({
+      preventScroll: true,
+    });
+    resolver?.scrollIntoView({
+      block: "start",
+    });
+  }
 
   const editorReadOnlyReason =
     !editPermission.allowed
@@ -713,6 +807,18 @@ export function NoteDetailWorkspace({
         </p>
       ) : null}
 
+      <WhileAwayPanel
+        changes={missedChanges}
+        conflict={whileAwayConflict}
+        refusedReason={
+          whileAwayRefusedReason
+        }
+        onResolve={showConflictResolver}
+        onDismiss={() =>
+          setMissedChanges([])
+        }
+      />
+
       <div className="note-detail-layout">
         <div className="note-detail-main">
           <PatientSessionCard
@@ -836,25 +942,30 @@ export function NoteDetailWorkspace({
           {autosaveConflict !==
             null &&
           !isViewingHistoricalVersion ? (
-            <VersionConflictResolver
-              ancestorContent={
-                autosaveConflict
-                  .commonAncestor
-                  ?.content ??
-                savedContent
-              }
-              localContent={
-                draftContent
-              }
-              serverContent={
-                autosaveConflict
-                  .currentVersion
-                  .content
-              }
-              onResolve={
-                handleConflictResolve
-              }
-            />
+            <div
+              id="note-conflict-resolver"
+              tabIndex={-1}
+            >
+              <VersionConflictResolver
+                ancestorContent={
+                  autosaveConflict
+                    .commonAncestor
+                    ?.content ??
+                  savedContent
+                }
+                localContent={
+                  draftContent
+                }
+                serverContent={
+                  autosaveConflict
+                    .currentVersion
+                    .content
+                }
+                onResolve={
+                  handleConflictResolve
+                }
+              />
+            </div>
           ) : isComparingVersions &&
             compareFromVersion !== null &&
             compareToVersion !== null ? (

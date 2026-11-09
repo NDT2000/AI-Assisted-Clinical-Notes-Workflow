@@ -56,6 +56,13 @@ export function NoteDetailPage() {
     null,
   );
 
+  // Set when the note was reloaded because too much changed while the
+  // live connection was away.
+  const [
+    reloadedAfterAbsence,
+    setReloadedAfterAbsence,
+  ] = useState(false);
+
   if (state.status === "loading") {
     return (
       <main aria-busy="true">
@@ -192,10 +199,36 @@ export function NoteDetailPage() {
         unresolvedSave={unresolvedSave}
       />
 
+      {reloadedAfterAbsence && (
+        <section
+          className="while-away-panel"
+          role="status"
+          aria-live="polite"
+        >
+          <p>
+            This note changed while you
+            were away; it has been
+            reloaded.
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              setReloadedAfterAbsence(false)
+            }
+          >
+            Dismiss
+          </button>
+        </section>
+      )}
+
       <NoteDetailWorkspace
         key={`${detail.note.id}:${actor.id}`}
         detail={detail}
         actor={actor}
+        onReloadRequired={() => {
+          setReloadedAfterAbsence(true);
+          retry();
+        }}
         onUnresolvedSaveChange={
           setUnresolvedSave
         }

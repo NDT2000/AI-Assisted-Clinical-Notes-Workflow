@@ -1,19 +1,28 @@
+import { USE_MOCK_API } from "../../../api/apiConfig";
+import {
+  createAppRealtimeChannel,
+} from "./appRealtimeChannel";
 import {
   mockRealtimeChannel,
-  type MockRealtimeChannel,
 } from "./mockRealtimeChannel";
 import type {
   MockRealtimeConnection,
   NoteRealtimeEvent,
+  RealtimeChannel,
   RealtimeConnectionSnapshot,
   RealtimeEventListener,
   RealtimeLogicalSubscription,
+  RealtimeResetListener,
 } from "./realtimeTypes";
+import {
+  webSocketRealtimeChannel,
+} from "./webSocketRealtimeChannel";
 
 interface LogicalSubscriptionRecord {
   id: string;
   noteIds: Set<string>;
   onEvent: RealtimeEventListener;
+  onReset?: RealtimeResetListener;
 }
 
 interface TimerDependencies {
@@ -31,7 +40,7 @@ interface TimerDependencies {
 }
 
 export interface RealtimeConnectionManagerOptions {
-  channel?: MockRealtimeChannel;
+  channel?: RealtimeChannel;
   baseReconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
   jitterRatio?: number;
@@ -78,7 +87,7 @@ function getErrorMessage(
 
 export class RealtimeConnectionManager {
   private readonly channel:
-    MockRealtimeChannel;
+    RealtimeChannel;
 
   private readonly baseReconnectDelayMs:
     number;
@@ -130,6 +139,12 @@ export class RealtimeConnectionManager {
   private nextSubscriptionId = 1;
 
   private reconnectAttempt = 0;
+
+  // Set when a connection drops: until caught up again, the events that
+  // arrive are ones the user missed.
+  private hasDropped = false;
+
+  private catchingUp = false;
 
   private snapshot:
     RealtimeConnectionSnapshot = {
@@ -246,6 +261,7 @@ export class RealtimeConnectionManager {
   subscribe(
     noteIds: readonly string[],
     onEvent: RealtimeEventListener,
+    onReset?: RealtimeResetListener,
   ): RealtimeLogicalSubscription {
     const id =
       `realtime-logical-${this.nextSubscriptionId}`;
@@ -261,6 +277,7 @@ export class RealtimeConnectionManager {
           ),
         ),
         onEvent,
+        onReset,
       };
 
     this.subscriptions.set(
@@ -317,6 +334,7 @@ export class RealtimeConnectionManager {
 
     this.connection?.disconnect();
     this.connection = null;
+    this.hasDropped = true;
 
     this.scheduleReconnect(
       new Error(
@@ -336,6 +354,8 @@ export class RealtimeConnectionManager {
     this.seenEventIds.clear();
     this.seenEventIdOrder.length = 0;
     this.reconnectAttempt = 0;
+    this.hasDropped = false;
+    this.catchingUp = false;
 
     this.updateSnapshot({
       status: "disconnected",
@@ -395,7 +415,12 @@ export class RealtimeConnectionManager {
         activeNoteIds,
       );
 
-      if (changed) {
+      // The server's channel re-subscribes on the open connection; the
+      // stand-in needs a new one to replay for added notes.
+      if (
+        changed &&
+        !this.channel.updatesNoteIdsInPlace
+      ) {
         this.reconnectImmediately();
       }
 
@@ -466,6 +491,8 @@ export class RealtimeConnectionManager {
     });
 
     try {
+      this.catchingUp = this.hasDropped;
+
       const connection =
         this.channel.connect({
           noteIds: activeNoteIds,
@@ -480,7 +507,22 @@ export class RealtimeConnectionManager {
 
           onDisconnect:
             this.handleDisconnect,
+
+          resolveAfterCursor:
+            this.resolveAfterCursor,
+
+          onCaughtUp:
+            this.handleCaughtUp,
+
+          onResetRequired:
+            this.handleResetRequired,
         });
+
+      if (!this.channel.reportsCaughtUp) {
+        // The stand-in replays synchronously while connecting.
+        this.catchingUp = false;
+        this.hasDropped = false;
+      }
 
       this.connection = connection;
       this.reconnectAttempt = 0;
@@ -493,6 +535,7 @@ export class RealtimeConnectionManager {
       });
     } catch (error) {
       this.connection = null;
+      this.catchingUp = false;
 
       this.scheduleReconnect(error);
     }
@@ -542,6 +585,10 @@ export class RealtimeConnectionManager {
       event.eventId,
     );
 
+    const meta = {
+      missed: this.catchingUp,
+    };
+
     for (
       const subscription of
       this.subscriptions.values()
@@ -551,7 +598,90 @@ export class RealtimeConnectionManager {
           event.noteId,
         )
       ) {
-        subscription.onEvent(event);
+        subscription.onEvent(
+          event,
+          meta,
+        );
+      }
+    }
+  };
+
+  /*
+   * Notes followed for the first time start from where the server's log
+   * is now: their data was just loaded, so older events are not news.
+   */
+  private readonly resolveAfterCursor = (
+    latestCursor: number,
+  ): number => {
+    const activeNoteIds =
+      this.collectActiveNoteIds();
+
+    for (const noteId of activeNoteIds) {
+      if (
+        !this.lastCursorByNoteId.has(
+          noteId,
+        )
+      ) {
+        this.lastCursorByNoteId.set(
+          noteId,
+          latestCursor,
+        );
+      }
+    }
+
+    return this.getReplayCursor(
+      activeNoteIds,
+    );
+  };
+
+  private readonly handleCaughtUp = (
+    cursor: number,
+  ): void => {
+    for (
+      const noteId of
+      this.collectActiveNoteIds()
+    ) {
+      this.lastCursorByNoteId.set(
+        noteId,
+        Math.max(
+          this.lastCursorByNoteId.get(
+            noteId,
+          ) ?? 0,
+          cursor,
+        ),
+      );
+    }
+
+    this.catchingUp = false;
+    this.hasDropped = false;
+
+    this.updateSnapshot({
+      lastCursor: Math.max(
+        this.snapshot.lastCursor,
+        cursor,
+      ),
+    });
+  };
+
+  private readonly handleResetRequired = (
+    noteIds: readonly string[],
+  ): void => {
+    const reset = new Set(noteIds);
+
+    for (
+      const subscription of
+      this.subscriptions.values()
+    ) {
+      const affected = [
+        ...subscription.noteIds,
+      ].filter(noteId =>
+        reset.has(noteId),
+      );
+
+      if (affected.length > 0) {
+        subscription.onReset?.(
+          affected,
+        );
       }
     }
   };
@@ -560,6 +690,8 @@ export class RealtimeConnectionManager {
     reason: Error,
   ): void => {
     this.connection = null;
+    this.hasDropped = true;
+    this.catchingUp = false;
 
     if (
       this.collectActiveNoteIds()
@@ -684,5 +816,16 @@ export class RealtimeConnectionManager {
   }
 }
 
+/*
+ * Tests use the in-browser stand-in; the app uses the server's live
+ * connection (presence still comes from the stand-in for now).
+ */
 export const realtimeConnectionManager =
-  new RealtimeConnectionManager();
+  new RealtimeConnectionManager({
+    channel: USE_MOCK_API
+      ? mockRealtimeChannel
+      : createAppRealtimeChannel(
+          webSocketRealtimeChannel,
+          mockRealtimeChannel,
+        ),
+  });

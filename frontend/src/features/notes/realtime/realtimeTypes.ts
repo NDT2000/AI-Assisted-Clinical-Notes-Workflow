@@ -81,6 +81,33 @@ export interface MockRealtimeConnectOptions {
   onDisconnect: (
     reason: Error,
   ) => void;
+  /*
+   * The server's channel only: once it says where its log is, the cursor
+   * to catch up from (notes just loaded start from there).
+   */
+  resolveAfterCursor?: (
+    latestCursor: number,
+  ) => number;
+  /* Missed events have been sent; what follows is live. */
+  onCaughtUp?: (cursor: number) => void;
+  /* Too much changed for these notes: reload them. */
+  onResetRequired?: (
+    noteIds: readonly string[],
+  ) => void;
+}
+
+/* Where events come from: the server, or the in-browser stand-in. */
+export interface RealtimeChannel {
+  connect(
+    options: MockRealtimeConnectOptions,
+  ): MockRealtimeConnection;
+  /*
+   * True when changing the followed notes needs no new connection
+   * (updateNoteIds re-subscribes on the open one).
+   */
+  readonly updatesNoteIdsInPlace?: boolean;
+  /* True when the channel says when catching up is done (onCaughtUp). */
+  readonly reportsCaughtUp?: boolean;
 }
 
 export interface MockRealtimeConnection {
@@ -108,8 +135,18 @@ export interface RealtimeConnectionSnapshot {
   lastError: string | null;
 }
 
+export interface RealtimeEventMeta {
+  /* Sent while catching up after a reconnection: it was missed. */
+  missed: boolean;
+}
+
 export type RealtimeEventListener = (
   event: NoteRealtimeEvent,
+  meta: RealtimeEventMeta,
+) => void;
+
+export type RealtimeResetListener = (
+  noteIds: readonly string[],
 ) => void;
 
 export interface RealtimeLogicalSubscription {

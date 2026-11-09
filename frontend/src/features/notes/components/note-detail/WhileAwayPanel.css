@@ -1,0 +1,58 @@
+.while-away-panel {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #245ea8;
+  border-radius: 0.75rem;
+  text-align: left;
+}
+
+.while-away-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  color: var(--text-h);
+}
+
+.while-away-panel ul {
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.while-away-panel li + li {
+  margin-top: 0.25rem;
+}
+
+.while-away-panel time {
+  font-size: 0.9em;
+}
+
+.while-away-panel__conflict {
+  color: var(--text-h);
+}
+
+.while-away-panel__refused {
+  margin: 0 0 0.75rem;
+  color: #b42318;
+}
+
+.while-away-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.while-away-panel button:focus-visible {
+  outline: 3px solid #245ea8;
+  outline-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .while-away-panel__refused {
+    color: #f97066;
+  }
+}
+
+@media (forced-colors: active) {
+  .while-away-panel {
+    border: 1px solid CanvasText;
+  }
+}

@@ -10,7 +10,7 @@ The protocol, in JSON text messages:
         event up to N. Missed events are sent first, then live ones.
 
   server -> browser
-    {"type": "ready", "userId": ...}          signed in
+    {"type": "ready", "userId": ..., "latestCursor": N}  signed in; the log is at N
     {"type": "event", "event": {...}}         a note change (NoteRealtimeEvent)
     {"type": "caughtUp", "cursor": N}         missed events sent; live from here
     {"type": "resetRequired", "noteIds": [...]}  reload these notes instead
@@ -137,7 +137,15 @@ class RealtimeConnection:
             await self.close(error.code, error.message)
             return
 
-        self.send({"type": "ready", "userId": self.user.user_id})
+        self.send(
+            {
+                "type": "ready",
+                "userId": self.user.user_id,
+                # Where the log is now: a page that has just loaded its
+                # notes follows them from here instead of replaying history.
+                "latestCursor": await run_in_threadpool(self.read_latest_cursor),
+            }
+        )
         # The framework runs on anyio: its task group ends every loop
         # cleanly as soon as any of them stops the connection.
         try:

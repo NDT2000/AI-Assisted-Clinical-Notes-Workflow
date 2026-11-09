@@ -95,6 +95,35 @@ function removeMatchingOptimisticEvents(
   );
 }
 
+/*
+ * True when an event describes the note as it was before what is already
+ * shown: it arrived late (or was replayed), so applying it would go back.
+ * Timestamps are ISO strings in one format, so they compare as text.
+ */
+function isOlderThanShown(
+  eventUpdatedAt: string,
+  shownUpdatedAt: string,
+): boolean {
+  return eventUpdatedAt < shownUpdatedAt;
+}
+
+/*
+ * The server's time for what the page shows. While an action of this
+ * user's is still pending, the note carries the browser's clock instead,
+ * which cannot be compared with the server's; nothing counts as older.
+ */
+function shownServerUpdatedAt(
+  detail: NoteDetail,
+): string {
+  return detail.timeline.some(event =>
+    event.eventId.startsWith(
+      "optimistic-",
+    ),
+  )
+    ? ""
+    : detail.note.updatedAt;
+}
+
 export function applyRealtimeEventToNoteDetail(
   detail: NoteDetail,
   event: NoteRealtimeEvent,
@@ -138,6 +167,30 @@ export function applyRealtimeEventToNoteDetail(
             .versionId,
       );
 
+    if (
+      isOlderThanShown(
+        response.note.updatedAt,
+        shownServerUpdatedAt(detail),
+      )
+    ) {
+      // Keep it in the history, but do not go back to it.
+      return versionExists
+        ? detail
+        : {
+            ...detail,
+            versions: [
+              ...detail.versions,
+              {
+                ...response.savedVersion,
+                content: {
+                  ...response.savedVersion
+                    .content,
+                },
+              },
+            ],
+          };
+    }
+
     return {
       ...detail,
       note: {
@@ -174,6 +227,10 @@ export function applyRealtimeEventToNoteDetail(
       timelineEvent.fromStatus,
       timelineEvent.toStatus,
       event.trigger,
+    ) ||
+    isOlderThanShown(
+      response.note.updatedAt,
+      shownServerUpdatedAt(detail),
     )
   ) {
     return detail;
@@ -227,7 +284,11 @@ export function applyRealtimeEventToNoteSummary(
   if (
     event.noteId !== summary.id ||
     event.type ===
-      "note.presence_changed"
+      "note.presence_changed" ||
+    isOlderThanShown(
+      event.response.note.updatedAt,
+      summary.updatedAt,
+    )
   ) {
     return summary;
   }

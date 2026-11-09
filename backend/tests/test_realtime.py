@@ -63,7 +63,10 @@ def connect(client: TestClient, settings: Settings, user_id: str = "reviewer-1")
     """Open the connection and sign in; returns the connection."""
     websocket = client.websocket_connect("/api/realtime").__enter__()
     websocket.send_json({"type": "auth", "token": token(user_id, settings)})
-    assert websocket.receive_json() == {"type": "ready", "userId": user_id}
+    ready = websocket.receive_json()
+    assert ready["type"] == "ready"
+    assert ready["userId"] == user_id
+    assert isinstance(ready["latestCursor"], int)
     return websocket
 
 
@@ -565,3 +568,15 @@ def test_a_redis_outage_does_not_fail_the_change(
     relay.publish({"eventId": "note-event-1", "noteId": "note-1"})
 
     assert "was not relayed" in caplog.text
+
+
+def test_ready_says_where_the_log_is(
+    live: TestClient,
+    settings: Settings,
+    engine: Engine,
+) -> None:
+    with live.websocket_connect("/api/realtime") as websocket:
+        websocket.send_json({"type": "auth", "token": token("reviewer-1", settings)})
+        ready = websocket.receive_json()
+
+    assert ready["latestCursor"] == cursor_now(engine)

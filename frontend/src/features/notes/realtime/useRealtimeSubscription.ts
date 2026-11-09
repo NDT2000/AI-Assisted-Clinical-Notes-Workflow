@@ -10,12 +10,18 @@ import {
 } from "./RealtimeConnectionManager";
 import type {
   NoteRealtimeEvent,
+  RealtimeEventMeta,
 } from "./realtimeTypes";
 
 export interface UseRealtimeSubscriptionOptions {
   noteIds: readonly string[];
   onEvent: (
     event: NoteRealtimeEvent,
+    meta: RealtimeEventMeta,
+  ) => void;
+  /* Too much changed while disconnected: reload these notes. */
+  onReset?: (
+    noteIds: readonly string[],
   ) => void;
   manager?: RealtimeConnectionManager;
 }
@@ -23,15 +29,20 @@ export interface UseRealtimeSubscriptionOptions {
 export function useRealtimeSubscription({
   noteIds,
   onEvent,
+  onReset,
   manager =
     realtimeConnectionManager,
 }: UseRealtimeSubscriptionOptions): void {
   const onEventRef =
     useRef(onEvent);
 
+  const onResetRef =
+    useRef(onReset);
+
   useEffect(() => {
     onEventRef.current = onEvent;
-  }, [onEvent]);
+    onResetRef.current = onReset;
+  }, [onEvent, onReset]);
 
   // Subscribe by the set of ids, not the array identity, so callers
   // can pass a fresh array each render.
@@ -60,8 +71,16 @@ export function useRealtimeSubscription({
     const subscription =
       manager.subscribe(
         normalizedNoteIds,
-        event => {
-          onEventRef.current(event);
+        (event, meta) => {
+          onEventRef.current(
+            event,
+            meta,
+          );
+        },
+        resetNoteIds => {
+          onResetRef.current?.(
+            resetNoteIds,
+          );
         },
       );
 
