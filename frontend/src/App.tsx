@@ -44,9 +44,6 @@ import {
   NotesPage,
 } from "./features/notes/pages/NotesPage";
 import {
-  mockRealtimePresenceService,
-} from "./features/notes/realtime/mockRealtimePresenceService";
-import {
   UserDetailPage,
 } from "./features/users/pages/UserDetailPage";
 import {
@@ -98,7 +95,6 @@ function SignedInApp({
         offlineSaveReplayCoordinator.start();
       }
 
-      mockRealtimePresenceService.start();
       setIsReady(true);
     }
 
@@ -111,7 +107,6 @@ function SignedInApp({
         offlineSaveReplayCoordinator.stop();
       }
 
-      mockRealtimePresenceService.stop();
     };
   }, [userId]);
 

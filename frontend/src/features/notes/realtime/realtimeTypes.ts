@@ -110,11 +110,22 @@ export interface RealtimeChannel {
   readonly reportsCaughtUp?: boolean;
 }
 
+/* This tab has the note open, viewing or typing in it. */
+export interface PresenceAnnouncement {
+  noteId: string;
+  activity: "VIEWING" | "EDITING";
+}
+
 export interface MockRealtimeConnection {
   readonly id: string;
 
   updateNoteIds(
     noteIds: readonly string[],
+  ): void;
+
+  /* The server's channel only: who has which note open (null: none). */
+  setPresence?(
+    presence: PresenceAnnouncement | null,
   ): void;
 
   disconnect(): void;

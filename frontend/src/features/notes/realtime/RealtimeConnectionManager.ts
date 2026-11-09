@@ -1,13 +1,11 @@
 import { USE_MOCK_API } from "../../../api/apiConfig";
 import {
-  createAppRealtimeChannel,
-} from "./appRealtimeChannel";
-import {
   mockRealtimeChannel,
 } from "./mockRealtimeChannel";
 import type {
   MockRealtimeConnection,
   NoteRealtimeEvent,
+  PresenceAnnouncement,
   RealtimeChannel,
   RealtimeConnectionSnapshot,
   RealtimeEventListener,
@@ -145,6 +143,10 @@ export class RealtimeConnectionManager {
   private hasDropped = false;
 
   private catchingUp = false;
+
+  // The note this tab has open, sent again on every new connection.
+  private presence:
+    PresenceAnnouncement | null = null;
 
   private snapshot:
     RealtimeConnectionSnapshot = {
@@ -318,6 +320,16 @@ export class RealtimeConnectionManager {
         this.refreshConnection();
       },
     };
+  }
+
+  /* Tell the server which note this tab has open (null: none). */
+  setPresence(
+    presence: PresenceAnnouncement | null,
+  ): void {
+    this.presence = presence;
+    this.connection?.setPresence?.(
+      presence,
+    );
   }
 
   getActiveNoteIds(): readonly string[] {
@@ -526,6 +538,12 @@ export class RealtimeConnectionManager {
 
       this.connection = connection;
       this.reconnectAttempt = 0;
+
+      if (this.presence !== null) {
+        connection.setPresence?.(
+          this.presence,
+        );
+      }
 
       this.updateSnapshot({
         status: "connected",
@@ -818,14 +836,11 @@ export class RealtimeConnectionManager {
 
 /*
  * Tests use the in-browser stand-in; the app uses the server's live
- * connection (presence still comes from the stand-in for now).
+ * connection, for note changes and presence alike.
  */
 export const realtimeConnectionManager =
   new RealtimeConnectionManager({
     channel: USE_MOCK_API
       ? mockRealtimeChannel
-      : createAppRealtimeChannel(
-          webSocketRealtimeChannel,
-          mockRealtimeChannel,
-        ),
+      : webSocketRealtimeChannel,
   });
