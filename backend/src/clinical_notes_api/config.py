@@ -94,6 +94,14 @@ class Settings(BaseSettings):
         description="How long the note event log keeps events for catching up.",
     )
 
+    redis_url: str | None = Field(
+        default=None,
+        description=(
+            "Redis that relays note events between API processes. Without "
+            "it, events reach only connections to the same process."
+        ),
+    )
+
     @property
     def secure_cookies(self) -> bool:
         """Cookies only over HTTPS in production; local development is HTTP."""

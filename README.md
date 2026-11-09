@@ -13,8 +13,8 @@ All patient and note data in this repository is synthetic.
 | Part | State |
 | --- | --- |
 | Frontend (React) | Complete; runs against the API, with sign-in and set-password pages |
-| Backend (FastAPI) | Database, seed data, accounts and sessions, user management, note endpoints and full-text search in place |
-| Database (Postgres + pgvector) | Runs locally with Docker Compose |
+| Backend (FastAPI) | Database, seed data, accounts and sessions, user management, note endpoints, full-text search and a live WebSocket feed in place |
+| Database (Postgres + pgvector), Redis | Run locally with Docker Compose |
 | AI note generation (RAG) | Planned |
 
 ## Contents
@@ -97,9 +97,11 @@ IndexedDB (`idb`), Vitest and React Testing Library, with MSW as the mock
 backend in tests.
 
 **Backend:** Python 3.13, FastAPI, SQLAlchemy 2, Alembic, psycopg 3,
-pydantic-settings; managed with uv, linted with ruff, tested with pytest.
+pydantic-settings, WebSockets and the Redis client; managed with uv, linted
+with ruff, tested with pytest.
 
-**Data and infrastructure:** PostgreSQL 16 with pgvector, Docker Compose.
+**Data and infrastructure:** PostgreSQL 16 with pgvector, Redis 7 (relays live
+events between API processes), Docker Compose.
 
 ## Repository structure
 
@@ -130,6 +132,7 @@ pydantic-settings; managed with uv, linted with ruff, tested with pytest.
 │   │   ├── errors.py        Error responses ({"error", "message"})
 │   │   ├── workflow.py      Workflow rules, read from the contract
 │   │   ├── notes/           Note and patient endpoints, and the note event log
+│   │   ├── realtime/        The live WebSocket connection and its Redis relay
 │   │   ├── telemetry.py     Telemetry intake, with a clinical-content check
 │   │   ├── openapi.py       Writes contract/openapi.json
 │   │   ├── db/              SQLAlchemy models and sessions
@@ -161,11 +164,11 @@ From the repository root:
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres
+docker compose up -d postgres redis
 ```
 
-The database listens on host port **5433**, so it does not clash with a
-locally installed Postgres on 5432.
+The database listens on host port **5433** and Redis on **6380**, so they do
+not clash with a locally installed Postgres (5432) or Redis (6379).
 
 Then, from `backend/`:
 
@@ -273,6 +276,8 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `APP_BASE_URL` | `http://localhost:5173` | Where people open the application; setup links point here |
 | `SETUP_LINK_HOURS` | `72` | How long a setup link stays valid |
 | `EVENT_RETENTION_DAYS` | `30` | How long the note event log keeps events for catching up |
+| `REDIS_URL` | unset | Redis that relays live events between API processes (`redis://localhost:6380/0` with Compose); unset, events reach only the same process |
+| `REDIS_PORT` | `6380` | Host port for Redis |
 
 Environment variables take precedence over `.env`.
 
@@ -555,14 +560,46 @@ knows how to apply. Reviewer assignments are not recorded yet.
   holding a lock that is released when its transaction commits, so a later
   number can never become visible before an earlier one. A client that has
   seen event N catches up with exactly "everything after N" for the notes it
-  follows (`events_after`, in pages); the live connection that delivers this
-  comes next.
+  follows (`events_after`, in pages), over the live connection below.
 - **Kept for 30 days.** `clinical-notes-prune-events` removes older events
   and remembers the highest number it removed. A client that last saw an
   event before that, or a number the log has not reached (as after a
   database reset), is told to reload its notes instead of catching up.
 - Events contain note text, like the notes themselves, and are only sent to
   signed-in users.
+
+### Live connection
+
+`/api/realtime` is a WebSocket that pushes note changes as they happen. The
+messages are small JSON objects:
+
+| From | Message | Meaning |
+| --- | --- | --- |
+| Browser | `{"type": "auth", "token": ...}` | The access token: first, within 5 seconds, and again whenever it is renewed |
+| Browser | `{"type": "subscribe", "noteIds": [...], "afterCursor": N}` | Follow these notes (up to 200), having seen every event up to N |
+| Server | `ready` | Signed in |
+| Server | `{"type": "event", "event": ...}` | One note change, in the event log's shape |
+| Server | `{"type": "caughtUp", "cursor": N}` | Missed events have been sent; what follows is live |
+| Server | `resetRequired` | Too much has changed (or the log was reset): reload these notes |
+| Server | `error` | A broken message, with the reason; the connection stays open |
+| Server | `ping` | Every 25 seconds, so idle connections are not dropped |
+
+- **The token is never in the URL**, so it stays out of logs and history. A
+  connection whose token expires without being renewed is closed with code
+  4401 (renew and reconnect); a deactivated account gets 4403.
+- **Other sites cannot connect.** Browsers do not limit WebSockets to the
+  page's own site, so the server checks the `Origin` itself (the
+  `CORS_ORIGINS` list) and refuses others before the connection opens.
+- **Nothing is missed or repeated in the hand-over.** After `subscribe`, the
+  server sends the missed events from the event log; changes that arrive
+  meanwhile wait, and those not already sent follow in order.
+- **Events go out only after their change commits.** The API process that
+  made the change publishes it to a Redis channel, and every API process
+  passes it to its own connections that follow that note. Without
+  `REDIS_URL`, an in-process relay is used. If Redis is down, changes are
+  still saved, and clients get them when they next catch up.
+- A client that cannot keep up (1,000 messages waiting) is disconnected and
+  catches up when it reconnects.
 
 ### Seed data
 
@@ -796,6 +833,12 @@ bulk actions, patient lookup and the telemetry check behave as specified.
   regeneration each record exactly one event with the API's response;
   refused and retried requests record none; catching up returns the right
   events in order and in pages; pruning, and when a client must reload.
+- **Live connection** (`test_realtime.py`): signing in on the connection
+  (missing, bad, expired, renewed and other-user tokens, deactivated users,
+  other sites); catching up, then live events for followed notes only, with
+  no gap or repeat in the hand-over; broken messages; keep-alive; slow
+  clients; events published only after commit; and the Redis relay between
+  two processes (CI runs Redis; locally that test is skipped without it).
 - **Seed command**: refuses to run in production and to seed a non-empty
   database without `--reset`.
 
@@ -815,10 +858,10 @@ browser-driven end-to-end suite yet.
 
 ## Assumptions and limitations
 
-- **Real-time updates are not connected to the API yet.** The server records
-  every change in the event log, but nothing delivers it live yet, so other
-  users' changes appear on reload. A WebSocket connection comes next.
-  Presence between tabs of one browser still works.
+- **The frontend does not use the live connection yet.** The server delivers
+  changes live over `/api/realtime`, but the app still shows other users'
+  changes on reload until it switches over (next). Presence between tabs of
+  one browser still works.
 - **The app needs the API to run**; the mock server is used only in tests.
 - **An access token stays valid until it expires** (15 minutes) after signing
   out; the session itself, and with it any renewal, ends at once. Deactivating

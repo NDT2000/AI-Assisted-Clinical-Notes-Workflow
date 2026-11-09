@@ -7,14 +7,15 @@ seen event N is missing.
 """
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import delete, func, select, text
+from sqlalchemy import event as sa_event
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from clinical_notes_api.db import NoteEvent, NoteEventLogState
 from clinical_notes_api.db.models import NoteEventType
@@ -23,6 +24,8 @@ from clinical_notes_api.notes.schemas import to_iso
 # Any constant works; it only has to be the same for every writer.
 EVENT_LOG_LOCK_KEY = 7_240_001
 DEFAULT_PAGE_SIZE = 500
+# Where a session keeps the messages of events it recorded until commit.
+PENDING_MESSAGES = "pending_note_event_messages"
 
 
 def record_event(
@@ -56,7 +59,27 @@ def record_event(
     )
     session.add(event)
     session.flush()
+    # Sent to live clients only once the transaction commits (see
+    # publish_after_commit), never for a change that is rolled back.
+    session.info.setdefault(PENDING_MESSAGES, []).append(event_message(event))
     return event
+
+
+def publish_after_commit(
+    session_factory: sessionmaker[Session],
+    publish: Callable[[dict[str, Any]], None],
+) -> None:
+    """Hand each committed event to `publish`, in the order recorded."""
+
+    @sa_event.listens_for(session_factory, "after_commit")
+    def _after_commit(session: Session) -> None:
+        for message in session.info.pop(PENDING_MESSAGES, []):
+            publish(message)
+
+    @sa_event.listens_for(session_factory, "after_soft_rollback")
+    def _after_rollback(session: Session, previous_transaction) -> None:
+        if not previous_transaction.nested:
+            session.info.pop(PENDING_MESSAGES, None)
 
 
 def event_message(event: NoteEvent) -> dict[str, Any]:
