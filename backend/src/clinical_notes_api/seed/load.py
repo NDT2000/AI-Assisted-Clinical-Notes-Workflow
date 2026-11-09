@@ -42,6 +42,8 @@ SEED_USERS: tuple[Json, ...] = (
 PASSWORD_BYTES = 16
 
 TABLES_IN_DEPENDENCY_ORDER = (
+    "note_events",
+    "note_event_log_state",
     "login_attempts",
     "user_admin_events",
     "refresh_tokens",

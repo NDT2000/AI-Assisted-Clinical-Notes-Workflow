@@ -25,6 +25,7 @@ from clinical_notes_api.errors import (
     not_found,
 )
 from clinical_notes_api.notes import schemas
+from clinical_notes_api.notes.events import record_event
 from clinical_notes_api.notes.queries import event_schema, note_schema, version_schema
 from clinical_notes_api.workflow import (
     Actor,
@@ -250,6 +251,13 @@ def save_version(
         response,
         now,
     )
+    record_event(
+        session,
+        note_id=note_id,
+        event_type="note.version_added",
+        payload=_dump(response),
+        occurred_at=now,
+    )
     return response
 
 
@@ -341,6 +349,14 @@ def transition_note(
         response,
         now,
     )
+    record_event(
+        session,
+        note_id=note_id,
+        event_type="note.status_changed",
+        payload=_dump(response),
+        occurred_at=now,
+        trigger=request.trigger,
+    )
     return response
 
 
@@ -405,6 +421,7 @@ def regenerate(
     notes = _lock_notes(session, note_ids)
     now = utc_now()
     updated, skipped = [], []
+    history: list[ReviewEvent] = []
     for note_id in note_ids:
         note = notes.get(note_id)
         decision = (
@@ -417,25 +434,51 @@ def regenerate(
             continue
 
         # Unlike the mock server, the history records bulk regeneration too.
-        session.add(
-            ReviewEvent(
-                event_id=f"event-{uuid.uuid4()}",
-                note_id=note_id,
-                version_id=note.current_version_id,
-                from_status=note.status,
-                to_status=decision.next_status,
-                actor_id=user.id,
-                actor_role=user.role,
-                occurred_at=now,
-            )
+        review_event = ReviewEvent(
+            event_id=f"event-{uuid.uuid4()}",
+            note_id=note_id,
+            version_id=note.current_version_id,
+            from_status=note.status,
+            to_status=decision.next_status,
+            actor_id=user.id,
+            actor_role=user.role,
+            occurred_at=now,
         )
+        session.add(review_event)
+        history.append(review_event)
         note.status = decision.next_status
         note.assigned_reviewer_id = None
         note.updated_at = now
         updated.append(note_id)
 
     session.flush()
+    for review_event in history:
+        _record_bulk_transition(session, notes[review_event.note_id], review_event)
     return schemas.RegenerateResponse(updated=updated, skipped=skipped)
+
+
+def _record_bulk_transition(
+    session: Session,
+    note: Note,
+    review_event: ReviewEvent,
+) -> None:
+    """Tell real-time clients, in the same shape as a single action."""
+    session.refresh(review_event, ["actor"])
+    response = schemas.TransitionNoteResponse(
+        # No client sent this one; the id only has to be unique.
+        client_mutation_id=f"bulk-{review_event.event_id}",
+        note=note_schema(note),
+        timeline_event=event_schema(review_event),
+        current_version=version_schema(_current_version(session, note)),
+    )
+    record_event(
+        session,
+        note_id=note.id,
+        event_type="note.status_changed",
+        payload=_dump(response),
+        occurred_at=review_event.occurred_at,
+        trigger="REGENERATE",
+    )
 
 
 def _dump(model: schemas.ApiModel) -> dict[str, Any]:

@@ -45,6 +45,8 @@ UserRole = Literal["CLINICIAN", "REVIEWER", "ADMIN", "READONLY_AUDITOR"]
 
 # The two note mutations a client retries with the same clientMutationId.
 MutationKind = Literal["SAVE_VERSION", "TRANSITION"]
+# What the real-time feed tells clients about a note.
+NoteEventType = Literal["note.status_changed", "note.version_added"]
 
 # What an administrator (or the create-admin command) did to an account.
 UserAdminAction = Literal[
@@ -61,6 +63,7 @@ NOTE_STATUSES: tuple[str, ...] = get_args(NoteStatus)
 USER_ROLES: tuple[str, ...] = get_args(UserRole)
 MUTATION_KINDS: tuple[str, ...] = get_args(MutationKind)
 USER_ADMIN_ACTIONS: tuple[str, ...] = get_args(UserAdminAction)
+NOTE_EVENT_TYPES: tuple[str, ...] = get_args(NoteEventType)
 
 # Sign-in names: 3-32 lowercase letters, digits, dots, dashes or underscores.
 USERNAME_LENGTH = 32
@@ -378,6 +381,52 @@ class ReviewEvent(Base):
         CheckConstraint(_one_of("actor_role", USER_ROLES), name="actor_role"),
         Index("ix_review_events_note_id_occurred_at", "note_id", "occurred_at"),
     )
+
+
+class NoteEvent(Base):
+    """One change to a note, in the order changes were committed.
+
+    `cursor` numbers the whole log: a client that has seen up to N asks for
+    everything after N. Events are written in the same transaction as the
+    change, so neither exists without the other, and numbered while holding
+    a lock that is released at commit, so numbers follow commit order and a
+    reader never skips an event that commits late.
+
+    `payload` is the API's own response to the change (the saved version or
+    the transition), which clients already know how to apply.
+    """
+
+    __tablename__ = "note_events"
+
+    cursor: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(ID_LENGTH), unique=True)
+    note_id: Mapped[str] = mapped_column(ForeignKey("notes.id"))
+    type: Mapped[NoteEventType] = mapped_column(String(32))
+    # The workflow action, for status changes.
+    trigger: Mapped[str | None] = mapped_column(String(32))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    occurred_at: Mapped[datetime] = mapped_column(_timestamp())
+
+    __table_args__ = (
+        CheckConstraint(_one_of("type", NOTE_EVENT_TYPES), name="type"),
+        Index("ix_note_events_note_id_cursor", "note_id", "cursor"),
+        Index("ix_note_events_occurred_at", "occurred_at"),
+    )
+
+
+class NoteEventLogState(Base):
+    """One row: the highest event number removed by pruning.
+
+    A client whose last seen event is below it has missed events that no
+    longer exist, so it must reload instead of catching up.
+    """
+
+    __tablename__ = "note_event_log_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pruned_through: Mapped[int] = mapped_column(BigInteger, server_default="0")
+
+    __table_args__ = (CheckConstraint("id = 1", name="single_row"),)
 
 
 class ClientMutation(Base):
