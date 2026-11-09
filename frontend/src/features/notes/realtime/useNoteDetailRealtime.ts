@@ -36,6 +36,12 @@ interface UseNoteDetailRealtimeOptions {
     content: SoapContent,
   ) => void;
   onNotice: (message: string) => void;
+  /* A change made while this page was disconnected (shown as missed). */
+  onMissed?: (
+    event: NoteRealtimeEvent,
+  ) => void;
+  /* Too much changed while disconnected: the note must be reloaded. */
+  onReloadRequired?: () => void;
 }
 
 const STATUS_CHANGED_ELSEWHERE =
@@ -79,11 +85,24 @@ export function useNoteDetailRealtime({
   adoptServerVersion,
   onServerContentAdopted,
   onNotice,
+  onMissed,
+  onReloadRequired,
 }: UseNoteDetailRealtimeOptions): void {
   useRealtimeSubscription({
     noteIds: [noteId],
 
-    onEvent: event => {
+    onReset: () => {
+      onReloadRequired?.();
+    },
+
+    onEvent: (event, meta) => {
+      if (
+        meta.missed &&
+        event.type !== "note.presence_changed"
+      ) {
+        onMissed?.(event);
+      }
+
       if (
         event.type === "note.status_changed"
       ) {

@@ -79,8 +79,10 @@ another user's work.
 - **Offline reads and a persistent write queue** — recently opened notes stay
   readable offline; saves are queued in IndexedDB and replayed in order after
   reconnecting, even across reloads.
-- **Real-time updates** — live status changes, new versions and presence for
-  the visible notes.
+- **Real-time updates** — other people's saves and status changes appear on
+  the visible notes without a reload; after a lost connection, a "While you
+  were away" panel lists what was missed and points out where it meets your
+  offline edits.
 - **Role- and ownership-based authorization** — checked in the UI and again on
   the server.
 - **Real accounts** — users sign in with their own password; an administrator
@@ -443,12 +445,32 @@ requires attention, All changes saved.
 
 ### Real-time updates
 
-Status changes, new versions and presence are pushed for the visible list rows
-and the open note only; subscriptions end when rows scroll away or components
-unmount. Duplicate, dropped and out-of-order events are handled with event-id
-deduplication, cursor replay, idempotent reconciliation and reconnect backoff
-with jitter. Events are reconciled with local optimistic state, not applied
-blindly.
+Status changes and new versions come from the server's live connection
+(`/api/realtime`, see "Live connection"), for the visible list rows and the
+open note only; following updates on the same connection when rows scroll
+away or another note opens. Duplicate, dropped and out-of-order events are
+handled with event-id deduplication, cursor replay, idempotent
+reconciliation and reconnect backoff with jitter. Events are reconciled with
+local optimistic state, not applied blindly.
+
+- **Signed in on the connection.** The access token is the first message, and
+  a renewed one is sent on the same connection before the old one expires.
+- **No history replay on a fresh page.** The server says where its event log
+  is when the connection opens; notes the page has just loaded are followed
+  from there.
+- **Late events never win.** An event older than what the page shows (by the
+  note's server time) is ignored, so a late or replayed event cannot take the
+  screen back to an older version or status. While the user's own action is
+  still pending, the page carries the browser's clock, so that check waits.
+- **"While you were away."** After a dropped connection, the events that
+  arrive while catching up are listed on the note page (who, what, when). If
+  someone else saved while the user's offline edit was waiting, the panel
+  says whether it overlaps that edit (and in which sections) or not, with a
+  button to the conflict resolver; if the note was approved or locked
+  meanwhile, it says why the offline edit cannot be saved. When too much
+  changed to catch up, the note is reloaded and the page says so.
+- Presence ("who is viewing") still comes from the tabs of one browser,
+  until the server takes it over.
 
 ### Telemetry and privacy
 
@@ -577,7 +599,7 @@ messages are small JSON objects:
 | --- | --- | --- |
 | Browser | `{"type": "auth", "token": ...}` | The access token: first, within 5 seconds, and again whenever it is renewed |
 | Browser | `{"type": "subscribe", "noteIds": [...], "afterCursor": N}` | Follow these notes (up to 200), having seen every event up to N |
-| Server | `ready` | Signed in |
+| Server | `{"type": "ready", "latestCursor": N}` | Signed in; the event log is at N |
 | Server | `{"type": "event", "event": ...}` | One note change, in the event log's shape |
 | Server | `{"type": "caughtUp", "cursor": N}` | Missed events have been sent; what follows is live |
 | Server | `resetRequired` | Too much has changed (or the log was reset): reload these notes |
@@ -839,6 +861,11 @@ bulk actions, patient lookup and the telemetry check behave as specified.
   no gap or repeat in the hand-over; broken messages; keep-alive; slow
   clients; events published only after commit; and the Redis relay between
   two processes (CI runs Redis; locally that test is skipped without it).
+- **Frontend real-time**: the WebSocket channel (token first, renewal on
+  the same connection, re-subscribing, reporting drops), the manager
+  (following new notes from the log position, marking missed events until
+  caught up, reload requests), ignoring late events, and the "While you were
+  away" panel's wording for overlapping, non-overlapping and refused edits.
 - **Seed command**: refuses to run in production and to seed a non-empty
   database without `--reset`.
 
@@ -858,10 +885,15 @@ browser-driven end-to-end suite yet.
 
 ## Assumptions and limitations
 
-- **The frontend does not use the live connection yet.** The server delivers
-  changes live over `/api/realtime`, but the app still shows other users'
-  changes on reload until it switches over (next). Presence between tabs of
-  one browser still works.
+- **Presence is shared only between tabs of one browser** for now; the
+  server takes it over next. Live note changes come from the server.
+- **The note list does not reload by itself** when the server says too much
+  changed while it was disconnected; the open note does. Reloading the list
+  page catches it up.
+- **An offline edit is sent again only on its next save attempt.** After a
+  reconnection the panel shows what was missed straight away, but whether it
+  overlaps the offline edit appears once that edit is retried (automatically
+  when the browser comes back online, or with "Try again").
 - **The app needs the API to run**; the mock server is used only in tests.
 - **An access token stays valid until it expires** (15 minutes) after signing
   out; the session itself, and with it any renewal, ends at once. Deactivating

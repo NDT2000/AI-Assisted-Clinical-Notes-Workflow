@@ -337,3 +337,130 @@ describe(
     );
   },
 );
+
+describe("late and replayed events", () => {
+  function laterDetail(): NoteDetail {
+    // What the page shows after a newer change (12:20) was applied.
+    const detail = createDetail();
+    return {
+      ...detail,
+      note: {
+        ...detail.note,
+        status: "IN_REVIEW",
+        updatedAt: "2026-08-02T12:20:00.000Z",
+      },
+    };
+  }
+
+  it("does not go back to an older status", () => {
+    const detail = laterDetail();
+    const response = createTransitionResponse(); // 12:10
+
+    const next = applyRealtimeEventToNoteDetail(detail, {
+      type: "note.status_changed",
+      eventId: "late-status",
+      cursor: 3,
+      noteId: "note-1",
+      occurredAt: response.timelineEvent.occurredAt,
+      trigger: "START_REVIEW",
+      response,
+    });
+
+    expect(next).toBe(detail);
+  });
+
+  it("keeps an older version in the history without showing it", () => {
+    const detail = laterDetail();
+    const older = createVersion(2);
+    const response: SaveNoteVersionResponse = {
+      clientMutationId: "save-late",
+      note: {
+        ...detail.note,
+        currentVersionId: older.versionId,
+        updatedAt: "2026-08-02T12:15:00.000Z",
+      },
+      savedVersion: older,
+    };
+    const event = {
+      type: "note.version_added" as const,
+      eventId: "late-version",
+      cursor: 4,
+      noteId: "note-1",
+      occurredAt: response.note.updatedAt,
+      response,
+    };
+
+    const next = applyRealtimeEventToNoteDetail(detail, event);
+
+    expect(next.currentVersion).toBe(detail.currentVersion);
+    expect(next.note).toBe(detail.note);
+    expect(next.versions.map((version) => version.versionId)).toEqual([
+      "version-1",
+      "version-2",
+    ]);
+    // Replayed again: nothing changes.
+    expect(applyRealtimeEventToNoteDetail(next, event)).toBe(next);
+  });
+
+  it("still applies others' changes while an own action is pending", () => {
+    const detail = laterDetail();
+    const pending: NoteDetail = {
+      ...detail,
+      timeline: [
+        {
+          eventId: "optimistic-transition-1",
+          noteId: "note-1",
+          versionId: "version-1",
+          fromStatus: "READY_FOR_REVIEW",
+          toStatus: "IN_REVIEW",
+          actorId: "reviewer-1",
+          actorRole: "REVIEWER",
+          actorDisplayName: "Reviewer One",
+          // The browser's clock, possibly ahead of the server's.
+          occurredAt: "2026-08-02T13:00:00.000Z",
+        },
+      ],
+      note: { ...detail.note, updatedAt: "2026-08-02T13:00:00.000Z" },
+    };
+    const response = createTransitionResponse();
+
+    const next = applyRealtimeEventToNoteDetail(pending, {
+      type: "note.status_changed",
+      eventId: "server-status",
+      cursor: 5,
+      noteId: "note-1",
+      occurredAt: response.timelineEvent.occurredAt,
+      trigger: "START_REVIEW",
+      response,
+    });
+
+    expect(next.note.updatedAt).toBe(response.note.updatedAt);
+  });
+
+  it("does not go back in the list either", () => {
+    const summary: NoteSummary = {
+      id: "note-1",
+      patient: { id: "patient-1", displayName: "Patient One" },
+      status: "APPROVED",
+      currentVersion: { id: "version-3", revision: 3 },
+      assignedReviewer: null,
+      contentPreview: "Subjective 3",
+      createdAt: "2026-08-02T11:00:00.000Z",
+      updatedAt: "2026-08-02T12:30:00.000Z",
+    };
+    const response = createTransitionResponse(); // 12:10
+
+    const next = applyRealtimeEventToNoteSummary(summary, {
+      type: "note.status_changed",
+      eventId: "late-status",
+      cursor: 3,
+      noteId: "note-1",
+      occurredAt: response.timelineEvent.occurredAt,
+      trigger: "START_REVIEW",
+      response,
+    });
+
+    expect(next).toBe(summary);
+  });
+});
+
