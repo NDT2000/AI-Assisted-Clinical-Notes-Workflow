@@ -154,6 +154,7 @@ events between API processes), Docker Compose.
 │   ├── note-workflow.json        The workflow rules and their messages
 │   ├── note-workflow.cases.json  Expected decisions both sides are tested on
 │   └── openapi.json              The API description
+├── scripts/smoke_test.py    Checks a running stack through nginx (used by CI)
 ├── docker-compose.yml       The whole app, or only Postgres and Redis for development
 └── .env.example             Every configuration variable, documented
 ```
@@ -326,12 +327,27 @@ uv run pytest --cov      # with a coverage report; fails below 95%
 Database tests need the Compose Postgres and are skipped without it; set
 `REQUIRE_DATABASE=1` to make them fail instead.
 
-**Continuous integration.** GitHub Actions
-(`.github/workflows/backend.yml`) runs the backend checks on every pull
-request and push to `main` that touches `backend/` or `contract/`: lint,
-formatting, and the full test suite with coverage against a Postgres
-service container, with `REQUIRE_DATABASE=1` so no database test is quietly
-skipped.
+**Continuous integration.** GitHub Actions runs three workflows on every
+pull request, and on every push to `main`, that touches their files:
+
+| Workflow | When | What it checks |
+| --- | --- | --- |
+| `backend.yml` | `backend/`, `contract/` | Lint, formatting, and the full test suite with coverage against Postgres and Redis service containers, with `REQUIRE_DATABASE=1` so no database test is quietly skipped |
+| `frontend.yml` | `frontend/`, `contract/` | Lint, type check, the test suite and the production build, on Node 22 like the web image |
+| `stack.yml` | `backend/`, `frontend/`, `contract/`, `docker-compose.yml`, the smoke test | Builds both images, starts the whole Compose stack from an empty database with a fresh secret, checks that the API port is not published, runs the smoke test, then restarts the stack and checks that the second start keeps the data and passes again; prints the container logs if anything fails |
+
+**Smoke test.** `scripts/smoke_test.py` checks a running stack through
+nginx, as a browser would: the app page and a deep link, the security
+headers, the API health, sign-in with a seeded clinician (and the cookie's
+flags), the notes list, and the live connection. It prints one line per
+check, never a password, and exits non-zero if any check fails. With the
+stack running (`docker compose up --build`), from the repository root:
+
+```bash
+uv run --no-project --with websockets python scripts/smoke_test.py
+```
+
+`--base-url` and `--credentials-file` point it somewhere else.
 
 ### API container image
 
