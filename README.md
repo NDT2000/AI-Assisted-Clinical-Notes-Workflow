@@ -143,7 +143,9 @@ events between API processes), Docker Compose.
 │   │   └── seed/            Synthetic data generator and loader
 │   ├── migrations/          Alembic migrations
 │   ├── db/init/             SQL run when the database is first created
-│   └── tests/               pytest suite
+│   ├── tests/               pytest suite
+│   ├── Dockerfile           Production image of the API
+│   └── .dockerignore        Keeps everything but the code out of the image
 ├── contract/                Shared by frontend and backend
 │   ├── note-workflow.json        The workflow rules and their messages
 │   ├── note-workflow.cases.json  Expected decisions both sides are tested on
@@ -259,6 +261,56 @@ formatting, and the full test suite with coverage against a Postgres
 service container, with `REQUIRE_DATABASE=1` so no database test is quietly
 skipped.
 
+### API container image
+
+`backend/Dockerfile` builds the production image of the API:
+
+- **Two stages.** The first installs the exact versions in `uv.lock` (no
+  test or lint tools); the second copies only that install onto a slim
+  Python 3.13 image, with no compilers and no `uv`.
+- **Not root.** The API runs as an unprivileged `app` user that cannot change
+  the image's files.
+- **Health check.** Docker calls `/api/health` every 10 seconds and marks the
+  container healthy once it answers.
+- **Production by default.** `ENVIRONMENT=production`, so the image refuses to
+  start without a real `JWT_SECRET` and sends the sign-in cookie over HTTPS
+  only (browsers also accept it on `http://localhost`).
+- **No secrets inside.** `backend/.dockerignore` lets in only `pyproject.toml`,
+  `uv.lock`, `src/`, `alembic.ini` and `migrations/`; `.env` and
+  `credentials.local.md` never reach the image.
+
+Build it and run the migrations once, as a separate job, before starting the
+API. Here they use the Compose Postgres and Redis through the Compose network:
+
+```bash
+docker build -t clinical-notes-api backend
+
+docker run --rm --network clinical-notes_default \
+  -e DATABASE_URL=postgresql+psycopg://clinical:clinical@postgres:5432/clinical_notes \
+  -e JWT_SECRET=<32+ random characters> \
+  clinical-notes-api alembic upgrade head
+
+docker run -d --name clinical-notes-api --network clinical-notes_default -p 8010:8000 \
+  -e DATABASE_URL=postgresql+psycopg://clinical:clinical@postgres:5432/clinical_notes \
+  -e REDIS_URL=redis://redis:6379/0 \
+  -e JWT_SECRET=<the same secret> \
+  -e FORWARDED_ALLOW_IPS=<the proxy's address or network> \
+  clinical-notes-api
+```
+
+Migrations run as their own job so that several API containers never race to
+change the database. The container starts the API with
+`clinical-notes-serve`: no auto-reload, listening on all of the container's
+addresses, and without a `Server` header.
+
+**Behind a proxy.** Sign-in lockouts count failures per visitor address. Behind
+a proxy such as nginx every request comes from the proxy, so one person's
+wrong passwords would lock everyone out. `FORWARDED_ALLOW_IPS` names the
+proxies whose `X-Forwarded-For` header the API believes; requests from
+anywhere else keep their own address, so nobody can fake one to dodge a
+lockout. `*` is refused for the same reason. Keep the API port itself off the
+public network and let only the proxy reach it.
+
 ## Configuration
 
 The backend and Docker Compose read the same `.env` file at the repository
@@ -283,6 +335,8 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `REDIS_URL` | unset | Redis that relays live events between API processes (`redis://localhost:6380/0` with Compose); unset, events reach only the same process |
 | `REDIS_PORT` | `6380` | Host port for Redis |
 | `PRESENCE_TTL_SECONDS` | `30` | How long someone stays shown on a note after their browser stops repeating that it is there |
+| `API_HOST`, `API_PORT` | `127.0.0.1`, `8000` | Where `clinical-notes-serve` listens (the image uses `0.0.0.0`) |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Comma-separated proxy addresses or networks whose `X-Forwarded-For` is believed, so lockouts count the real visitor |
 
 Environment variables take precedence over `.env`.
 
