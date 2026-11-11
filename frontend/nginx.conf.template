@@ -1,0 +1,98 @@
+# nginx for the web image: serves the built app and forwards /api (and the
+# live connection) to the API, so the page and the API share one address and
+# the sign-in cookie reaches the API.
+#
+# A template: at start-up the image fills in ${API_UPSTREAM} and
+# ${NGINX_LOCAL_RESOLVERS} from the environment (other $names are nginx's).
+
+# Look the API up again every 10 s rather than once at start-up, so a
+# restarted API container with a new address is still found.
+resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
+# Live connections ask to switch protocol; ordinary requests do not.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      '';
+}
+
+server {
+    listen 8080;
+    listen [::]:8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+
+    # Do not advertise the nginx version.
+    server_tokens off;
+
+    # Notes are small; refuse large request bodies.
+    client_max_body_size 1m;
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # --- Security headers, on every response (pages and API alike) ---------
+    # Only this address may provide scripts, styles, images and connections,
+    # so injected code could neither load anything nor send data elsewhere.
+    # React's style={{...}} sets styles through the DOM, which this allows.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    # Strict-Transport-Security belongs with HTTPS (deployment), not here.
+
+    # Locations below set caching with `expires` rather than add_header, so
+    # they keep the headers above (a location's own add_header would drop
+    # them).
+
+    # Docker's health check: nginx is up, whether or not the API is.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Built files have a content hash in their name: cache them for a year.
+    location /assets/ {
+        expires max;
+        try_files $uri =404;
+    }
+
+    # The API. $api_upstream is a variable so the resolver above is used; the
+    # request path is passed on unchanged.
+    location /api/ {
+        set $api_upstream http://${API_UPSTREAM};
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+
+        # The address and scheme the browser used, so the API's same-origin
+        # check compares the right values.
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # The visitor's real address, replacing anything the visitor sent, so
+        # nobody can fake one to dodge sign-in lockouts.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+
+        # The live connection (/api/realtime) switches to WebSocket.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        # The server pings every 25 s; allow well over that before giving up.
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+
+        # Never cache API answers in the browser.
+        expires off;
+    }
+
+    # Everything else is a page of the app: send index.html and let the app's
+    # router show it. Always re-check it, so a new release shows at once.
+    location / {
+        expires -1;
+        try_files $uri /index.html;
+    }
+}

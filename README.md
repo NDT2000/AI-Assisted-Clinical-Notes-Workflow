@@ -112,6 +112,9 @@ events between API processes), Docker Compose.
 ```text
 .
 ├── frontend/                React application
+│   ├── Dockerfile           Production image: the built app served by nginx
+│   ├── Dockerfile.dockerignore  What the image build may read
+│   ├── nginx.conf.template  Serving, the /api and live-connection proxy, headers
 │   └── src/
 │       ├── api/             API base URL and the authenticated fetch
 │       ├── app/             Header and sign-out
@@ -310,6 +313,74 @@ proxies whose `X-Forwarded-For` header the API believes; requests from
 anywhere else keep their own address, so nobody can fake one to dodge a
 lockout. `*` is refused for the same reason. Keep the API port itself off the
 public network and let only the proxy reach it.
+
+### Web container image
+
+`frontend/Dockerfile` builds the production image of the web app. Build it
+from the repository root, because the frontend reads the shared `contract/`:
+
+```bash
+docker build -f frontend/Dockerfile -t clinical-notes-web .
+```
+
+- **Two stages.** Node 22 installs the exact versions in `package-lock.json`,
+  type-checks and builds; the second stage is nginx with only the built files
+  (no Node, no source, no `node_modules`).
+- **Not root.** It uses the unprivileged nginx image (user `nginx`, port 8080).
+- **Health check.** Docker calls `/healthz`, answered by nginx itself.
+- **Only what it needs.** `frontend/Dockerfile.dockerignore` lets in the
+  frontend source and `contract/`, without `node_modules`, `dist` or `.env`.
+
+`frontend/nginx.conf.template` makes nginx:
+
+- **Serve the app.** Any page address (such as `/notes/note-000123`) returns
+  the app, whose router shows the page, so links and refreshes work. Built
+  files carry a content hash in their name and are cached for a year; the
+  app page itself is re-checked every time, so a new release shows at once.
+  Responses are compressed.
+- **Forward `/api` to the API** at `API_UPSTREAM` (default `api:8000`, the
+  Compose service), so the page and the API share one address and the sign-in
+  cookie reaches the API. The live connection (`/api/realtime`) is upgraded to
+  a WebSocket and may stay quiet for up to 120 seconds (the server pings
+  every 25). The API's address is looked up again every 10 seconds, so a
+  restarted API container is still found.
+- **Pass on the real visitor.** `X-Forwarded-For` is set to the address nginx
+  sees, replacing anything the visitor sent, so nobody can fake an address to
+  dodge sign-in lockouts; the API trusts it through `FORWARDED_ALLOW_IPS`. The
+  original host and scheme are passed too, for the API's same-origin check.
+- **Refuse large requests.** Request bodies over 1 MB get `413`.
+- **Add security headers** to every response:
+
+  | Header | Effect |
+  | --- | --- |
+  | `Content-Security-Policy` | Scripts, styles, images and connections only from this address; injected code could neither load anything nor send data elsewhere |
+  | `X-Frame-Options: DENY`, `frame-ancestors 'none'` | No other site can show the app in a frame (clickjacking) |
+  | `X-Content-Type-Options: nosniff` | Browsers do not guess file types |
+  | `Referrer-Policy: no-referrer` | Page addresses are not sent to other sites |
+  | `Permissions-Policy` | Camera, microphone, location, payment and USB are off |
+  | `Cross-Origin-Opener-Policy: same-origin` | Other sites' windows cannot reach this one |
+
+  nginx hides its version. HTTPS-only (`Strict-Transport-Security`) belongs
+  with a real HTTPS address and is left to deployment.
+
+To try both images by hand on the Compose network (with the migrations
+already run, as above):
+
+```bash
+docker run -d --name clinical-notes-api --network clinical-notes_default --network-alias api \
+  -e DATABASE_URL=postgresql+psycopg://clinical:clinical@postgres:5432/clinical_notes \
+  -e REDIS_URL=redis://redis:6379/0 \
+  -e JWT_SECRET=<32+ random characters> \
+  -e FORWARDED_ALLOW_IPS=<the Compose network, e.g. 172.21.0.0/16> \
+  clinical-notes-api
+
+docker run -d --name clinical-notes-web --network clinical-notes_default -p 8080:8080 \
+  clinical-notes-web
+```
+
+Then open <http://localhost:8080>. The API is in production mode, so the
+sign-in cookie is HTTPS-only; Chrome, Edge and Firefox accept it on
+`localhost`.
 
 ## Configuration
 
