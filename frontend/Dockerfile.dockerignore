@@ -1,0 +1,14 @@
+# Used by `docker build -f frontend/Dockerfile .` (context: repository root).
+# Only the frontend source and the shared contract go in.
+*
+!frontend
+!contract
+
+# Local and generated files, even inside the folders above.
+frontend/node_modules
+frontend/dist
+frontend/coverage
+frontend/.env
+frontend/.env.*
+**/*.local.md
+**/.DS_Store
