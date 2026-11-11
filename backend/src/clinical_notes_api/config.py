@@ -1,9 +1,10 @@
+import ipaddress
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from fastapi import Request
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/src/clinical_notes_api/config.py -> repository root
@@ -110,6 +111,50 @@ class Settings(BaseSettings):
             "saying it is still there."
         ),
     )
+
+    api_host: str = Field(
+        default="127.0.0.1",
+        description=(
+            "Address `clinical-notes-serve` listens on; 0.0.0.0 in a container."
+        ),
+    )
+
+    api_port: int = Field(
+        default=8000,
+        gt=0,
+        lt=65_536,
+        description="Port `clinical-notes-serve` listens on.",
+    )
+
+    forwarded_allow_ips: str = Field(
+        default="127.0.0.1",
+        description=(
+            "Comma-separated proxy addresses or networks (such as nginx) whose "
+            "X-Forwarded-For header is believed. Sign-in lockouts count "
+            "failures per visitor address, so behind a proxy this must name "
+            "the proxy, or every visitor looks like the proxy."
+        ),
+    )
+
+    @field_validator("forwarded_allow_ips")
+    @classmethod
+    def proxies_are_addresses_or_networks(cls, value: str) -> str:
+        entries = [entry.strip() for entry in value.split(",") if entry.strip()]
+        if not entries:
+            raise ValueError("FORWARDED_ALLOW_IPS needs at least one address.")
+        for entry in entries:
+            if entry == "*":
+                raise ValueError(
+                    "FORWARDED_ALLOW_IPS must name the proxy, not '*': anyone "
+                    "could then fake their address and dodge sign-in lockouts."
+                )
+            try:
+                ipaddress.ip_network(entry)
+            except ValueError as error:
+                raise ValueError(
+                    f"FORWARDED_ALLOW_IPS entry {entry!r} is not an address or network."
+                ) from error
+        return ",".join(entries)
 
     @property
     def secure_cookies(self) -> bool:

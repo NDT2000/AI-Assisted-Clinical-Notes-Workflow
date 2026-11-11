@@ -1,0 +1,15 @@
+# Only what the image needs: pyproject.toml, uv.lock, src, alembic.ini and
+# migrations. Everything else stays out, above all secrets.
+*
+!pyproject.toml
+!uv.lock
+!src
+!alembic.ini
+!migrations
+
+# Never copy local state, even inside the folders above.
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*
+**/credentials.local.md
