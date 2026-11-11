@@ -1,0 +1,99 @@
+# The whole application in Docker: builds both images, starts the Compose
+# stack from an empty database, runs the smoke test through nginx, then
+# restarts it to check that a second start keeps the data.
+name: Stack
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "contract/**"
+      - "scripts/smoke_test.py"
+      - "docker-compose.yml"
+      - ".github/workflows/stack.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "contract/**"
+      - "scripts/smoke_test.py"
+      - "docker-compose.yml"
+      - ".github/workflows/stack.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-test:
+    name: Build, start and smoke-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      # A fresh secret for this run only, hidden from the log. The seed
+      # writes the users' passwords to a temporary folder (never printed),
+      # as the runner's own user so the file can be written.
+      - name: Prepare settings
+        run: |
+          secret="$(openssl rand -base64 48 | tr -d '\n')"
+          echo "::add-mask::$secret"
+          mkdir -p "$RUNNER_TEMP/credentials"
+          {
+            echo "JWT_SECRET=$secret"
+            echo "LOCAL_UID=$(id -u)"
+            echo "LOCAL_GID=$(id -g)"
+            echo "CREDENTIALS_DIR=$RUNNER_TEMP/credentials"
+          } >> "$GITHUB_ENV"
+
+      - name: Build and start the stack
+        run: docker compose up --build --detach --wait --wait-timeout 300
+
+      - name: Show what is running
+        run: docker compose ps --all
+
+      - name: The API has no published port
+        run: |
+          if docker compose port api 8000 | grep -q ':[1-9]'; then
+            echo "::error::The API port is published; only nginx should reach it."
+            exit 1
+          fi
+
+      - name: Smoke test
+        run: >-
+          uv run --no-project --with websockets
+          python scripts/smoke_test.py
+          --credentials-file "$RUNNER_TEMP/credentials/credentials.local.md"
+
+      # A second start must find the data, leave it and its passwords
+      # alone, and come up healthy again.
+      - name: Restart
+        run: |
+          docker compose down
+          docker compose up --detach --wait --wait-timeout 300
+          docker compose logs seed | tee "$RUNNER_TEMP/seed.log"
+          grep -q "already has notes" "$RUNNER_TEMP/seed.log"
+
+      - name: Smoke test after restart
+        run: >-
+          uv run --no-project --with websockets
+          python scripts/smoke_test.py
+          --credentials-file "$RUNNER_TEMP/credentials/credentials.local.md"
+
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Clean up
+        if: always()
+        run: docker compose down --volumes
