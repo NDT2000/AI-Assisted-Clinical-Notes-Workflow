@@ -220,6 +220,16 @@ characters`. On Linux, also set `LOCAL_UID` and `LOCAL_GID` in `.env` to your
 `WEB_PORT` if 8080 is taken, and `APP_SUBNET` if the stack's network clashes
 with another one.
 
+If **migrate** fails with `failed to resolve host 'postgres'`, the database
+container was started by an older version of this Compose file and moved to
+the new network without its service name. Recreate the containers; the data
+is kept:
+
+```bash
+docker compose down
+docker compose up --build
+```
+
 ### Prerequisites for local development
 
 - Node.js (current LTS) and npm — for the frontend
