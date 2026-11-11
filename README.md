@@ -15,6 +15,7 @@ All patient and note data in this repository is synthetic.
 | Frontend (React) | Complete; runs against the API, with sign-in and set-password pages |
 | Backend (FastAPI) | Database, seed data, accounts and sessions, user management, note endpoints, full-text search and a live WebSocket feed in place |
 | Database (Postgres + pgvector), Redis | Run locally with Docker Compose |
+| Packaging | The whole app runs with one `docker compose up` (production-style images, nginx in front) |
 | AI note generation (RAG) | Planned |
 
 ## Contents
@@ -153,7 +154,7 @@ events between API processes), Docker Compose.
 │   ├── note-workflow.json        The workflow rules and their messages
 │   ├── note-workflow.cases.json  Expected decisions both sides are tested on
 │   └── openapi.json              The API description
-├── docker-compose.yml       Local Postgres + pgvector
+├── docker-compose.yml       The whole app, or only Postgres and Redis for development
 └── .env.example             Every configuration variable, documented
 ```
 
@@ -161,7 +162,65 @@ Tests sit in a `tests/` folder beside the code they cover.
 
 ## Getting started
 
-### Prerequisites
+### Run everything with Docker
+
+Only Docker is needed. From the repository root:
+
+```bash
+cp .env.example .env
+```
+
+In `.env`, set `JWT_SECRET` to 32 or more random characters, for example the
+output of:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Then build and start everything:
+
+```bash
+docker compose up --build
+```
+
+Open <http://localhost:8080> and sign in with any account from
+`credentials.local.md`, which the first start writes to the repository root.
+
+What happens, in order, each step waiting for the one before:
+
+1. **postgres** and **redis** start and report healthy.
+2. **migrate** brings the database up to date, then exits.
+3. **seed** loads 5,000 synthetic notes and ten users into an empty database
+   and writes their passwords to `credentials.local.md`, then exits. On later
+   starts it finds the data and leaves it, and its passwords, as they are.
+4. **api** starts (no published port: only nginx can reach it) and reports
+   healthy.
+5. **web** (nginx) serves the app on port 8080 and forwards `/api` and the
+   live connection to the API.
+
+The stack runs with `ENVIRONMENT=demo`: like production (a real `JWT_SECRET`
+is required, the sign-in cookie is HTTPS-only) but allowed to load synthetic
+data. Chrome, Edge and Firefox accept the HTTPS-only cookie on
+`localhost`; Safari may not. It shares the database with local development,
+so both show the same notes and accounts.
+
+Useful commands:
+
+```bash
+docker compose up --build -d     # in the background
+docker compose logs -f api web   # follow the API and nginx logs
+docker compose down              # stop; the data is kept
+docker compose down -v           # stop and delete the data (seeds again next time)
+```
+
+If `JWT_SECRET` is missing or still the development value, **migrate** exits
+with `Set JWT_SECRET in demo` or `JWT_SECRET must be at least 32
+characters`. On Linux, also set `LOCAL_UID` and `LOCAL_GID` in `.env` to your
+`id -u` and `id -g`, so the seed can write `credentials.local.md`. Change
+`WEB_PORT` if 8080 is taken, and `APP_SUBNET` if the stack's network clashes
+with another one.
+
+### Prerequisites for local development
 
 - Node.js (current LTS) and npm — for the frontend
 - [uv](https://docs.astral.sh/uv/) — for the backend; it installs Python 3.13
@@ -391,7 +450,7 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | --- | --- | --- |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `clinical`, `clinical`, `clinical_notes` | Database created by Compose |
 | `POSTGRES_PORT` | `5433` | Host port for the database |
-| `ENVIRONMENT` | `development` | `development`, `test` or `production` |
+| `ENVIRONMENT` | `development` | `development`, `test`, `demo` (production-like, synthetic data allowed; used by Compose) or `production` |
 | `DATABASE_URL` | the Compose database | SQLAlchemy URL the API connects to |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Browser origins allowed to call the API |
 | `JWT_SECRET` | a development-only value | Signs access tokens; required in production, 32+ characters |
@@ -407,6 +466,10 @@ root. `.env.example` lists every variable; `.env` is git-ignored.
 | `REDIS_PORT` | `6380` | Host port for Redis |
 | `PRESENCE_TTL_SECONDS` | `30` | How long someone stays shown on a note after their browser stops repeating that it is there |
 | `API_HOST`, `API_PORT` | `127.0.0.1`, `8000` | Where `clinical-notes-serve` listens (the image uses `0.0.0.0`) |
+| `WEB_PORT` | `8080` | Host port for the web app when Compose runs everything |
+| `APP_SUBNET` | `172.30.100.0/24` | The Compose network's addresses; the API trusts forwarded visitor addresses only from it |
+| `CREDENTIALS_DIR` | the repository root | Where the Compose seed writes `credentials.local.md` |
+| `LOCAL_UID`, `LOCAL_GID` | `10001` | On Linux, your own ids, so the Compose seed can write `credentials.local.md` |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Comma-separated proxy addresses or networks whose `X-Forwarded-For` is believed, so lockouts count the real visitor |
 
 Environment variables take precedence over `.env`.
@@ -775,8 +838,10 @@ configured (shared by every API process) and in memory otherwise.
 
 `clinical-notes-seed` loads the same 5,000 synthetic notes as the frontend's
 mock server, so a note id means the same note in both. Use `--reset` to replace
-existing data and `--count` to change the number of notes; it refuses to run
-when `ENVIRONMENT=production`. Every user gets a random password, written to
+existing data, `--if-empty` to seed only an empty database (and otherwise
+succeed without touching anything, as Compose does on every start), and
+`--count` to change the number of notes; it refuses to run when
+`ENVIRONMENT=production`, but runs in `demo`. Every user gets a random password, written to
 `credentials.local.md` (`--credentials-file` to choose another place) before
 the data is committed, so if the file cannot be written nothing is seeded. The generator is a Python port of
 `frontend/src/mock-data`; a test compares it with a sample exported from the

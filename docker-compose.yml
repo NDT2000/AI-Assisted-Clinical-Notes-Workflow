@@ -1,6 +1,34 @@
-# Local development services. Start with: docker compose up -d
+# The whole application, or only the services local development needs.
 # Values come from .env (copy .env.example); the defaults below match it.
+#
+#   docker compose up --build            everything, at http://localhost:8080
+#   docker compose up -d postgres redis  only the database and Redis, for
+#                                        running the API and frontend locally
+#
+# Start order for everything: postgres and redis healthy -> migrate (runs
+# once) -> seed (fills an empty database once) -> api healthy -> web.
 name: clinical-notes
+
+# Settings shared by the API and its one-shot jobs. `demo` runs like
+# production (a real JWT_SECRET, HTTPS-only cookies) but allows the
+# synthetic seed data.
+x-api-environment: &api-environment
+  ENVIRONMENT: demo
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-clinical}:${POSTGRES_PASSWORD:-clinical}@postgres:5432/${POSTGRES_DB:-clinical_notes}
+  # Required: 32+ random characters (see .env.example).
+  JWT_SECRET: ${JWT_SECRET:-}
+  REDIS_URL: redis://redis:6379/0
+  # The page and the API share one address through nginx: no other origins.
+  CORS_ORIGINS: "[]"
+  APP_BASE_URL: http://localhost:${WEB_PORT:-8080}
+  # Only containers on this network may report a visitor's address, and
+  # only nginx can reach the API from outside it.
+  FORWARDED_ALLOW_IPS: ${APP_SUBNET:-172.30.100.0/24}
+
+x-api-image: &api-image
+  image: clinical-notes-api:local
+  build:
+    context: backend
 
 services:
   postgres:
@@ -36,6 +64,73 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  # Brings the database up to date, then exits. A job of its own, so that
+  # several API containers never race to change the database.
+  migrate:
+    <<: *api-image
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Loads the synthetic notes and users into an empty database, then exits.
+  # Later starts leave the data, and its passwords, as they are. The
+  # passwords are written to credentials.local.md in CREDENTIALS_DIR (the
+  # repository root unless set; git-ignored). On Linux, set LOCAL_UID and
+  # LOCAL_GID to your own ids (`id -u`, `id -g`) so the file can be written.
+  seed:
+    <<: *api-image
+    command:
+      - clinical-notes-seed
+      - --if-empty
+      - --credentials-file
+      - /output/credentials.local.md
+    user: "${LOCAL_UID:-10001}:${LOCAL_GID:-10001}"
+    environment: *api-environment
+    volumes:
+      - ${CREDENTIALS_DIR:-./}:/output
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # The API. No published port: it is reached only through the web server.
+  api:
+    <<: *api-image
+    environment: *api-environment
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # The built frontend, served by nginx, which also forwards /api and the
+  # live connection to the API.
+  web:
+    image: clinical-notes-web:local
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      API_UPSTREAM: api:8000
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        # Fixed, so FORWARDED_ALLOW_IPS above names exactly this network.
+        # Change APP_SUBNET in .env if it clashes with another network.
+        - subnet: ${APP_SUBNET:-172.30.100.0/24}
 
 volumes:
   postgres-data:
