@@ -53,6 +53,14 @@ def test_refuses_to_run_in_production(
     assert "Refusing to seed" in capsys.readouterr().err
 
 
+def test_refuses_reset_and_if_empty_together(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        seed_command.main(["--reset", "--if-empty"])
+    assert "not allowed with" in capsys.readouterr().err
+
+
 def dev_settings(test_database_url: str) -> Settings:
     return Settings(
         _env_file=None,
@@ -185,3 +193,37 @@ def test_credentials_file_is_git_ignored() -> None:
     ignored = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
 
     assert "credentials.local.md" in ignored.splitlines()
+
+
+def test_seeds_in_demo_mode_only_an_empty_database(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    engine: Engine,
+    test_database_url: str,
+    empty_database: None,
+    tmp_path: Path,
+) -> None:
+    """Compose runs `--if-empty` on every start: first time it seeds, later
+    it leaves the data and the passwords alone, and still succeeds."""
+    use_settings(
+        monkeypatch,
+        Settings(
+            _env_file=None,
+            environment="demo",
+            database_url=test_database_url,
+            jwt_secret=SecretStr("a-demo-secret-that-is-long-enough-to-pass"),
+        ),
+    )
+    credentials_file = tmp_path / "credentials.local.md"
+    arguments = ["--count", "5", "--if-empty", "--credentials-file"]
+
+    assert seed_command.main([*arguments, str(credentials_file)]) == 0
+    assert "Seeded 5 notes" in capsys.readouterr().out
+    first_passwords = read_credentials(credentials_file)
+
+    assert seed_command.main([*arguments, str(credentials_file)]) == 0
+    output = capsys.readouterr().out
+    assert "already has notes" in output
+    assert "existing passwords still apply" in output
+    assert note_count(engine) == 5
+    assert read_credentials(credentials_file) == first_passwords

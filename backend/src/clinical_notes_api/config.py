@@ -28,7 +28,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    environment: Literal["development", "test", "production"] = "development"
+    # demo: a showcase with synthetic data. Run like production (a real
+    # JWT_SECRET, HTTPS-only cookies), but the seed may load synthetic data.
+    environment: Literal["development", "test", "demo", "production"] = "development"
 
     database_url: str = Field(
         default="postgresql+psycopg://clinical:clinical@localhost:5433/clinical_notes",
@@ -157,18 +159,23 @@ class Settings(BaseSettings):
         return ",".join(entries)
 
     @property
+    def runs_like_production(self) -> bool:
+        """Production and demo: served to browsers like a real deployment."""
+        return self.environment in ("production", "demo")
+
+    @property
     def secure_cookies(self) -> bool:
-        """Cookies only over HTTPS in production; local development is HTTP."""
-        return self.environment == "production"
+        """Cookies only over HTTPS in production and demo; development is HTTP."""
+        return self.runs_like_production
 
     @model_validator(mode="after")
     def require_a_real_secret_in_production(self) -> "Settings":
-        if self.environment != "production":
+        if not self.runs_like_production:
             return self
 
         secret = self.jwt_secret.get_secret_value()
         if secret == DEVELOPMENT_JWT_SECRET:
-            raise ValueError("Set JWT_SECRET in production.")
+            raise ValueError(f"Set JWT_SECRET in {self.environment}.")
         if len(secret) < MINIMUM_JWT_SECRET_LENGTH:
             raise ValueError(
                 f"JWT_SECRET must be at least {MINIMUM_JWT_SECRET_LENGTH} characters."

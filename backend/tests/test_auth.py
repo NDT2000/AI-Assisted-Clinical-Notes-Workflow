@@ -287,22 +287,21 @@ def test_every_mutation_requires_a_signed_in_user(app: FastAPI) -> None:
     assert unprotected == []
 
 
-def test_production_requires_a_real_jwt_secret() -> None:
-    with pytest.raises(ValueError, match="Set JWT_SECRET"):
+@pytest.mark.parametrize("environment", ["production", "demo"])
+def test_production_and_demo_require_a_real_jwt_secret(environment: str) -> None:
+    with pytest.raises(ValueError, match=f"Set JWT_SECRET in {environment}"):
         Settings(
             _env_file=None,
-            environment="production",
+            environment=environment,
             jwt_secret=SecretStr(DEVELOPMENT_JWT_SECRET),
         )
 
     with pytest.raises(ValueError, match="at least 32"):
-        Settings(
-            _env_file=None, environment="production", jwt_secret=SecretStr("short")
-        )
+        Settings(_env_file=None, environment=environment, jwt_secret=SecretStr("short"))
 
     Settings(
         _env_file=None,
-        environment="production",
+        environment=environment,
         jwt_secret=SecretStr("a-production-secret-that-is-long-enough"),
     )
 
@@ -390,14 +389,16 @@ def test_renewal_tokens_are_stored_only_as_hashes(
     assert cookie not in stored
 
 
-def test_production_cookies_need_https() -> None:
-    production = Settings(
+@pytest.mark.parametrize("environment", ["production", "demo"])
+def test_production_and_demo_cookies_need_https(environment: str) -> None:
+    deployed = Settings(
         _env_file=None,
-        environment="production",
+        environment=environment,
         jwt_secret=SecretStr("a-production-secret-that-is-long-enough"),
     )
 
-    assert production.secure_cookies is True
+    assert deployed.runs_like_production is True
+    assert deployed.secure_cookies is True
 
 
 def test_wrong_password_gets_the_ordinary_answer(client: TestClient) -> None:
